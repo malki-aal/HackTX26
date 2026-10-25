@@ -11,7 +11,7 @@ function backendMode(): Promise<BackendMode> {
   return modePromise;
 }
 
-/** Shown only when the data is not live: sample data or an unreachable backend. */
+/** Shown only when the backend can't be reached. */
 export function DataNote() {
   const [mode, setMode] = useState<BackendMode | null>(null);
   useEffect(() => {
@@ -22,14 +22,7 @@ export function DataNote() {
     };
   }, []);
   if (mode === "offline") return <p role="alert" className="no-print mb-2 text-[13px] font-semibold text-white">Backend unreachable</p>;
-  if (mode === "fixtures" || api.mode === "fixture")
-    return <p className="no-print mb-2 text-[13px] font-medium text-white/80">Sample data. Nothing here is real.</p>;
   return null;
-}
-
-/** Where financial records appear. */
-export function SandboxNote() {
-  return <p className="mt-2 text-[13px] text-muted">Nessie sandbox: simulated banking records. No real money moves.</p>;
 }
 
 // ---------- hero ----------
@@ -101,9 +94,10 @@ export function PageHeader({
       {stats && stats.length > 0 && (
         <dl className="mt-5 grid gap-2" style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))` }}>
           {stats.map((s) => (
-            <div key={s.label} className="rounded-xl bg-hero-tile px-3 py-2.5">
-              <dt className="text-[12px] text-white/85">{s.label}</dt>
-              <dd className="mt-0.5 text-[17px] font-bold leading-tight tabular-nums">{s.value}</dd>
+            // Labels may wrap to two lines; the value stays on the tile's bottom edge so every number lines up.
+            <div key={s.label} className="flex flex-col justify-between rounded-xl bg-hero-tile px-3 py-2.5">
+              <dt className="text-[12px] leading-tight text-white/85">{s.label}</dt>
+              <dd className="mt-1 text-[17px] font-bold leading-tight tabular-nums">{s.value}</dd>
             </div>
           ))}
         </dl>
@@ -285,14 +279,16 @@ export function FindingMark({ status }: { status: FindingStatus }) {
   );
 }
 
-const elig: Record<Eligibility, { label: string; cls: string }> = {
-  eligible: { label: "Eligible", cls: "bg-green-soft text-green-ink" },
-  needs_review: { label: "Needs review", cls: "bg-orange-soft text-orange-ink" },
-  rejected: { label: "Rejected", cls: "bg-bad-soft text-bad" },
+// "Needs review" gets its own glyph and a dashed outline so it never reads as a match.
+const elig: Record<Eligibility, { glyph: string; label: string; cls: string }> = {
+  eligible: { glyph: "✓", label: "Eligible", cls: "bg-green-soft text-green-ink font-medium" },
+  needs_review: { glyph: "!", label: "Needs review", cls: "border border-dashed border-orange-ink bg-orange-soft text-orange-ink font-semibold" },
+  rejected: { glyph: "✕", label: "Rejected", cls: "bg-bad-soft text-bad font-medium" },
 };
 export function EligibilityMark({ value }: { value: Eligibility }) {
   return (
-    <span className={`${elig[value].cls} shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[13px] font-medium`}>
+    <span className={`${elig[value].cls} shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[13px]`}>
+      <span aria-hidden>{elig[value].glyph} </span>
       {elig[value].label}
     </span>
   );

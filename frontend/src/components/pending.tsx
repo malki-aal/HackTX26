@@ -4,7 +4,7 @@ import Link from "next/link";
 import { api, type ActivityItem } from "@/lib/api";
 import { useIdentity } from "@/lib/auth/identity";
 import { formatCents } from "@/lib/money";
-import { ErrorNote, Loading, SandboxNote, Section, formatWhen, useLoad, usePolling } from "@/components/ui";
+import { ErrorNote, Loading, Section, formatWhen, useLoad, usePolling } from "@/components/ui";
 
 interface Group {
   key: string;
@@ -93,7 +93,6 @@ export function PendingActivity() {
           </ul>
         </div>
       ))}
-      {data && groups.length > 0 && <SandboxNote />}
     </Section>
   );
 }

@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useIdentity } from "@/lib/auth/identity";
 import { ExecutionStatusText } from "@/components/execution";
 import { formatCents } from "@/lib/money";
-import { ErrorNote, KeyValue, Loading, Page, PageHeader, SandboxNote, Section, formatWhen, useLoad } from "@/components/ui";
+import { ErrorNote, KeyValue, Loading, Page, PageHeader, Section, formatWhen, useLoad } from "@/components/ui";
 
 /** Each backend amount against the reported balance. Display only; the available figure is the backend's. */
 function BudgetBars({ b }: { b: { reportedBalanceCents: number | null; availableCents: number | null; obligationsCents: number; commitmentsCents: number } }) {
@@ -110,7 +110,6 @@ export default function AccountPage() {
             </li>
           ))}
         </ul>
-        {purchases.length > 0 && <SandboxNote />}
       </Section>
 
       {isExecutive && (
@@ -135,7 +134,6 @@ export default function AccountPage() {
               {budget.data.fetchedAt ? `Last fetched ${formatWhen(budget.data.fetchedAt)}. ` : "Not fetched yet. "}
               {budget.data.source}. {budget.data.notes}
             </p>
-            <SandboxNote />
           </>
         )}
       </Section>

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
-import { api, type ApiError, type Budget, type FinancialPreview, type Proposal } from "@/lib/api";
+import { api, type ApiError, type FinancialPreview, type Proposal } from "@/lib/api";
 import { approvalGate, personLabel, type PreviewState } from "@/lib/api/mappers";
 import { Avatar } from "@/components/avatars";
 import { ExecutionAmounts, ExecutionStatusText, ExecutionWarnings } from "@/components/execution";
+import { ApprovalSummary, DecisionRecord } from "@/components/review";
 import { newIdempotencyKey } from "@/lib/format";
-import { DECISION_LABEL } from "@/lib/labels";
 import { formatCents, isSafeHttpUrl } from "@/lib/money";
 import {
   Button,
@@ -18,8 +18,6 @@ import {
   Loading,
   Page,
   PageHeader,
-  ProgressBar,
-  SandboxNote,
   Section,
   formatWhen,
   inputClass,
@@ -30,11 +28,11 @@ import {
 
 type Decision = "approve" | "request_changes" | "reject";
 
-const DECISION_BUTTON: Record<Decision, string> = {
-  approve: "Accept",
-  request_changes: "Change",
-  reject: "Deny",
-};
+const CHOICES: { value: Decision; label: string }[] = [
+  { value: "approve", label: "Approve" },
+  { value: "request_changes", label: "Request changes" },
+  { value: "reject", label: "Reject" },
+];
 
 const TOTAL_STATUS: Record<string, string> = {
   price_unknown: "Price unknown",
@@ -53,14 +51,32 @@ export default function ExecutiveProposalPage() {
 function ExecutiveProposal() {
   const { id } = useParams<{ id: string }>();
   const prop = useLoad(() => api.getProposal(id), [id]);
-  // Cached read (no bank call) for Nessie's reported balance, shown separately from Runway's available budget.
-  const budget = useLoad(() => api.getBudget({ fresh: false }), []);
+  // The server's preview: cached on open, refreshed against the bank when Approve is chosen.
+  const live = useLoad(() => api.getFinancialPreview(id), [id]);
   const [notice, setNotice] = useState<string | null>(null);
   const p = prop.data;
 
+  const f: FinancialPreview | null = live.data ?? p?.financialAssessment ?? null;
+  const preview: PreviewState = f ? { kind: "ready", preview: f } : live.error ? { kind: "error", message: live.error.message } : { kind: "loading" };
+
+  async function refreshPreview(fresh: boolean) {
+    try {
+      // refresh=true re-reads the Nessie sandbox account (a free read; no research, no purchase).
+      live.setData(await api.getFinancialPreview(id, { refresh: fresh }));
+    } catch {
+      await live.refresh();
+    }
+  }
+
   // Notice a new revision, a decision by someone else or an execution update. Read-only.
   const watching = !!p && (p.decision === "awaiting_review" || p.execution === "queued" || p.execution === "submitting");
-  usePolling(prop.refresh, 5000, watching);
+  usePolling(
+    async () => {
+      await Promise.all([prop.refresh(), live.refresh()]);
+    },
+    5000,
+    watching,
+  );
 
   const awaiting = p?.decision === "awaiting_review";
 
@@ -70,67 +86,73 @@ function ExecutiveProposal() {
         title={p?.requestTitle ?? "Proposal"}
         back={{ href: "/executive", label: "Approvals" }}
         amount={p ? p.expenseCents : undefined}
-        amountLabel={p ? `Requested expense · revision ${p.revision}` : undefined}
-      >
-        {p && (
-          <div className="mt-4">
-            <ProgressBar value={p.expenseCents} max={p.budgetCeilingCents} over={p.expenseCents > p.budgetCeilingCents} />
-            <p className="mt-1.5 text-[13px] text-white/85">of {formatCents(p.budgetCeilingCents)} budget ceiling</p>
-          </div>
-        )}
-      </PageHeader>
+        amountLabel={p ? `Proposed expense · revision ${p.revision}` : undefined}
+      />
       {prop.loading && <Loading />}
       <ErrorNote error={prop.error} onRetry={prop.reload} />
 
-      {p && <ReviewSections p={p} />}
-
-      {p && awaiting && (
+      {p && (
         <>
-          {notice && (
+          {awaiting && <ApprovalSummary p={p} f={f} status={preview.kind} onRefresh={() => void refreshPreview(true)} />}
+          {awaiting && <Warnings p={p} f={f} />}
+          <ProductCard p={p} />
+          {awaiting && notice && (
             <p role="alert" className="mb-4 rounded-xl bg-orange-soft p-3 text-[14px] font-medium text-warn">{notice}</p>
           )}
-          <DecisionStep
-            key={`${p.id}|${p.revision}|${p.expenseCents}`}
-            p={p}
-            budget={budget.data}
-            refreshBudget={budget.refresh}
-            onDecided={(next) => {
-              setNotice(null);
-              prop.setData(next);
-              void budget.refresh();
-            }}
-            onConflict={() => {
-              setNotice("This proposal changed while you were reviewing it. Review the latest version before deciding.");
-              void prop.refresh();
-            }}
-          />
+          {awaiting && (
+            <DecisionPanel
+              key={`${p.id}|${p.revision}|${p.expenseCents}`}
+              p={p}
+              preview={preview}
+              refreshPreview={refreshPreview}
+              onDecided={(next) => {
+                setNotice(null);
+                prop.setData(next);
+              }}
+              onConflict={() => {
+                setNotice("This proposal changed while you were reviewing it. Review the latest version before deciding.");
+                void prop.refresh();
+                void live.refresh();
+              }}
+            />
+          )}
+          {!awaiting && <Outcome p={p} reload={prop.refresh} />}
+          <ReviewSections p={p} />
         </>
       )}
-
-      {p && !awaiting && <Outcome p={p} reload={prop.refresh} />}
     </Page>
   );
 }
 
-// ---------- the proposal as submitted ----------
-
-function ReviewSections({ p }: { p: Proposal }) {
+/** Server blockers first (red), then what the approver should weigh (orange). */
+function Warnings({ p, f }: { p: Proposal; f: FinancialPreview | null }) {
   const r = p.review;
-  const unknownMandatory = r ? r.findings.filter((f) => f.status !== "supported" && r.requirements.some((q) => q.mandatory && q.label === f.requirement)) : [];
+  const blockers = (f?.blockingReasons ?? []).filter((b) => b.code !== "not_awaiting_review");
+  const unknownMandatory = r ? r.findings.filter((x) => x.status !== "supported" && r.requirements.some((q) => q.mandatory && q.label === x.requirement)) : [];
+  const staleShown = blockers.some((b) => b.code === "offer_stale");
+  const weigh = unknownMandatory.length > 0 || p.unresolved.length > 0 || (!!r?.stale && !staleShown);
+  if (!blockers.length && !weigh) return null;
   return (
-    <>
-      {(p.unresolved.length > 0 || unknownMandatory.length > 0 || r?.stale || p.requirementResolutions.length > 0) && (
-        <div role="note" className="mb-4 rounded-2xl bg-orange-soft p-4">
-          <p className="text-[15px] font-semibold text-orange-ink">Check before deciding</p>
-          <ul className="mt-1 list-disc pl-5 text-[15px] text-ink">
-            {r?.stale && <li>The offer evidence has expired. Approval is refused until research is rerun.</li>}
-            {unknownMandatory.map((f) => {
-              const res = p.requirementResolutions.find((x) => x.requirement === f.requirement);
+    <section aria-label="Before you decide" className="mb-4 space-y-2">
+      {blockers.length > 0 && (
+        <div role="alert" className="rounded-2xl bg-bad-soft p-4">
+          <h2 className="text-[15px] font-semibold text-bad">Approval is blocked</h2>
+          <ul className="mt-1 list-disc pl-5 text-[14px] text-ink">{blockers.map((b) => <li key={b.code}>{b.message}</li>)}</ul>
+          <p className="mt-1.5 text-[13px] text-muted">You can still request changes or reject.</p>
+        </div>
+      )}
+      {weigh && (
+        <div role="note" className="rounded-2xl bg-orange-soft p-4">
+          <h2 className="text-[15px] font-semibold text-orange-ink">Check before deciding</h2>
+          <ul className="mt-1 list-disc pl-5 text-[14px] text-ink">
+            {r?.stale && !staleShown && <li>The offer evidence has expired. Approval is refused until research is rerun.</li>}
+            {unknownMandatory.map((x) => {
+              const res = p.requirementResolutions.find((y) => y.requirement === x.requirement);
               return (
-                <li key={`m-${f.requirement}`}>
-                  Required: {f.requirement} — {f.status === "contradicted" ? "the listing contradicts it" : "not confirmed by the evidence"}
+                <li key={`m-${x.requirement}`}>
+                  Required: {x.requirement} — {x.status === "contradicted" ? "the listing contradicts it" : "not confirmed by the evidence"}
                   {res && (
-                    <span className="block text-[14px]">
+                    <span className="block text-[13px]">
                       {res.kind === "verified" ? "Requester says they verified it: " : "Requester recorded an exception: "}“{res.note}”
                     </span>
                   )}
@@ -141,14 +163,63 @@ function ReviewSections({ p }: { p: Proposal }) {
           </ul>
         </div>
       )}
+    </section>
+  );
+}
+
+function ProductCard({ p }: { p: Proposal }) {
+  const r = p.review;
+  return (
+    <Section>
+      <ul>
+        {p.lines.map((l) => (
+          <li key={l.itemId} className="border-t border-rule py-3 first:border-t-0 first:pt-0">
+            <p className="text-[13px] text-muted">Product · {l.quantityText}</p>
+            <div className="mt-0.5 flex gap-3">
+              {l.imageUrl && isSafeHttpUrl(l.imageUrl) && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={l.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded-lg bg-raised object-contain" />
+              )}
+              <p className="text-[17px] font-semibold leading-snug">{l.title}</p>
+            </div>
+            <p className="text-[14px] text-muted">
+              {l.seller ?? "Unknown seller"}
+              {l.listedSubtotalCents !== null && ` · ${formatCents(l.listedSubtotalCents)} listed`}
+            </p>
+            {l.sourceUrl && isSafeHttpUrl(l.sourceUrl) && (
+              <a href={l.sourceUrl} target="_blank" rel="noopener noreferrer" className="touch text-[14px] font-medium text-accent">
+                Source listing
+              </a>
+            )}
+          </li>
+        ))}
+      </ul>
+      {r?.observedAt && (
+        <p className="mt-1 text-[13px] text-muted">
+          Observed {formatWhen(r.observedAt)}
+          {r.expiresAt && `, fresh until ${formatWhen(r.expiresAt)}`}
+          {r.fromCache && ". Reused from an earlier search"}.
+        </p>
+      )}
+      <p className="mt-2 flex items-center gap-2 text-[14px]">
+        <Avatar role="employee" size={22} />
+        <span>
+          Requested by <span className="font-medium">{personLabel(p.requester, "Unknown requester")}</span>
+          {p.submittedAt && <span className="text-muted"> · submitted {formatWhen(p.submittedAt)}</span>}
+        </span>
+      </p>
+    </Section>
+  );
+}
+
+// ---------- the proposal as submitted ----------
+
+function ReviewSections({ p }: { p: Proposal }) {
+  const r = p.review;
+  return (
+    <>
       <Section title="Request">
         <dl>
-          <KeyValue
-            label="Requested by"
-            value={<span className="inline-flex items-center gap-2"><Avatar role="employee" size={24} />{personLabel(p.requester, "Unknown requester")}</span>}
-            note={p.requester?.demo ? "A demo identity, not an account." : undefined}
-          />
-          {p.submittedAt && <KeyValue label="Submitted" value={formatWhen(p.submittedAt)} />}
           <KeyValue label="Revision" value={p.revision} />
         </dl>
         {r?.purpose && (
@@ -169,44 +240,6 @@ function ReviewSections({ p }: { p: Proposal }) {
               ))}
             </ul>
           </>
-        )}
-      </Section>
-
-      <Section title="Selected offer">
-        <ul>
-          {p.lines.map((l) => (
-            <li key={l.itemId} className="border-t border-rule py-3 first:border-t-0 first:pt-0">
-              <p className="text-[13px] text-muted">{l.itemName} · {l.quantityText}</p>
-              <div className="flex gap-3">
-                {l.imageUrl && isSafeHttpUrl(l.imageUrl) && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={l.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded-lg bg-raised object-contain" />
-                )}
-                <p className="text-[17px] font-semibold leading-snug">{l.title}</p>
-              </div>
-              <p className="text-[14px] text-muted">
-                {l.seller ?? "Unknown seller"}
-                {l.listedSubtotalCents !== null && ` · ${formatCents(l.listedSubtotalCents)} listed`}
-              </p>
-              {l.sourceUrl && isSafeHttpUrl(l.sourceUrl) && (
-                <a href={l.sourceUrl} target="_blank" rel="noopener noreferrer" className="touch text-[14px] font-medium text-accent">
-                  Source listing
-                </a>
-              )}
-            </li>
-          ))}
-        </ul>
-        {r?.observedAt && (
-          <p className="mt-2 text-[13px] text-muted">
-            Observed {formatWhen(r.observedAt)}
-            {r.expiresAt && `, fresh until ${formatWhen(r.expiresAt)}`}
-            {r.fromCache && ". Reused from an earlier search"}.
-          </p>
-        )}
-        {r?.stale && (
-          <p role="alert" className="mt-2 text-[14px] font-medium text-bad">
-            This offer is out of date. Approval will be refused until research is run again.
-          </p>
         )}
       </Section>
 
@@ -293,61 +326,62 @@ function ReviewSections({ p }: { p: Proposal }) {
 
 // ---------- decision ----------
 
-function DecisionStep({
+function DecisionPanel({
   p,
-  budget,
-  refreshBudget,
+  preview,
+  refreshPreview,
   onDecided,
   onConflict,
 }: {
   p: Proposal;
-  budget: Budget | null;
-  refreshBudget: () => Promise<void>;
+  preview: PreviewState;
+  refreshPreview: (fresh: boolean) => Promise<void>;
   onDecided: (p: Proposal) => void;
   onConflict: () => void;
 }) {
-  // Everything here resets when the revision or amount changes, because the parent re-keys this step.
+  // Everything here resets when the revision or amount changes, because the parent re-keys this panel.
   const [choice, setChoice] = useState<Decision | null>(null);
   const [note, setNote] = useState("");
   const [ack, setAck] = useState(false); // never checked by default
+  const [tried, setTried] = useState(false);
   const [pending, setPending] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [linking, setLinking] = useState(false);
   const [linked, setLinked] = useState<string | null>(null);
-  // The server's preview. Starts from the cached assessment in the proposal detail; refreshed before approval.
-  const [preview, setPreview] = useState<PreviewState>(
-    p.financialAssessment ? { kind: "ready", preview: p.financialAssessment } : { kind: "loading" },
-  );
   // One key per logical decision; a retry with the same decision, note and amount reuses it.
   const keyRef = useRef<{ sig: string; key: string } | null>(null);
 
   const amount = formatCents(p.expenseCents);
-  const gate = approvalGate(preview, p.revision, ack);
-  const fp: FinancialPreview | null = preview.kind === "ready" ? preview.preview : null;
+  const seller = p.lines[0]?.seller ?? null;
+  const gate = approvalGate(checking ? { kind: "loading" } : preview, p.revision, ack);
+  const fp = preview.kind === "ready" ? preview.preview : null;
   const needsMapping = !!fp?.blockingReasons.some((r) => r.code === "merchant_mapping_required");
+  const noteMissing = choice === "request_changes" && !note.trim();
 
-  async function refreshPreview() {
-    setPreview({ kind: "loading" });
-    try {
-      // refresh=true re-reads the Nessie sandbox account (a free read; no research, no purchase).
-      const next = await api.getFinancialPreview(p.id, { refresh: true });
-      setPreview({ kind: "ready", preview: next });
-      void refreshBudget();
-    } catch (e) {
-      setPreview({ kind: "error", message: normalizeError(e).message });
-    }
-  }
-
-  function choose(d: Decision) {
+  async function choose(d: Decision) {
     setChoice(d);
     setError(null);
+    setTried(false);
     setLinked(null);
-    if (d === "approve") void refreshPreview();
+    if (d === "approve") {
+      setChecking(true);
+      await refreshPreview(true); // a bank read so the figures above are current; never a purchase
+      setChecking(false);
+    }
   }
 
   async function submit() {
     if (!choice || pending) return;
-    if (choice === "approve" && !gate.enabled) return;
+    setTried(true);
+    if (noteMissing) {
+      document.getElementById("decision-note")?.focus();
+      return;
+    }
+    if (choice === "approve" && !gate.enabled) {
+      if (!ack) document.getElementById("approve-ack")?.focus();
+      return;
+    }
     const sig = `${p.id}|${p.revision}|${p.expenseCents}|${choice}|${note}`;
     if (keyRef.current?.sig !== sig) keyRef.current = { sig, key: newIdempotencyKey() };
     setPending(true);
@@ -368,7 +402,7 @@ function DecisionStep({
       else {
         setError(err);
         // The server refused (budget, offer freshness, mapping…): show its current view of the blockers.
-        if (choice === "approve") void refreshPreview();
+        void refreshPreview(false);
       }
     } finally {
       setPending(false);
@@ -376,14 +410,13 @@ function DecisionStep({
   }
 
   async function link() {
-    const seller = p.lines[0]?.seller;
     if (!seller || linking) return;
     setLinking(true);
     setError(null);
     try {
       const m = await api.createMerchantMapping(seller);
       setLinked(`${m.merchantName ?? "Sandbox merchant"} (${m.nessieMerchantId})`);
-      await refreshPreview();
+      await refreshPreview(true);
     } catch (e) {
       setError(normalizeError(e));
     } finally {
@@ -391,142 +424,114 @@ function DecisionStep({
     }
   }
 
-  if (!choice) {
-    return (
-      <Section title="Review">
-        <BudgetImpact preview={preview} budget={budget} onRefresh={refreshPreview} />
-        <p className="mb-4 mt-4 text-[14px] text-muted">
-          Check the proposal above, then choose. Nothing happens until you confirm on the next step.
-        </p>
-        <div className="space-y-3">
-          <Button onClick={() => choose("approve")}>Accept</Button>
-          <Button variant="quiet" onClick={() => choose("request_changes")}>Change</Button>
-          <Button variant="quiet" onClick={() => choose("reject")}>Deny</Button>
-        </div>
-        <p className="mt-3 text-[13px] text-muted">
-          Change sends your notes back to the employee so they can edit the request and resubmit.
-        </p>
-      </Section>
-    );
-  }
+  const confirmLabel = pending
+    ? "Saving…"
+    : choice === "approve"
+      ? `Approve ${amount}`
+      : choice === "reject"
+        ? "Reject proposal"
+        : "Send back for changes";
+  // The ticked-box reminder only shows after a try; real blockers show straight away.
+  const showGate = choice === "approve" && !!gate.reason && (tried || gate.reason !== "Tick the confirmation to approve.");
 
-  const label = DECISION_BUTTON[choice];
   return (
-    <Section title={`Confirm: ${label.toLowerCase()}`}>
-      <dl>
-        <KeyValue label="Proposal" value={p.requestTitle} />
-        <KeyValue label="Revision" value={p.revision} />
-        <KeyValue label="Proposed expense" value={amount} />
-      </dl>
-      {choice === "approve" && <div className="mt-3"><BudgetImpact preview={preview} budget={budget} onRefresh={refreshPreview} /></div>}
-
-      <div className="mt-4">
-        <label htmlFor="decision-note" className="mb-1.5 block text-[15px] font-medium">
-          {choice === "request_changes" ? "What needs to change?" : "Note (optional)"}
-        </label>
-        <textarea
-          id="decision-note"
-          rows={choice === "request_changes" ? 6 : 3}
-          className={inputClass}
-          value={note}
-          placeholder={choice === "request_changes" ? "Be specific: for example, choose a cheaper monitor, lower the quantity to 2, or add a warranty." : undefined}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <p className="mt-1 text-[13px] text-muted">
-          {choice === "request_changes" ? "The employee sees this and can edit the request and resubmit." : "The requester will see this note."}
-        </p>
+    <section aria-labelledby="decision-title" className="mb-4 rounded-2xl bg-paper p-4 shadow-[0_1px_2px_rgba(16,24,40,0.06),0_2px_8px_rgba(16,24,40,0.04)]">
+      <h2 id="decision-title" className="mb-3 text-[17px] font-semibold">Your decision</h2>
+      <div role="radiogroup" aria-label="Decision" className="grid grid-cols-3 gap-2">
+        {CHOICES.map((c) => {
+          const on = choice === c.value;
+          return (
+            <button
+              key={c.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => void choose(c.value)}
+              className={`min-h-12 rounded-xl px-2 text-[14px] font-semibold leading-tight ${
+                on ? (c.value === "reject" ? "bg-bad text-white" : "bg-accent text-white") : "bg-accent-soft text-accent active:bg-accent-soft-press"
+              }`}
+            >
+              {c.label}
+            </button>
+          );
+        })}
       </div>
+      <p className="mt-2 text-[13px] text-muted">
+        {choice === null
+          ? "Nothing is saved until you confirm below."
+          : choice === "approve"
+            ? "Approving records a simulated purchase in the Nessie sandbox. Nothing is ordered and no real money moves."
+            : choice === "request_changes"
+              ? "The employee sees your note, can revise the proposal and resubmit it as a new revision."
+              : "Rejecting closes this proposal. No purchase is recorded."}
+      </p>
 
-      {choice === "approve" && (
-        <label className="mt-4 flex items-start gap-3 text-[16px]">
-          <input
-            id="approve-ack"
-            type="checkbox"
-            className="mt-1 h-5 w-5 accent-[var(--accent)]"
-            checked={ack}
-            onChange={(e) => setAck(e.target.checked)}
-          />
-          <span>
-            I approve this simulated purchase for {amount} (revision {p.revision}) and understand that it commits this amount from the available company budget.
-          </span>
-        </label>
-      )}
-
-      {choice === "approve" && needsMapping && (
-        <div role="alert" className="mt-4 rounded-xl bg-orange-soft p-3 text-[14px]">
-          <p className="font-medium text-warn">No Nessie sandbox merchant is linked to {p.lines[0]?.seller ?? "this seller"}.</p>
-          <p className="mt-1 text-ink">
-            Approval needs one so the simulated purchase is booked against the right sandbox record. Nothing has been reserved.
-          </p>
+      {choice === "approve" && checking && <p className="mt-2 text-[13px] text-muted">Checking the latest bank figures…</p>}
+      {choice === "approve" && needsMapping && seller && (
+        <div className="mt-3 rounded-xl bg-orange-soft p-3 text-[14px]">
+          <p className="font-medium text-warn">No Nessie sandbox merchant is linked to {seller}.</p>
+          <p className="mt-1 text-ink">Approval needs one so the simulated purchase is booked against the right record. Nothing has been reserved.</p>
           <div className="mt-3">
             <Button variant="quiet" disabled={linking} onClick={link}>
-              {linking ? "Linking…" : `Create a sandbox merchant for ${p.lines[0]?.seller ?? "this seller"}`}
+              {linking ? "Linking…" : `Create a sandbox merchant for ${seller}`}
             </Button>
           </div>
         </div>
       )}
-      {linked && <p className="mt-4 text-[14px] text-ok">Linked to {linked}.</p>}
-      <ErrorNote error={error} />
+      {linked && <p className="mt-3 text-[14px] text-ok">Linked to {linked}.</p>}
 
-      {choice === "approve" && gate.reason && (
-        <p id="approve-gate" className="mt-3 text-[14px] text-muted">{gate.reason}</p>
-      )}
-      <div className="mt-4 space-y-3">
-        <Button
-          disabled={pending || (choice === "approve" && !gate.enabled) || (choice === "request_changes" && !note.trim())}
-          onClick={submit}
-        >
-          {pending ? "Working…" : choice === "approve" ? `Accept ${amount}` : choice === "reject" ? "Deny proposal" : "Send back to employee"}
-        </Button>
-        <Button variant="quiet" disabled={pending} onClick={() => setChoice(null)}>Back</Button>
-      </div>
-    </Section>
-  );
-}
-
-/** Server-calculated effect of approval. Runway's available budget is kept apart from Nessie's reported balance. */
-function BudgetImpact({ preview, budget, onRefresh }: { preview: PreviewState; budget: Budget | null; onRefresh: () => void }) {
-  if (preview.kind === "loading") return <Loading label="Checking the budget" />;
-  if (preview.kind === "error") {
-    return (
-      <div role="alert" className="rounded-xl bg-bad-soft p-3 text-[14px]">
-        <p className="font-medium text-bad">Budget check unavailable</p>
-        <p className="mt-1 text-ink">{preview.message}</p>
-        <button type="button" className="touch mt-1 text-[14px] font-medium text-accent" onClick={onRefresh}>Try again</button>
-      </div>
-    );
-  }
-  const f = preview.preview;
-  const fetched = f.freshness.fetchedAt ? formatWhen(f.freshness.fetchedAt) : null;
-  return (
-    <div>
-      <h3 className="mb-1 text-[15px] font-semibold">Budget impact</h3>
-      <dl>
-        <KeyValue label="Available budget now" value={f.currentAvailableCents === null ? "Unknown" : formatCents(f.currentAvailableCents)} />
-        <KeyValue label="This expense" value={formatCents(f.exactExpenseCents)} />
-        <KeyValue
-          label="Available after approval"
-          value={f.projectedAvailableCents === null ? "Unknown" : formatCents(f.projectedAvailableCents)}
-          note={f.reservationIncluded ? "This proposal’s reservation is already counted, so it isn’t subtracted again." : undefined}
-        />
-        {budget && budget.reportedBalanceCents !== null && (
-          <KeyValue label="Nessie reported balance" value={formatCents(budget.reportedBalanceCents)} note="The sandbox account’s balance. Not the same as available budget." />
-        )}
-      </dl>
-      <p className="mt-1 text-[13px] text-muted">
-        {f.label} {fetched ? `Bank data ${f.freshness.refreshedNow ? "refreshed" : "cached"} ${fetched}.` : "No bank data yet."}{" "}
-        <button type="button" className="font-medium text-accent" onClick={onRefresh}>Refresh</button>
-      </p>
-      {f.unknowns.length > 0 && <p className="mt-1 text-[13px] text-muted">Not included: {f.unknowns.join(", ")}.</p>}
-      {f.blockingReasons.length > 0 && (
-        <div role="alert" className="mt-2 rounded-xl bg-bad-soft p-3">
-          <p className="text-[14px] font-medium text-bad">Approval blocked</p>
-          <ul className="mt-1 list-disc pl-5 text-[14px] text-ink">
-            {f.blockingReasons.map((r) => <li key={r.code}>{r.message}</li>)}
-          </ul>
+      {choice && (
+        <div className="mt-4">
+          <label htmlFor="decision-note" className="mb-1.5 block text-[15px] font-medium">
+            {choice === "request_changes" ? "What needs to change? (required)" : "Note (optional)"}
+          </label>
+          <textarea
+            id="decision-note"
+            rows={choice === "request_changes" ? 5 : 3}
+            className={inputClass}
+            value={note}
+            placeholder={choice === "request_changes" ? "For example: choose a cheaper option, lower the quantity to 2, or add a warranty." : undefined}
+            aria-invalid={tried && noteMissing}
+            aria-describedby={tried && noteMissing ? "decision-note-error" : undefined}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          {tried && noteMissing && (
+            <p id="decision-note-error" role="alert" className="mt-1 text-[13px] text-bad">Say what the employee should change.</p>
+          )}
+          <p className="mt-1 text-[13px] text-muted">The requester sees this note with your decision.</p>
         </div>
       )}
-    </div>
+
+      {choice === "approve" && (
+        <>
+          <label className="mt-4 flex items-start gap-3 text-[16px]">
+            <input
+              id="approve-ack"
+              type="checkbox"
+              className="mt-1 h-5 w-5 shrink-0 accent-[var(--accent)]"
+              checked={ack}
+              onChange={(e) => setAck(e.target.checked)}
+              aria-describedby={showGate ? "approve-gate" : undefined}
+            />
+            <span>
+              I approve this simulated purchase for {amount} (revision {p.revision}) and understand that it commits this amount from the available company budget.
+            </span>
+          </label>
+          {showGate && (
+            <p id="approve-gate" role={tried ? "alert" : undefined} className="mt-2 text-[13px] font-medium text-bad">{gate.reason}</p>
+          )}
+        </>
+      )}
+
+      <ErrorNote error={error} />
+      {choice && (
+        <div className="mt-4">
+          <Button disabled={pending || (choice === "approve" && (checking || (!gate.enabled && ack)))} onClick={submit}>
+            {confirmLabel}
+          </Button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -552,27 +557,32 @@ function Outcome({ p, reload }: { p: Proposal; reload: () => Promise<void> }) {
   }
 
   return (
-    <Section title="Outcome">
-      <dl>
-        <KeyValue label="Decision" value={DECISION_LABEL[p.decision]} />
-        <KeyValue label="Purchase record" value={ex ? <ExecutionStatusText status={ex.status} /> : "Not started"} />
-      </dl>
-      {p.decisionNote && <p className="mt-2 text-[16px]"><span className="text-muted">Note: </span>{p.decisionNote}</p>}
-      {ex && (
+    <Section title="Decision saved">
+      <DecisionRecord p={p} />
+      {p.decision === "changes_requested" && (
+        <p className="mt-2 text-[13px] text-muted">The employee can revise and resubmit. A new revision appears in Approvals.</p>
+      )}
+      {p.decision === "approved" && (
         <div className="mt-3">
-          <ExecutionAmounts d={ex} />
-          <ExecutionWarnings d={ex} />
-          {(ex.status === "uncertain" || ex.status === "queued" || ex.status === "submitting") && (
-            <div className="mt-3">
-              <ErrorNote error={error} />
-              <Button variant="quiet" disabled={checking} onClick={check}>{checking ? "Checking…" : "Check status"}</Button>
-              <p className="mt-1.5 text-[13px] text-muted">This only looks up the result. It never sends the purchase again.</p>
-            </div>
+          <dl>
+            <KeyValue label="Purchase record" value={ex ? <ExecutionStatusText status={ex.status} /> : "Not started"} />
+          </dl>
+          {ex && (
+            <>
+              <ExecutionAmounts d={ex} />
+              <ExecutionWarnings d={ex} />
+              {(ex.status === "uncertain" || ex.status === "queued" || ex.status === "submitting") && (
+                <div className="mt-3">
+                  <ErrorNote error={error} />
+                  <Button variant="quiet" disabled={checking} onClick={check}>{checking ? "Checking…" : "Check status"}</Button>
+                  <p className="mt-1.5 text-[13px] text-muted">This only looks up the result. It never sends the purchase again.</p>
+                </div>
+              )}
+              <Link href={`/purchases/${ex.id}`} className="touch mt-2 text-[15px] font-medium text-accent">View purchase record</Link>
+            </>
           )}
-          <Link href={`/purchases/${ex.id}`} className="touch mt-2 text-[15px] font-medium text-accent">View purchase record</Link>
         </div>
       )}
-      <SandboxNote />
     </Section>
   );
 }

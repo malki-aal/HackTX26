@@ -15,7 +15,6 @@ import {
   Loading,
   Page,
   PageHeader,
-  SandboxNote,
   Section,
   normalizeError,
   useLoad,
@@ -140,7 +139,6 @@ function PurchaseRecord() {
               <KeyValue label="Record created" value={formatDate(d.createdAt)} />
               <KeyValue label="Last updated" value={formatDate(d.updatedAt)} />
             </dl>
-            <SandboxNote />
           </Section>
 
           <div className="no-print border-t border-rule pt-5">

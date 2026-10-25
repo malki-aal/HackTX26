@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { elapsedLabel, researchProgress } from "@/lib/research";
 import { api, type ApiError, type Offer, type PurchaseRequest, type RequestItem, type Run } from "@/lib/api";
+import { DecisionRecord } from "@/components/review";
 import { HIGHLIGHT_LABEL, stageIndex, stages } from "@/lib/labels";
 import { itemLine } from "@/lib/format";
 import { formatCents } from "@/lib/money";
@@ -96,11 +97,13 @@ function StageBar({ current }: { current: number }) {
 
 /** The executive's notes, shown first so the employee knows exactly what to edit. */
 function ChangesNote({ proposalId, requestId }: { proposalId: string; requestId: string }) {
-  const { data } = useLoad(() => api.getProposal(proposalId), [proposalId]);
+  const { data, error, reload } = useLoad(() => api.getProposal(proposalId), [proposalId]);
   return (
     <Section title="Changes requested">
-      <p className="text-[16px]">{data?.decisionNote || "The executive asked for changes."}</p>
-      <p className="mt-2 text-[14px] text-muted">Pick your offers again below, adjust the amount or your case, then resubmit.</p>
+      {data ? <DecisionRecord p={data} /> : <ErrorNote error={error} onRetry={reload} />}
+      <p className="mt-2 text-[14px] text-muted">
+        Select an offer below (the same one or another), then adjust the amount or your case and resubmit.
+      </p>
       <Link href={`/requests/${requestId}/proposal`} className="touch text-[15px] font-medium text-accent">View proposal and status</Link>
     </Section>
   );
