@@ -45,11 +45,6 @@ function Landing({ children }: { children: React.ReactNode }) {
             {children}
           </section>
         </main>
-        <footer className="flex min-h-16 items-center py-3">
-          <p className="rounded-full bg-paper px-4 py-2 text-[13px] text-muted shadow-[0_6px_18px_rgba(20,35,26,0.12)]">
-            Your role is set by Runway’s server, not by anything you choose here.
-          </p>
-        </footer>
       </div>
     </SignInStage>
   );
