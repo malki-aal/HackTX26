@@ -9,10 +9,12 @@ import { GoogleButton } from "@/components/google-button";
 import { SignInStage } from "@/components/sign-in-stage";
 import { authMode, homeFor } from "@/lib/auth/config";
 import { useIdentity } from "@/lib/auth/identity";
+import { signInErrorMessage } from "@/lib/auth/sign-in-errors";
 
 const TAGLINE = "Purchasing for small engineering and prototyping teams: researched options, human approval.";
 
-const REDIRECT_TIMEOUT_MS = 15000;
+// Clerk's development instance has taken over 20 s to start a sign-in, so allow that before calling it stalled.
+const REDIRECT_TIMEOUT_MS = 25000;
 /** Most a stale-session sign-out may delay sign-in. */
 const SIGN_OUT_LIMIT_MS = 4000;
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -105,24 +107,40 @@ function ClerkSignIn() {
 
   // The step the sign-in reached, so a stall can say where it stopped.
   const stepRef = useRef("starting");
+  // Synchronous lock: React state updates too late to stop a fast double tap from starting two
+  // sign-ins (each one costs a request to Clerk's rate-limited development service).
+  const startingRef = useRef(false);
 
-  // If the browser hasn't left for Google after a while, stop waiting and say why instead of spinning forever.
+  // If the browser hasn't left for Google after a while, stop waiting and say why instead of spinning
+  // forever. A tab in the background is checked again when it becomes visible, never left stuck.
   useEffect(() => {
     if (!redirecting) return;
-    const t = setTimeout(() => {
-      if (document.visibilityState === "hidden") return; // already navigating away
+    const stalled = () => {
+      startingRef.current = false;
       setRedirecting(false);
       setFailure(
         inAppBrowser
           ? "Google didn’t open. This page is open inside another app, and Google blocks sign-in there. Open it in Safari or Chrome and try again."
-          : `Google didn’t open (stopped while ${stepRef.current}). Check your connection, turn off content blockers for this site, and try again.`,
+          : `Google didn’t open (stopped while ${stepRef.current}). The sign-in service may be slow; wait a moment, then try again once.`,
       );
+    };
+    let onVisible: (() => void) | null = null;
+    const t = setTimeout(() => {
+      if (document.visibilityState !== "hidden") return stalled();
+      onVisible = () => {
+        if (document.visibilityState === "visible") stalled();
+      };
+      document.addEventListener("visibilitychange", onVisible);
     }, REDIRECT_TIMEOUT_MS);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      if (onVisible) document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [redirecting, inAppBrowser]);
 
   async function start() {
-    if (redirecting) return;
+    if (startingRef.current || redirecting) return;
+    startingRef.current = true;
     setFailure(null);
     setRedirecting(true);
     try {
@@ -148,7 +166,8 @@ function ClerkSignIn() {
       });
       stepRef.current = "opening Google";
     } catch (e) {
-      setFailure(e instanceof Error ? e.message : "Couldn’t start Google sign-in.");
+      startingRef.current = false;
+      setFailure(signInErrorMessage(e));
       setRedirecting(false);
     }
   }
