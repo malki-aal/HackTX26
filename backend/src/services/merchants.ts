@@ -127,6 +127,8 @@ export async function purchaseHistory(ctx: AppContext) {
   const accountId = resolveAccountId(ctx);
   if (!accountId) throw new AppError("BANK_CHECK_UNAVAILABLE", "No Nessie account configured", 503, false);
   const purchases = await ctx.adapters.bank.listPurchases(accountId);
+  // Approvals now transfer to the employee; their payment to the seller is from the employee's account.
+  const transfers = await ctx.adapters.bank.listTransfers(accountId).catch(() => []);
   const execs = ctx.db.prepare("SELECT e.id, e.external_id, e.proposal_id, e.amount_cents, p.request_id FROM executions e JOIN proposals p ON p.id = e.proposal_id WHERE e.external_id IS NOT NULL").all() as Array<{ id: string; external_id: string; proposal_id: string; amount_cents: number; request_id: string }>;
   const byExternal = new Map(execs.map((e) => [e.external_id, e]));
   const mappings = listMappings(ctx);
@@ -158,11 +160,30 @@ export async function purchaseHistory(ctx: AppContext) {
       runway: e ? { executionId: e.id, proposalId: e.proposal_id, requestId: e.request_id, approvedAmountCents: e.amount_cents, amountDiscrepancyCents: p.amountCents === null ? null : e.amount_cents - p.amountCents } : null,
     });
   }
+  const payments = new Map(
+    (ctx.db.prepare("SELECT execution_id, status, external_id, amount_cents FROM employee_payments").all() as Array<{ execution_id: string; status: string; external_id: string | null; amount_cents: number }>).map((p) => [p.execution_id, p]),
+  );
+  const transferItems = transfers.map((t) => {
+    const e = byExternal.get(t.id);
+    const pay = e ? payments.get(e.id) : undefined;
+    return {
+      transferId: t.id,
+      payeeAccountId: t.payeeId,
+      providerStatus: t.status,
+      transferDate: t.date,
+      providerStoredAmountCents: t.amountCents,
+      description: t.description,
+      origin: e ? ("runway" as const) : ("external" as const),
+      runway: e ? { executionId: e.id, proposalId: e.proposal_id, requestId: e.request_id, approvedAmountCents: e.amount_cents } : null,
+      employeePayment: pay ? { status: pay.status, purchaseId: pay.external_id, amountCents: pay.amount_cents } : null,
+    };
+  });
   return {
     accountId,
     source: ctx.adapters.bank.source,
     fetchedAt: ctx.now().toISOString(),
     purchases: items,
+    transfers: transferItems,
     disclaimer: "Records of simulated purchases on the company's Nessie sandbox account. They are not merchant orders, receipts, shipments or deliveries.",
   };
 }

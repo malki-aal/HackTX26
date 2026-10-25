@@ -157,7 +157,7 @@ describe("confirmation record, activity and purchase history", () => {
       account: { masked: "•••• 3333" },
       merchant: { researchedSeller: p.top.seller, mapped: true, provenance: "created_sandbox_merchant" },
       amounts: { approvedAmountCents: 79656, providerStoredAmountCents: 79600, discrepancyCents: 56, currency: "USD" },
-      provider: { purchaseId: "fixture_purchase_1", status: "pending" },
+      provider: { kind: "transfer", transferId: "fixture_transfer_1", purchaseId: null, status: "pending" },
       statuses: { decision: "approved", execution: "recorded", provider: "pending" },
     });
     for (const k of ["submittedAt", "approvedAt", "providerSubmittedAt", "recordedAt", "providerRetrievedAt"]) expect(c.timestamps[k]).toBeTruthy();
@@ -189,9 +189,9 @@ describe("confirmation record, activity and purchase history", () => {
     const d = await approve(h, p.proposalId);
     h.bank.state.purchases.push({ id: "external_1", merchantId: "fixture_merchant_existing", amountCents: 1200, rawAmount: 12, status: "completed", medium: "balance", description: "Coffee", date: "2026-10-20" });
     const hist = (await h.call("GET", "/api/v1/purchase-history", undefined, EXEC)).body.data;
-    const ours = hist.purchases.find((x: any) => x.purchaseId === "fixture_purchase_1");
-    expect(ours).toMatchObject({ origin: "runway", runway: { executionId: d.body.data.execution.id, proposalId: p.proposalId } });
-    expect(ours.merchant.mappedSeller).toBe(p.top.seller);
+    // Approvals are transfers to the employee now; they appear as Runway transfers out of the company account.
+    const ours = hist.transfers.find((x: any) => x.transferId === "fixture_transfer_1");
+    expect(ours).toMatchObject({ origin: "runway", runway: { executionId: d.body.data.execution.id, proposalId: p.proposalId }, employeePayment: null });
     expect(hist.purchases.find((x: any) => x.purchaseId === "external_1")).toMatchObject({ origin: "external", runway: null, merchant: { name: "[FIXTURE] Existing sandbox merchant" } });
   });
 });

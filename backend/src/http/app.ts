@@ -13,6 +13,7 @@ import { listEvents } from "../services/events.js";
 import { readFinancialContext } from "../services/budget.js";
 import { createProposal, decideProposal, financialPreview, getProposalView, listProposals, submitProposal } from "../services/proposals.js";
 import { getExecutionView, reconcileExecution } from "../services/executions.js";
+import { checkPayment, payForExecution, walletView } from "../services/payments.js";
 import { integrationStatuses } from "../services/status.js";
 import { sessionToolHosts } from "../agent/eveRunner.js";
 import { CATEGORIES, getCategory } from "../domain/categories.js";
@@ -120,6 +121,11 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
   // ---- Current user (signed in; works before access is granted) ----
   app.get("/api/v1/me", async (req, reply) => ok(req, reply, currentUserView(ctx, await who(req))));
   app.patch("/api/v1/me", async (req, reply) => ok(req, reply, patchMe(ctx, await who(req), req.body)));
+  // The signed-in employee's sandbox account: money received from approvals and paid to sellers.
+  app.get("/api/v1/me/wallet", async (req, reply) => {
+    const p = await member(req);
+    return ok(req, reply, await walletView(ctx, p.userId));
+  });
 
   // ---- Status and agent configs ----
   app.get("/api/v1/integrations/status", async (req, reply) => {
@@ -265,6 +271,19 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
     const p = await member(req);
     executionAccess(ctx, p, req.params.id, "reconcile");
     return ok(req, reply, await reconcileExecution(ctx, req.params.id, stripActor(req.body), p.userId));
+  });
+  // ---- Employee pays the seller from the account the approved money arrived in ----
+  app.post<{ Params: P }>("/api/v1/executions/:id/pay", async (req, reply) => {
+    const p = await member(req);
+    executionAccess(ctx, p, req.params.id, "read");
+    const key = req.headers["idempotency-key"];
+    return ok(req, reply, await payForExecution(ctx, req.params.id, p, Array.isArray(key) ? key[0] : key));
+  });
+  app.post<{ Params: P; Body: { action?: string } }>("/api/v1/executions/:id/payment/check", async (req, reply) => {
+    const p = await member(req);
+    executionAccess(ctx, p, req.params.id, "read");
+    const action = (stripActor(req.body) as { action?: string } | undefined)?.action === "mark_failed" ? "mark_failed" : "check";
+    return ok(req, reply, await checkPayment(ctx, req.params.id, p, action));
   });
 
   // ---- Projects (multi-material lines) ----

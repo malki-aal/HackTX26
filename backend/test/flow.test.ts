@@ -31,9 +31,14 @@ describe("end-to-end flow", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.decisionState).toBe("approved");
     expect(res.body.data.execution.status).toBe("recorded");
-    expect(res.body.data.execution.externalReference.purchaseId).toMatch(/^fixture_purchase_/);
+    // Approval moves the money to the employee's sandbox account; paying the seller is the employee's step.
+    expect(res.body.data.execution).toMatchObject({ kind: "transfer", payment: null });
+    expect(res.body.data.execution.externalReference.transferId).toMatch(/^fixture_transfer_/);
+    expect(res.body.data.execution.externalReference.purchaseId).toBeNull();
     expect(h.bank.createCalls).toBe(1);
-    expect(h.bank.state.purchases[0]!.amountCents).toBe(p.amount);
+    expect(h.bank.state.transfers[0]!.amountCents).toBe(p.amount);
+    expect(h.bank.state.purchases).toHaveLength(0);
+    expect(h.bank.state.employeeAccounts[0]!.balanceCents).toBe(p.amount);
 
     const events = await h.call("GET", `/api/v1/requests/${p.id}/events`);
     const types = events.body.data.map((e: any) => e.type);
@@ -355,9 +360,9 @@ describe("execution failures and recovery", () => {
     expect(exe.status).toBe("uncertain");
     const rec = await h.call("POST", `/api/v1/executions/${exe.id}/reconcile`, {}, EXEC);
     expect(rec.body.data.status).toBe("recorded");
-    expect(rec.body.data.externalReference.purchaseId).toBe("fixture_purchase_1");
+    expect(rec.body.data.externalReference.transferId).toBe("fixture_transfer_1");
     expect(h.bank.createCalls).toBe(1);
-    expect(h.bank.state.purchases.length).toBe(1);
+    expect(h.bank.state.transfers.length).toBe(1);
   });
 
   it("restart turns an in-flight submission into uncertain and preserves saved state", async () => {

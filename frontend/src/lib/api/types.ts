@@ -258,10 +258,24 @@ export interface MerchantInfo {
   nessieMerchantName?: string | null;
 }
 
+/** The employee paying the seller from their account (after an approval's transfer). */
+export interface EmployeePayment {
+  status: ExecutionState;
+  amountCents: number;
+  purchaseId: string | null;
+  lastError: string | null;
+  recordedAt: string | null;
+}
+
 export interface ExecutionDetail {
   id: string;
   proposalId: string;
   status: ExecutionState;
+  /** "transfer": company → employee, then the employee pays the seller. "purchase": older, company paid the merchant. */
+  kind: "transfer" | "purchase";
+  /** Who the money was sent to (transfers only). */
+  payee?: { displayName: string | null; accountMasked: string | null } | null;
+  payment?: EmployeePayment | null;
   providerStatus: string | null;
   /** Amount the executive approved (user-confirmed). */
   amountCents: number;
@@ -420,4 +434,29 @@ export interface Me {
   status: "active" | "pending";
   role: "employee" | "executive" | null;
   company: { id: string; name: string } | null;
+}
+
+export interface WalletEntry {
+  type: "received" | "paid";
+  executionId: string;
+  proposalId: string;
+  requestId: string | null;
+  title: string | null;
+  amountCents: number;
+  status: ExecutionState;
+  at: string | null;
+  seller: string | null;
+  /** Received entries: the money is here and the seller hasn't been paid yet. */
+  canPay?: boolean;
+}
+
+/** The signed-in employee's Nessie sandbox account (Runway's record; Nessie's balance shown separately). */
+export interface Wallet {
+  account: { masked: string | null } | null;
+  runwayBalanceCents: number;
+  receivedCents: number;
+  paidCents: number;
+  reportedBalanceCents: number | null;
+  entries: WalletEntry[];
+  disclaimer: string;
 }

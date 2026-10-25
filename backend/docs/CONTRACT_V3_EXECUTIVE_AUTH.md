@@ -239,3 +239,19 @@ Header `Idempotency-Key: <uuid>`. Create one key per decision attempt and reuse 
 - Presets contain no products, prices, merchants, stock or delivery claims.
 - `frontend/src/lib/scenarios/scenarios.json` is an identical copy for sample-data mode, and a backend test fails if they differ.
 - `POST /requests` accepts an optional `presetId` as debugging metadata. The server still parses the edited text.
+
+## 13. Employee wallet: approval transfers money, the employee pays the seller (additive)
+- **Approval** now creates an execution with `kind: "transfer"`: a Nessie sandbox **transfer** from the company account to the requester's own sandbox account.
+  - The account (customer plus checking, starting at $0) is created on their first approval.
+  - The company budget moves once, when the transfer is recorded, using the same reservation and ledger rules as before.
+  - Older executions keep `kind: "purchase"`, meaning the company paid the merchant directly.
+- **`POST /executions/:id/pay`** (requires an `Idempotency-Key` header) lets the employee who received the money pay the seller.
+  - It records a Nessie sandbox **purchase** from their account to the mapped merchant.
+  - It's only allowed once the transfer is `recorded`, and there's at most one payment per transfer (unique in the database).
+  - The same key returns the same payment. A different key can't pay again.
+  - An ambiguous result is `uncertain` (409 `PAYMENT_UNCERTAIN` on a new attempt) until **`POST /executions/:id/payment/check`** finds it by reference. It's never re-sent.
+  - Paying never touches the company budget again.
+- **`GET /me/wallet`** returns `runwayBalanceCents`, `receivedCents`, `paidCents`, Nessie's `reportedBalance` (shown separately), and `entries[]`.
+  - Each entry is `type` (`received` / `paid`), `amountCents`, `status`, `at`, `title`, `seller`, and `canPay`.
+- **Execution view** adds `kind`, `payee`, `payment`, and `externalReference.transferId`. `externalReference.purchaseId` stays the merchant purchase (the employee's payment for transfers).
+- **Purchase history** adds `transfers[]`, linked to Runway executions and the employee's payment.

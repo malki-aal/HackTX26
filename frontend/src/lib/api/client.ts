@@ -1,5 +1,6 @@
 import type {
   ActivityPage,
+  Wallet,
   FinancialPreview,
   Me,
   AgentConfig,
@@ -70,6 +71,12 @@ export interface RunwayApi {
   reconcile(executionId: string, action: "check" | "mark_failed"): Promise<ExecutionDetail>;
   /** `fresh: false` reads the saved snapshot instead of asking the bank again. */
   getBudget(opts?: { fresh?: boolean }): Promise<Budget>;
+  /** The signed-in employee's sandbox account: approvals received (+) and payments to sellers (−). */
+  getWallet(): Promise<Wallet>;
+  /** Employee pays the seller from the money an approval sent them. Reuse the key when retrying. */
+  payExecution(executionId: string, idempotencyKey: string): Promise<ExecutionDetail>;
+  /** Looks up an uncertain payment by reference. Never pays again. */
+  checkPayment(executionId: string): Promise<ExecutionDetail>;
   /** Executive action: link a seller to a new Nessie sandbox merchant. Approval requires a mapping. */
   createMerchantMapping(seller: string): Promise<{ seller: string; merchantName: string | null; nessieMerchantId: string }>;
   listAgentConfigs(): Promise<AgentConfig[]>;

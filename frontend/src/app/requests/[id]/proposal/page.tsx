@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { api, type ApiError, type Offer, type Proposal, type ProposalLine } from "@/lib/api";
+import { api, type ExecutionDetail, type ApiError, type Offer, type Proposal, type ProposalLine } from "@/lib/api";
 import { ExecutionAmounts, ExecutionStatusText, ExecutionWarnings } from "@/components/execution";
 import { DecisionRecord } from "@/components/review";
+import { PayButton } from "@/components/wallet";
 import { formatCents, isSafeHttpUrl, parseDollarsToCents } from "@/lib/money";
 import { parseSelectionQuery, readSelection } from "@/lib/selection";
 import { proposedCost } from "@/lib/proposal-cost";
@@ -31,6 +32,29 @@ export default function ProposalPage() {
     <Suspense fallback={<Page><Loading /></Page>}>
       <ProposalInner />
     </Suspense>
+  );
+}
+
+/** After approval: the money that arrived in the employee's account (+) and their payment to the seller (−). */
+function MoneyFlow({ d, onPaid }: { d: ExecutionDetail; onPaid: () => void }) {
+  const seller = d.merchant.researchedSeller;
+  const paid = d.payment;
+  return (
+    <div className="mt-3 rounded-xl bg-raised p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[15px]">{d.status === "recorded" ? "Received in your Runway account" : "Sending to your Runway account"}</span>
+        <span className={`font-semibold tabular-nums ${d.status === "recorded" ? "text-ok" : "text-muted"}`}>+{formatCents(d.amountCents)}</span>
+      </div>
+      {paid && (
+        <div className="mt-1 flex items-baseline justify-between gap-3">
+          <span className="text-[15px]">{paid.status === "recorded" ? `Paid ${seller ?? "seller"}` : `Paying ${seller ?? "seller"} · ${paid.status === "uncertain" ? "checking" : paid.status}`}</span>
+          <span className={`font-semibold tabular-nums ${paid.status === "recorded" ? "text-bad" : "text-muted"}`}>−{formatCents(paid.amountCents)}</span>
+        </div>
+      )}
+      {d.status === "recorded" && (!paid || paid.status === "failed") && (
+        <PayButton executionId={d.id} seller={seller} amountCents={d.amountCents} onPaid={onPaid} />
+      )}
+    </div>
   );
 }
 
@@ -224,6 +248,9 @@ function ProposalInner() {
                 </p>
                 <Link href={`/requests/${id}`} className="touch text-[15px] font-medium text-accent">Revise and resubmit</Link>
               </div>
+            )}
+            {submitted.executionDetail?.kind === "transfer" && (
+              <MoneyFlow d={submitted.executionDetail} onPaid={() => void existing.refresh()} />
             )}
             {submitted.executionDetail && (
               <div className="mt-3">

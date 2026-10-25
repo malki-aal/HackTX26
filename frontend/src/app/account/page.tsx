@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useIdentity } from "@/lib/auth/identity";
+import { WalletCard } from "@/components/wallet";
 import { formatCents } from "@/lib/money";
 import { ErrorNote, KeyValue, Loading, Page, PageHeader, Section, formatWhen, useLoad } from "@/components/ui";
 
@@ -90,6 +91,9 @@ export default function AccountPage() {
         )}
       </Section>
 
+      {!isExecutive && <WalletCard />}
+
+      {isExecutive && (
       <Section title="Past purchases">
         {activity.loading && <Loading />}
         <ErrorNote error={activity.error} onRetry={activity.reload} />
@@ -110,6 +114,7 @@ export default function AccountPage() {
           ))}
         </ul>
       </Section>
+      )}
 
       {isExecutive && (
       <Section title="Company budget">

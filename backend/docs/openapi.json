@@ -2732,6 +2732,7 @@
                   "IDENTITY_FIELD_NOT_ALLOWED",
                   "TERMS_CHANGED",
                   "UNRESOLVED_REQUIREMENTS",
+                  "PAYMENT_UNCERTAIN",
                   "SELF_APPROVAL_NOT_ALLOWED",
                   "INTERNAL_ERROR"
                 ]
@@ -7218,6 +7219,7 @@
           "IDENTITY_FIELD_NOT_ALLOWED",
           "TERMS_CHANGED",
           "UNRESOLVED_REQUIREMENTS",
+          "PAYMENT_UNCERTAIN",
           "SELF_APPROVAL_NOT_ALLOWED",
           "INTERNAL_ERROR"
         ]

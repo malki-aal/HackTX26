@@ -61,7 +61,10 @@ export function confirmationRecord(ctx: AppContext, proposalId: string) {
       providerStoredAmountCents: exe?.providerStoredAmountCents ?? null,
       discrepancyCents: exe?.amountDiscrepancyCents ?? null,
     },
-    provider: exe?.externalReference ? { purchaseId: exe.externalReference.purchaseId, status: exe.providerStatus, purchaseDate: exe.providerPurchaseDate } : null,
+    // kind "transfer": transferId is company → employee; purchaseId appears once the employee pays the seller.
+    provider: exe?.externalReference
+      ? { kind: exe.kind, transferId: exe.externalReference.transferId, purchaseId: exe.externalReference.purchaseId, status: exe.providerStatus, purchaseDate: exe.providerPurchaseDate, payment: exe.payment }
+      : null,
     statuses: {
       decision: p.decisionState,
       execution: exe?.status ?? "not_started",

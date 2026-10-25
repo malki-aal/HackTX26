@@ -567,7 +567,22 @@ function Outcome({ p, reload }: { p: Proposal; reload: () => Promise<void> }) {
       {p.decision === "approved" && (
         <div className="mt-3">
           <dl>
-            <KeyValue label="Purchase record" value={ex ? <ExecutionStatusText status={ex.status} /> : "Not started"} />
+            {ex?.kind === "transfer" ? (
+              <>
+                <KeyValue
+                  label="Sent to employee"
+                  value={<ExecutionStatusText status={ex.status} />}
+                  note={`${ex.payee?.displayName ?? "Requester"}${ex.payee?.accountMasked ? ` · ${ex.payee.accountMasked}` : ""} · Nessie sandbox transfer`}
+                />
+                <KeyValue
+                  label="Employee paid seller"
+                  value={ex.payment ? <ExecutionStatusText status={ex.payment.status} /> : "Not yet"}
+                  note={ex.payment?.status === "recorded" ? `${ex.merchant.researchedSeller ?? "Seller"} · simulated purchase` : "The employee pays the seller from their account."}
+                />
+              </>
+            ) : (
+              <KeyValue label="Purchase record" value={ex ? <ExecutionStatusText status={ex.status} /> : "Not started"} />
+            )}
           </dl>
           {ex && (
             <>

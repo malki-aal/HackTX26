@@ -345,4 +345,47 @@ ALTER TABLE decisions ADD COLUMN confirmed_at TEXT;
 ALTER TABLE decisions ADD COLUMN confirmation_statement TEXT;
 `,
   },
+  {
+    version: 6,
+    sql: `
+-- Approval moves money to the employee: an execution is now a company -> employee transfer.
+-- Older executions stay 'purchase' (company paid the merchant directly) and keep their meaning.
+ALTER TABLE executions ADD COLUMN kind TEXT NOT NULL DEFAULT 'purchase' CHECK (kind IN ('purchase', 'transfer'));
+ALTER TABLE executions ADD COLUMN payee_user_id TEXT;
+ALTER TABLE executions ADD COLUMN payee_account_id TEXT;
+
+-- One Nessie sandbox customer + checking account per employee, created on their first approval.
+CREATE TABLE employee_accounts (
+  user_id TEXT PRIMARY KEY,
+  mode TEXT NOT NULL,
+  customer_id TEXT,
+  account_id TEXT,
+  account_masked TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- The employee paying the seller from their account. At most one payment per approved transfer.
+CREATE TABLE employee_payments (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL UNIQUE REFERENCES executions(id),
+  proposal_id TEXT NOT NULL REFERENCES proposals(id),
+  user_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  merchant_id TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  description TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('submitting', 'recorded', 'failed', 'uncertain')),
+  provider_status TEXT,
+  external_id TEXT,
+  provider_amount TEXT,
+  last_error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 1,
+  idempotency_key TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  recorded_at TEXT,
+  updated_at TEXT NOT NULL
+);
+`,
+  },
 ];
