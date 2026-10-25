@@ -15,8 +15,6 @@ const TAGLINE = "Purchasing for small engineering and prototyping teams: researc
 const REDIRECT_TIMEOUT_MS = 15000;
 /** Most a stale-session sign-out may delay sign-in. */
 const SIGN_OUT_LIMIT_MS = 4000;
-/** How long to let Clerk's own redirect start before navigating to Google ourselves. */
-const NAVIGATE_GRACE_MS = 1500;
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Browsers built into other apps. Google refuses OAuth sign-in inside them. */
@@ -93,7 +91,7 @@ function ClerkSignIn() {
   const { identity, retry } = useIdentity();
   const { isSignedIn } = useAuth();
   const clerk = useClerk();
-  const { signIn, errors } = useSignIn();
+  const { errors } = useSignIn();
   const router = useRouter();
   const params = useSearchParams();
   const [redirecting, setRedirecting] = useState(false);
@@ -134,32 +132,21 @@ function ClerkSignIn() {
         stepRef.current = "clearing an old session";
         await Promise.race([clerk.signOut(), wait(SIGN_OUT_LIMIT_MS)]);
       }
+      const signInResource = clerk.client?.signIn;
+      if (!signInResource) {
+        stepRef.current = "loading Clerk";
+        throw new Error("Sign-in isn’t ready yet. Reload the page and try again.");
+      }
+      // Clerk's redirect flow: it records the Google strategy and sends the browser to Google itself.
+      // (The newer signIn.sso() returned without redirecting on several devices.)
       stepRef.current = "waiting for Clerk";
       const origin = window.location.origin;
-      const { error } = await signIn.sso({
+      await signInResource.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: `${origin}/continue`,
-        redirectCallbackUrl: `${origin}/sso-callback`,
+        redirectUrl: `${origin}/sso-callback`,
+        redirectUrlComplete: `${origin}/continue`,
       });
-      if (error) {
-        setFailure(error.message || "Couldn’t start Google sign-in.");
-        setRedirecting(false);
-        return;
-      }
-      // Normally the browser is already leaving for Google. If Clerk answered but nothing moved, find out why.
-      const attempt = clerk.client?.signIn;
-      const status = attempt?.status ?? "unknown";
-      stepRef.current = `opening Google (Clerk status: ${status})`;
-      if (status === "needs_protect_check") {
-        setFailure("Clerk asked for a security check that couldn’t be shown here. Reload the page and try again, or try another browser.");
-        setRedirecting(false);
-        return;
-      }
-      const google = attempt?.firstFactorVerification?.externalVerificationRedirectURL;
-      if (google) {
-        await wait(NAVIGATE_GRACE_MS);
-        if (document.visibilityState === "visible") window.location.assign(google.toString());
-      }
+      stepRef.current = "opening Google";
     } catch (e) {
       setFailure(e instanceof Error ? e.message : "Couldn’t start Google sign-in.");
       setRedirecting(false);
@@ -218,8 +205,6 @@ function ClerkSignIn() {
         </p>
       )}
       <GoogleButton onClick={start} busy={redirecting} />
-      {/* Clerk's bot protection renders its challenge here when a device needs one. Without it, sign-in can stall. */}
-      <div id="clerk-captcha" className="mt-3 empty:hidden" />
       <div role="status" aria-live="polite" className="sr-only">
         {redirecting ? "Redirecting to Google" : ""}
       </div>
