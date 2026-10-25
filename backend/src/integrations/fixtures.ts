@@ -83,7 +83,7 @@ export function fixtureCatalog(category: string, now: Date): RawShoppingItem[] {
       ];
     case "countertop_blender":
       return [
-        { position: 1, title: "[FIXTURE] Commercial Countertop Blender, 64 fl oz Container, 1500W", product_id: "bl1", source: "Fixture Restaurant Supply", price: "$189.00", extracted_price: 189, delivery: "Free delivery " + inDays(2).replace("Delivery ", ""), product_link: link("bl1") },
+        { position: 1, title: "[FIXTURE] Commercial Countertop Blender, 64 fl oz Container, 1500W", snippet: "Rated for commercial use in cafés and bars.", product_id: "bl1", source: "Fixture Restaurant Supply", price: "$189.00", extracted_price: 189, delivery: "Free delivery " + inDays(2).replace("Delivery ", ""), product_link: link("bl1") },
         { position: 2, title: "[FIXTURE] Professional 72 oz Countertop Blender, 1400 Watt", product_id: "bl2", source: "Fixture Kitchen", price: "$129.00", extracted_price: 129, delivery: inDays(2), product_link: link("bl2") },
         { position: 3, title: "[FIXTURE] Replacement 64 oz Pitcher with Lid for Commercial Blender", product_id: "bl3", source: "Fixture Parts", price: "$39.99", extracted_price: 39.99, delivery: inDays(2), product_link: link("bl3") },
         { position: 4, title: "[FIXTURE] Personal Blender with 2 To-Go Cups, 20 oz", product_id: "bl4", source: "Fixture Home", price: "$34.99", extracted_price: 34.99, delivery: inDays(1), product_link: link("bl4") },

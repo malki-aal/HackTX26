@@ -1,0 +1,638 @@
+{
+ "note": "Retained (trimmed) SerpApi google_shopping items and product-detail responses from live run run_bf671ca66bb24e99, observed 2026-10-25T14:08:08.505Z. Thumbnails and page tokens removed. Fields absent here were absent from retained evidence.",
+ "observedAt": "2026-10-25T14:08:08.505Z",
+ "items": [
+  {
+   "title": "All-in-one Blender & Food Processor, 10-in-1 Professional Blender For",
+   "position": 1,
+   "product_id": "14886148743457007291",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:14886148743457007291,headlineOfferDocid:14886148743457007291,imageDocid:6977613108173330744,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "eBay - epadronics",
+   "price": "$99.99",
+   "extracted_price": 99.99,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "Used Hamilton Beach 2-speed Commercial Bar Blender | Base Only |",
+   "position": 2,
+   "product_id": "1572290168003885936",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:1572290168003885936,headlineOfferDocid:1572290168003885936,imageDocid:15058914320234531216,rds:PC_18239432096806254892|PROD_PC_18239432096806254892,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "eBay - victoryelectronics",
+   "price": "$50.00",
+   "extracted_price": 50,
+   "second_hand_condition": "pre-owned",
+   "rating": 5,
+   "reviews": 1
+  },
+  {
+   "title": "PRASKY 1.8L/60OZ Glass Heating Blender & Soy Milk Maker, Smart Kitchen Machine with 600ml Thermos, Hot & Cold Drink Maker, 24H Delay Start for Soups,",
+   "position": 3,
+   "product_id": "12182974468476630423",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:12182974468476630423,headlineOfferDocid:12182974468476630423,imageDocid:17714947809163165432,rds:PC_163446825580433277|PROD_PC_163446825580433277,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "TikTok Shop",
+   "price": "$72.98",
+   "extracted_price": 72.98,
+   "old_price": "$149",
+   "delivery": "Free delivery by Thu",
+   "tag": "51% OFF",
+   "rating": 3.7,
+   "reviews": 245,
+   "extensions": [
+    "51% OFF"
+   ]
+  },
+  {
+   "title": "KitchenAid KSB1332Y K150 3 Speed Ice Crushing Blender with 2 Personal Blender Jars - Blue Velvet",
+   "position": 4,
+   "product_id": "9678199666567693594",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:9678199666567693594,headlineOfferDocid:9678199666567693594,imageDocid:11381687046317521521,rds:PC_3492977102848790302|PROD_PC_3492977102848790302,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Pro Restaurant Equipment",
+   "price": "$199.99",
+   "extracted_price": 199.99,
+   "rating": 3.8,
+   "reviews": 161
+  },
+  {
+   "title": "Commercial Blender with 48 oz. Container - Sound Enclosure",
+   "position": 5,
+   "product_id": "14804883016757625563",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:14804883016757625563,headlineOfferDocid:14804883016757625563,imageDocid:15626972444360012531,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Express KitchQuip",
+   "price": "$482.95",
+   "extracted_price": 482.95,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "Winco XLB-44 AccelMix Commercial Blender 44 oz. 2-s (Case of 4)",
+   "position": 6,
+   "product_id": "16296145136269295222",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:16296145136269295222,headlineOfferDocid:16296145136269295222,imageDocid:9436194652523435153,rds:PC_6633380182485197890|PROD_PC_6633380182485197890,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Bresco",
+   "price": "$603.23",
+   "extracted_price": 603.23,
+   "old_price": "$151/ct",
+   "rating": 2.2,
+   "reviews": 80
+  },
+  {
+   "title": "Winco XLB-44 Blender, Bar",
+   "position": 7,
+   "product_id": "15526289334266158066",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:15526289334266158066,headlineOfferDocid:15526289334266158066,imageDocid:17753638612419202977,rds:PC_6633380182485197890|PROD_PC_6633380182485197890,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "directkitchenequip.com",
+   "price": "$94.23",
+   "extracted_price": 94.23,
+   "delivery": "Free delivery",
+   "rating": 1.7,
+   "reviews": 1
+  },
+  {
+   "title": "Winco XLB-44 AccelMix Blender",
+   "position": 8,
+   "product_id": "8555516689187339024",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:8555516689187339024,productid:12013068426863064512,headlineOfferDocid:10173897199677692410,imageDocid:7228236656228578449,rds:PC_6633380182485197890|PROD_PC_6633380182485197890,gpcid:6633380182485197890,mid:576462691220300959,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Cresco Resco",
+   "price": "$119.00",
+   "extracted_price": 119,
+   "old_price": "$258",
+   "tag": "53% OFF",
+   "rating": 1,
+   "reviews": 90,
+   "extensions": [
+    "53% OFF"
+   ]
+  },
+  {
+   "title": "Blendtec C825C11Q-B1GB1A Connoisseur 825 Commercial Beverage Blender 2 - 75oz FourSide Jars",
+   "position": 9,
+   "product_id": "12617290306642817753",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:12617290306642817753,headlineOfferDocid:12617290306642817753,imageDocid:7196652243536747709,rds:PC_7150653867163871281|PROD_PC_7150653867163871281,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "ConcessionSite.com",
+   "price": "$1,077.14",
+   "extracted_price": 1077.14,
+   "delivery": "Free delivery",
+   "rating": 5,
+   "reviews": 1
+  },
+  {
+   "title": "Blendtec C825C11Q-B1GB1A Connoisseur 825 Commercial Beverage Blender 2 - 75oz FourSide Jars",
+   "position": 10,
+   "product_id": "18179469832156443764",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:18179469832156443764,headlineOfferDocid:18179469832156443764,imageDocid:7196652243536747709,rds:PC_7150653867163871281|PROD_PC_7150653867163871281,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "CudaKitchen.com",
+   "price": "$1,077.14",
+   "extracted_price": 1077.14,
+   "delivery": "Free delivery",
+   "rating": 5,
+   "reviews": 1
+  },
+  {
+   "title": "Winco AccelMix Electric 2-Speed Bar Blender with Toggle Switch, 44 Ounce Capacity -- 4 per case",
+   "position": 11,
+   "product_id": "7865409300495595226",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:7865409300495595226,headlineOfferDocid:7865409300495595226,imageDocid:8490535014778757207,rds:PC_6633380182485197890|PROD_PC_6633380182485197890,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "FoodServiceDirect.com",
+   "price": "$588.95",
+   "extracted_price": 588.95,
+   "rating": 1,
+   "reviews": 9
+  },
+  {
+   "title": "Waring tbb160 Torq 2.0 Bar Blender",
+   "position": 12,
+   "product_id": "9652738845246152973",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:9652738845246152973,productid:2254175284953496592,headlineOfferDocid:10432071796570713487,imageDocid:80626955963994015,rds:PC_5170435295909658914|PROD_PC_5170435295909658914,gpcid:5170435295909658914,mid:576462502241215133,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "WebstaurantStore.com",
+   "price": "$437.00",
+   "extracted_price": 437,
+   "delivery": "Free delivery",
+   "rating": 3.7,
+   "reviews": 34
+  },
+  {
+   "title": "NEW 44 oz Accelmix Electric Countertop Blender Winco XLB-44 #9921 Commercial Bar",
+   "position": 13,
+   "product_id": "6848134390049668997",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:6848134390049668997,headlineOfferDocid:6848134390049668997,imageDocid:935643244167726050,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "eBay",
+   "price": "$84.99",
+   "extracted_price": 84.99
+  },
+  {
+   "title": "\"Hamilton Beach HBF600 Tournant Food Blender",
+   "position": 14,
+   "product_id": "16858311994570465620",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:16858311994570465620,productid:10598717913356706516,headlineOfferDocid:14615192574913036402,imageDocid:15577220310645790584,rds:PC_4504605602158682535|PROD_PC_4504605602158682535,gpcid:4504605602158682535,mid:576462563326775607,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "eBay - cgmninc",
+   "price": "$299.99",
+   "extracted_price": 299.99,
+   "second_hand_condition": "pre-owned",
+   "delivery": "Free delivery",
+   "rating": 3.9,
+   "reviews": 78
+  },
+  {
+   "title": "Waring tbb145 Torq 2.0 Bar Blender",
+   "position": 15,
+   "product_id": "11844080876462066685",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:11844080876462066685,productid:17067056203214904337,headlineOfferDocid:18412827613140676108,imageDocid:14749036865054610183,rds:PC_1991818526095148049|PROD_PC_1991818526095148049,gpcid:1991818526095148049,mid:576462876181764685,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Express KitchQuip",
+   "price": "$450.00",
+   "extracted_price": 450,
+   "delivery": "Free delivery",
+   "rating": 5,
+   "reviews": 90
+  },
+  {
+   "title": "Omcan USA 48005 (BL-BR-0008) Countertop Blender 8 Liter (1.75 Gallon) Capacity | Kitchen Restock",
+   "position": 16,
+   "product_id": "5638752415856121801",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:5638752415856121801,headlineOfferDocid:5638752415856121801,imageDocid:8971899745706700561,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "KitchenRestock.com",
+   "price": "$913.49",
+   "extracted_price": 913.49,
+   "old_price": "$2,234",
+   "tag": "59% OFF",
+   "extensions": [
+    "59% OFF"
+   ]
+  },
+  {
+   "title": "Omcan 48005 13 Inch Stainless Steel Countertop Blender 8 Liter Capacity",
+   "position": 17,
+   "product_id": "17724836093785093997",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:17724836093785093997,headlineOfferDocid:17724836093785093997,imageDocid:11614289450131597882,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "247restaurantequipment.com",
+   "price": "$2,233.55",
+   "extracted_price": 2233.55
+  },
+  {
+   "title": "Vitamix 62824 Drink Machine Advance Black Bar Blender w/ 48oz",
+   "position": 18,
+   "product_id": "8430982701121627014",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:8430982701121627014,headlineOfferDocid:8430982701121627014,imageDocid:761573961606349126,rds:PC_14397222602548332866|PROD_PC_14397222602548332866,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "ACityDiscount",
+   "price": "$593.70",
+   "extracted_price": 593.7,
+   "rating": 5,
+   "reviews": 111
+  },
+  {
+   "title": "1 gal FOOD BLENDER 3500 RPM 1/2 HP STAINLESS STEEL",
+   "position": 19,
+   "product_id": "12296949363463073864",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:12296949363463073864,headlineOfferDocid:12296949363463073864,imageDocid:10735356583951391030,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "AKM",
+   "price": "$760.29",
+   "extracted_price": 760.29
+  },
+  {
+   "title": "Omcan Countertop Stainless Steel Blender",
+   "position": 20,
+   "product_id": "12988215175707694393",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:12988215175707694393,productid:2818833083273262321,headlineOfferDocid:7890502760129617928,imageDocid:17592692349861340464,gpcid:5112407129003283381,mid:576462855218024271,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Restaurant Supply",
+   "price": "$904.45",
+   "extracted_price": 904.45,
+   "old_price": "$2,191",
+   "tag": "58% OFF",
+   "extensions": [
+    "58% OFF"
+   ]
+  },
+  {
+   "title": "Skyfood Equipment LAR-6MBSE Food Blender Tabletop 1-1/2 Gallon | Kitchen Restock",
+   "position": 21,
+   "product_id": "77892657712606375",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:77892657712606375,headlineOfferDocid:77892657712606375,imageDocid:17798474263828496715,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "KitchenRestock.com",
+   "price": "$971.08",
+   "extracted_price": 971.08,
+   "old_price": "$2,050",
+   "tag": "52% OFF",
+   "extensions": [
+    "52% OFF"
+   ]
+  },
+  {
+   "title": "Wuzstar 3 HP Commercial Countertop Blender Smoothie Maker Juicer 2L 2200w Powerful Food Processor Kitchen Blender, Black",
+   "position": 22,
+   "product_id": "11290085303530688195",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:11290085303530688195,headlineOfferDocid:11290085303530688195,imageDocid:13556338976963077562,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Walmart - ShopEase Store",
+   "price": "$81.65",
+   "extracted_price": 81.65,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "Wuzstar 3 HP Commercial Countertop Blender Smoothie Maker Juicer 2L 2200w Powerful Food Processor Kitchen Blender, Black",
+   "position": 23,
+   "product_id": "15214354638158704819",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:15214354638158704819,headlineOfferDocid:15214354638158704819,imageDocid:13556338976963077562,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Walmart - ClearBuys",
+   "price": "$81.25",
+   "extracted_price": 81.25,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "Vitamix **Vitamix 62824 Drink Machine Advance 2.3HP Blender 48oz VM0100A - Black ** - New Home | Size: s",
+   "position": 24,
+   "product_id": "2471545113905941901",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:2471545113905941901,headlineOfferDocid:2471545113905941901,imageDocid:2966447098375029640,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Mercari",
+   "price": "$564.00",
+   "extracted_price": 564
+  },
+  {
+   "title": "Aiziyo Professional Blender for Smoothies, 2200w Peak Watts, 60 oz BPA-Free Pitcher, Blenders for Kitchen, Dishwasher Safe, Programs for Frozen Drinks",
+   "position": 25,
+   "product_id": "13967565552461421895",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:13967565552461421895,productid:8719721930240229447,headlineOfferDocid:14589016539446586360,imageDocid:7271313508732147733,rds:PC_12592512607474221143|PROD_PC_12592512607474221143,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Walmart - AIZIYO",
+   "price": "$99.97",
+   "extracted_price": 99.97,
+   "delivery": "Free delivery",
+   "rating": 5,
+   "reviews": 1
+  },
+  {
+   "title": "2200w Professional Smoothie Blender, 68oz Large Capacity Countertop Blender with 6 Stainless Steel Blades, 10-Speed Commercial Grade Ice Crushing for",
+   "position": 26,
+   "product_id": "17521435496683848379",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:17521435496683848379,productid:5362165989233572460,headlineOfferDocid:1371336805605384477,imageDocid:17000435278550587995,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Walmart - Reliable Home Supply",
+   "price": "$77.80",
+   "extracted_price": 77.8,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "Omcan 48005 Commercial Countertop Blender, 8-Liter, Removable Stainless Steel Container, 1/2 HP",
+   "position": 27,
+   "product_id": "14031571135718269579",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:14031571135718269579,headlineOfferDocid:14031571135718269579,imageDocid:14169119753322900553,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "USA Restaurant Suppliers",
+   "price": "$796.29",
+   "extracted_price": 796.29,
+   "delivery": "Free delivery on $1,500+"
+  },
+  {
+   "title": "Commercial Blender 1500w Professional Countertop Smoothie Blender with Built-in Soundproof Technology",
+   "position": 28,
+   "product_id": "11268949235373355371",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:11268949235373355371,productid:17006909015820188999,headlineOfferDocid:14014783093317602635,imageDocid:2432896717057592907,gpcid:1324482939365038627,mid:576462913713661994,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Walmart - NU AGE",
+   "price": "$75.00",
+   "extracted_price": 75,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "2 gal FOOD BLENDER 3500 RPM 1/2 HP STAINLESS STEEL",
+   "position": 29,
+   "product_id": "5532475669047553142",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:5532475669047553142,headlineOfferDocid:5532475669047553142,imageDocid:936343287247559819,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "AKM",
+   "price": "$785.87",
+   "extracted_price": 785.87
+  },
+  {
+   "title": "2200w Commercial Blender, 2l/70 oz Heavy Duty Blender with Quiet Sound Enclosure, 2.95 HP, 9 Speeds, Timer, Self-Cleaning, 5 Presets for Smoothies &",
+   "position": 30,
+   "product_id": "7782640123212494705",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:7782640123212494705,productid:9987870556970706126,headlineOfferDocid:3398119055061553855,imageDocid:1515818774132564792,rds:PC_7778635214676828139|PROD_PC_7778635214676828139,gpcid:7778635214676828139,mid:576462567085513458,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Walmart - TERUISI",
+   "price": "$161.49",
+   "extracted_price": 161.49,
+   "delivery": "Free delivery by Wed",
+   "rating": 5,
+   "reviews": 58
+  },
+  {
+   "title": "Vitamix Commercial Blender - Home",
+   "position": 31,
+   "product_id": "13647349012533551897",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:13647349012533551897,headlineOfferDocid:13647349012533551897,imageDocid:5079347619295079222,rds:PC_14397222602548332866|PROD_PC_14397222602548332866,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Mercari",
+   "price": "$399.00",
+   "extracted_price": 399,
+   "second_hand_condition": "pre-owned",
+   "rating": 5,
+   "reviews": 33
+  },
+  {
+   "title": "Vitamix - 62827 - Vita-Mix 62827- Vita-Prep Commercial Food Blender 64 Oz., 2 HP",
+   "position": 32,
+   "product_id": "184687309357362727",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:184687309357362727,headlineOfferDocid:184687309357362727,imageDocid:2968589755781408738,rds:PC_10886933701786330484|PROD_PC_10886933701786330484,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Neobits.com",
+   "price": "$796.40",
+   "extracted_price": 796.4,
+   "rating": 3.5,
+   "reviews": 1
+  },
+  {
+   "title": "Vitamix NEW! NEW Drink Machine Two-Speed Commercial Blender 64oz (Model 62828) - New Home",
+   "position": 33,
+   "product_id": "8462635810985777154",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:8462635810985777154,headlineOfferDocid:8462635810985777154,imageDocid:4814948527628380611,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Mercari",
+   "price": "$342.00",
+   "extracted_price": 342,
+   "old_price": "$360",
+   "tag": "5% OFF",
+   "extensions": [
+    "5% OFF"
+   ]
+  },
+  {
+   "title": "Hamilton Beach Commercial HBF510S 2-4 HP EXPEDITOR Food Blender",
+   "position": 34,
+   "product_id": "15432276699411070000",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:15432276699411070000,productid:16411987830281935111,headlineOfferDocid:7001616683065294573,imageDocid:12953975261782666829,rds:PC_10933061620273210999|PROD_PC_10933061620273210999,gpcid:10933061620273210999,mid:576462914494205223,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "Restaurant Equippers",
+   "price": "$599.00",
+   "extracted_price": 599,
+   "rating": 3.5,
+   "reviews": 1
+  },
+  {
+   "title": "Amirinox Smart Blender Pro 1680w 28000 Rpm Commercial Soundproof",
+   "position": 35,
+   "product_id": "16648455572841598781",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:16648455572841598781,headlineOfferDocid:16648455572841598781,imageDocid:14741622505175328500,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "eBay",
+   "price": "$630.65",
+   "extracted_price": 630.65,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "Blendtec SNBS2C2901-B1K Blender",
+   "position": 36,
+   "product_id": "10229910556993380372",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:10229910556993380372,productid:10821346585190775297,headlineOfferDocid:4150958532904331829,imageDocid:12880900686778740185,rds:PC_18197386045911186744|PROD_PC_18197386045911186744,gpcid:18197386045911186744,mid:576462512323818555,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "GoFoodservice.com",
+   "price": "$1,399.99",
+   "extracted_price": 1399.99,
+   "delivery": "Free delivery",
+   "rating": 2.4,
+   "reviews": 68
+  },
+  {
+   "title": "Vitamix XL Blender System",
+   "position": 37,
+   "product_id": "3655089203701896544",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:3655089203701896544,productid:9002285678351014509,headlineOfferDocid:9038884554909625213,imageDocid:9353753667008596142,rds:PC_11054993633736098357|PROD_PC_11054993633736098357,gpcid:11054993633736098357,mid:576462813536941019,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "WebstaurantStore.com",
+   "price": "$1,823.60",
+   "extracted_price": 1823.6,
+   "delivery": "Free delivery",
+   "rating": 3.9,
+   "reviews": 1
+  },
+  {
+   "title": "Blendtec Professional 800 Blender",
+   "position": 38,
+   "product_id": "14129398695694520239",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:14129398695694520239,productid:5240459244850506404,headlineOfferDocid:4389829816502233829,imageDocid:15436294419322755079,rds:PC_12743359551354343889|PROD_PC_12743359551354343889,gpcid:12743359551354343889,mid:576462892378063441,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "KaTom Restaurant Supply",
+   "price": "$1,799.99",
+   "extracted_price": 1799.99,
+   "old_price": "$3,200",
+   "delivery": "Free delivery",
+   "tag": "43% OFF",
+   "rating": 4,
+   "reviews": 140,
+   "extensions": [
+    "43% OFF"
+   ]
+  },
+  {
+   "title": "Waring cb15tsf Food Blender",
+   "position": 39,
+   "product_id": "5442356867952944038",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=catalogid:5442356867952944038,productid:13856321506503549305,headlineOfferDocid:10415731928360100056,imageDocid:13600361385850967887,gpcid:15059334615595641401,mid:576462810923206062,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "WebstaurantStore.com",
+   "price": "$2,499.00",
+   "extracted_price": 2499,
+   "delivery": "Free delivery"
+  },
+  {
+   "title": "Commercial Heavy Duty Blender Sound-proof Processor Smoothie Mixer Bar",
+   "position": 40,
+   "product_id": "4582912871562408029",
+   "product_link": "https://www.google.com/search?ibp=oshop&q=64 oz commercial countertop blender commercial&prds=productid:4582912871562408029,headlineOfferDocid:4582912871562408029,imageDocid:5490443577825641264,pvt:hg&hl=en&gl=us&udm=28",
+   "source": "eBay - itopgroup",
+   "price": "$360.00",
+   "extracted_price": 360,
+   "old_price": "$400",
+   "tag": "10% OFF",
+   "extensions": [
+    "10% OFF"
+   ]
+  }
+ ],
+ "detailsBySeller": {
+  "Walmart - ClearBuys": {
+   "title": "Wuzstar 3 HP Commercial Countertop Blender Smoothie Maker Juicer 2L 2200w Powerful Food Processor Kitchen Blender, Black",
+   "features": [
+    {
+     "title": "Blender type",
+     "value": "Countertop Blenders"
+    },
+    {
+     "title": "Jar material",
+     "value": "Metal"
+    },
+    {
+     "title": "Power type",
+     "value": "Corded Electric"
+    },
+    {
+     "title": "Watts",
+     "value": "2200 Watts"
+    },
+    {
+     "title": "Volume capacity",
+     "value": "2 L"
+    },
+    {
+     "title": "Blade material",
+     "value": "Stainless Steel"
+    },
+    {
+     "title": "Speeds",
+     "value": "10"
+    },
+    {
+     "title": "Blender feature",
+     "value": "Variable Speed"
+    },
+    {
+     "title": "Control type",
+     "value": "Smoothie"
+    },
+    {
+     "title": "Rec. use",
+     "value": "Commercial"
+    },
+    {
+     "title": "Color type",
+     "value": "Black"
+    }
+   ],
+   "stores": [
+    {
+     "name": "Walmart - ClearBuys",
+     "extractedPrice": 81.25,
+     "shipping": "Free",
+     "shippingExtracted": null,
+     "details": [
+      "In stock online",
+      "Free delivery"
+     ]
+    }
+   ]
+  },
+  "Walmart - ShopEase Store": {
+   "title": "Wuzstar 3 HP Commercial Countertop Blender Smoothie Maker Juicer 2L 2200w Powerful Food Processor Kitchen Blender, Black",
+   "features": [
+    {
+     "title": "Blender type",
+     "value": "Countertop Blenders"
+    },
+    {
+     "title": "Jar material",
+     "value": "Metal"
+    },
+    {
+     "title": "Power type",
+     "value": "Corded Electric"
+    },
+    {
+     "title": "Watts",
+     "value": "2200 Watts"
+    },
+    {
+     "title": "Volume capacity",
+     "value": "2 L"
+    },
+    {
+     "title": "Blade material",
+     "value": "Stainless Steel"
+    },
+    {
+     "title": "Speeds",
+     "value": "10"
+    },
+    {
+     "title": "Blender feature",
+     "value": "Variable Speed"
+    },
+    {
+     "title": "Control type",
+     "value": "Smoothie"
+    },
+    {
+     "title": "Rec. use",
+     "value": "Commercial"
+    },
+    {
+     "title": "Color type",
+     "value": "Black"
+    }
+   ],
+   "stores": [
+    {
+     "name": "Walmart - ShopEase Store",
+     "extractedPrice": 81.65,
+     "shipping": "Free",
+     "shippingExtracted": null,
+     "details": [
+      "In stock online",
+      "Free delivery"
+     ]
+    }
+   ]
+  },
+  "Walmart - Reliable Home Supply": {
+   "title": "2200w Professional Smoothie Blender, 68oz Large Capacity Countertop Blender with 6 Stainless Steel Blades, 10-Speed Commercial Grade Ice Crushing for",
+   "features": [
+    {
+     "title": "Design",
+     "value": "Countertop Blender"
+    },
+    {
+     "title": "Variable Speed",
+     "value": "Yes"
+    },
+    {
+     "title": "Commercial",
+     "value": "Yes"
+    },
+    {
+     "title": "Type",
+     "value": "Blender"
+    },
+    {
+     "title": "Wattage",
+     "value": "2,200 watts"
+    },
+    {
+     "title": "Number of Speeds",
+     "value": "10 speeds"
+    }
+   ],
+   "stores": [
+    {
+     "name": "Walmart - Reliable Home Supply",
+     "extractedPrice": 77.8,
+     "shipping": "Free",
+     "shippingExtracted": null,
+     "details": [
+      "In stock online",
+      "Free delivery"
+     ]
+    }
+   ]
+  }
+ }
+}

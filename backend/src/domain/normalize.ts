@@ -18,10 +18,12 @@ import {
   extractScrewSize,
   extractThickness,
   extractVolume,
+  extractVolumeClaims,
+  extractShipping,
   extractCapacityWh,
   extractAcOutlets,
 } from "./extract.js";
-import { checkListingCategory, type CategoryProfile } from "./categories.js";
+import { checkListingCategory, type CategoryProfile, type FeatureDef } from "./categories.js";
 
 export interface NormalizeContext {
   runId: string;
@@ -31,6 +33,58 @@ export interface NormalizeContext {
   fromCache: boolean;
   /** The confirmed requested category; listings are checked against it. */
   category: CategoryProfile;
+  /** Company time zone for relative delivery dates. Defaults to UTC. */
+  timeZone?: string;
+  /** Delivery location the search was made for; null or absent when none was set. */
+  deliveryLocation?: string | null;
+}
+
+type FeatureClaim = { value: string; claim?: SpecEvidence["claim"]; excerpt: string };
+/** The match with up to ~30 characters of context, cut at word boundaries. */
+const around = (text: string, m: RegExpExecArray) => {
+  let start = Math.max(0, m.index - 30);
+  let end = Math.min(text.length, m.index + m[0].length + 30);
+  while (start > 0 && start < m.index && /\w/.test(text[start - 1]!)) start++;
+  while (end < text.length && end > m.index + m[0].length && /\w/.test(text[end]!)) end--;
+  return text.slice(start, end).trim();
+};
+
+/**
+ * Feature claims in one piece of listing text. A stated absence ("not for commercial use") is
+ * returned on its own. For features with an `explicit` rule, each kind of claim is kept apart so
+ * the evaluator can tell an explicit statement from a certification, marketing or a bare keyword.
+ */
+export function featureClaims(text: string, fid: string, f: FeatureDef): FeatureClaim[] {
+  const neg = f.absent?.exec(text);
+  if (neg) return [{ value: `!${fid}`, excerpt: around(text, neg) }];
+  if (!f.explicit) {
+    const m = f.pattern.exec(text);
+    return m ? [{ value: fid, excerpt: around(text, m) }] : [];
+  }
+  const out: FeatureClaim[] = [];
+  const ex = f.explicit.exec(text);
+  if (ex) out.push({ value: fid, claim: "explicit", excerpt: around(text, ex) });
+  for (const c of f.certifications ?? []) {
+    const m = c.pattern.exec(text);
+    if (m) out.push({ value: fid, claim: "certification", excerpt: `${c.scope}, as claimed in listing text: "${around(text, m)}"`.slice(0, 300) });
+  }
+  const mk = f.marketing?.exec(text);
+  if (mk) out.push({ value: fid, claim: "marketing", excerpt: mk[0] });
+  // The bare word counts as a keyword only where it is not part of a phrase already classified.
+  let rest = text;
+  for (const re of [f.explicit, f.marketing]) if (re) rest = rest.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`), " ");
+  const kw = f.pattern.exec(rest);
+  if (kw && !ex) {
+    const at = f.pattern.exec(text)!;
+    out.push({ value: fid, claim: "keyword", excerpt: around(text, at) });
+  }
+  return out;
+}
+
+/** Shared product identity across sellers: Google's catalog id when present, else the exact normalized title. */
+export function productKey(item: { product_link?: string; link?: string; title: string }): string {
+  const cat = /catalogid:(\d+)/.exec(item.product_link ?? item.link ?? "");
+  return cat ? `catalog:${cat[1]}` : `title:${norm(item.title)}`;
 }
 
 const INSTRUCTION_LIKE = /\b(?:ignore (?:all |any )?(?:previous|prior|above) instructions|system prompt|api[\s_-]?key|approve this (?:purchase|request)|you are (?:now )?an? (?:ai|assistant))\b/i;
@@ -94,7 +148,14 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
     else if (kind === "resolution") spec("resolution", extractResolution);
     else if (kind === "refresh_rate") spec("refresh_rate", extractRefreshRate);
     else if (kind === "panel_type") spec("panel_type", extractPanelType);
-    else if (kind === "volume") spec("volume", (t) => extractVolume(t, { bareOzIsFluid: profile.bareOzIsFluid }));
+    else if (kind === "volume") {
+      // Every distinct size stated is kept, so "2L/70 oz" carries both claims and conflicts are visible.
+      for (const [field, text] of textFields) {
+        const claims = extractVolumeClaims(text, { bareOzIsFluid: profile.bareOzIsFluid });
+        for (const c of claims) addEvidence({ attribute: "volume", value: c.value, source: "serpapi_google_shopping", sourceField: field, excerpt: c.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
+        if (claims.length) break;
+      }
+    }
     else if (kind === "capacity_wh") spec("capacity_wh", extractCapacityWh);
     else if (kind === "ac_outlets") spec("ac_outlets", extractAcOutlets);
     else if (kind === "dimensions") spec("dimensions", extractDimensions);
@@ -112,17 +173,25 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
     }
   }
   for (const [fid, f] of Object.entries(profile.features)) {
+    const seen = new Set<string>();
     for (const [field, text] of textFields) {
-      // An explicit absence ("armless") is stronger listing evidence than silence.
-      const neg = f.absent?.exec(text);
-      if (neg) {
-        addEvidence({ attribute: "feature", value: `!${fid}`, source: "serpapi_google_shopping", sourceField: field, excerpt: text.slice(Math.max(0, neg.index - 30), neg.index + neg[0].length + 30).trim(), method: "listing_text_pattern", confidence: "listing_evidence" });
-        break;
+      // An explicit absence ("armless", "not for commercial use") is stronger listing evidence than silence.
+      for (const c of featureClaims(text, fid, f)) {
+        const k = `${c.value}|${c.claim ?? ""}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        addEvidence({
+          attribute: "feature",
+          value: c.value,
+          source: "serpapi_google_shopping",
+          sourceField: field,
+          excerpt: c.excerpt,
+          method: "listing_text_pattern",
+          confidence: c.claim === "keyword" || c.claim === "marketing" ? "weak_inference" : "listing_evidence",
+          ...(c.claim ? { claim: c.claim } : {}),
+        });
       }
-      const m = f.pattern.exec(text);
-      if (!m) continue;
-      addEvidence({ attribute: "feature", value: fid, source: "serpapi_google_shopping", sourceField: field, excerpt: text.slice(Math.max(0, m.index - 30), m.index + m[0].length + 30).trim(), method: "listing_text_pattern", confidence: "listing_evidence" });
-      break;
+      if (!f.explicit && seen.size) break;
     }
   }
   const brand = extractBrand(item.title);
@@ -130,7 +199,8 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
 
   // Delivery date, only when the listing states one; otherwise it stays unknown.
   const deliveryStmt = [item.delivery, ...(item.extensions ?? [])].filter(Boolean).join(" · ");
-  const deliveryDate = deliveryStmt ? extractDeliveryDate(deliveryStmt, ctx.observedAt) : null;
+  const timeZone = ctx.timeZone ?? "UTC";
+  const deliveryDate = deliveryStmt ? extractDeliveryDate(deliveryStmt, ctx.observedAt, timeZone) : null;
   if (deliveryDate) {
     addEvidence({ attribute: "delivery_by", value: deliveryDate.value, source: "serpapi_google_shopping", sourceField: "delivery", excerpt: deliveryDate.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
   }
@@ -203,14 +273,12 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
   // Shipping: only an explicit statement counts as known.
   const deliveryText = [item.delivery, ...(item.extensions ?? [])].filter(Boolean).join(" · ");
   let shipping: Offer["shipping"] = { status: "unknown", cents: null, source: null };
-  if (/\bfree (?:shipping|delivery)\b/i.test(deliveryText)) shipping = { status: "known", cents: 0, source: "delivery: free shipping stated" };
-  else {
-    const m = /(?:\+\s*)?\$([\d,]+(?:\.\d{1,2})?)\s*(?:shipping|delivery)\b/i.exec(deliveryText);
-    if (m) {
-      const c = parsePriceText(`$${m[1]}`).cents;
-      if (c !== null) shipping = { status: "known", cents: c, source: `delivery: ${m[0]}` };
-    }
-  }
+  const ship = extractShipping(deliveryText);
+  if (ship?.kind === "free") shipping = { status: "known", cents: 0, source: "delivery: free shipping stated" };
+  // Free only above a minimum order: the cost calculation decides whether this order qualifies.
+  else if (ship?.kind === "free_over") shipping = { status: "unknown", cents: null, source: `delivery: "${ship.excerpt}" (minimum order)`, freeOverCents: ship.thresholdCents };
+  else if (ship?.kind === "conditional") shipping = { status: "unknown", cents: null, source: `delivery: "${ship.excerpt}" (conditional)` };
+  else if (ship?.kind === "amount") shipping = { status: "known", cents: ship.cents, source: `delivery: ${ship.excerpt}` };
 
   const observedAt = ctx.observedAt.toISOString();
   const expiresAt = new Date(ctx.observedAt.getTime() + ctx.offerMaxAgeMinutes * 60_000).toISOString();
@@ -244,28 +312,42 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
       earliest: deliveryDate?.value.earliest ?? null,
       latest: deliveryDate?.value.latest ?? null,
       source: deliveryDate ? "listing" : null,
+      basis: "google_estimate",
+      location: ctx.deliveryLocation ?? null,
+      timeZone,
     },
     rating: typeof item.rating === "number" && Number.isFinite(item.rating) ? item.rating : null,
     reviews: typeof item.reviews === "number" && Number.isInteger(item.reviews) ? item.reviews : null,
     evidence,
     needsReviewReasons,
+    productKey: productKey(item),
     details: { status: item.immersive_product_page_token ? "not_fetched" : "not_available", fetchedAt: null, fromCache: false, matchedStore: null },
   };
   return { ok: true, offer, detailToken: item.immersive_product_page_token ?? null };
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const sellerKey = (s: string) => norm(s).replace(/\b(?:com|inc|llc|store|official)\b/g, " ").replace(/\s+/g, " ").trim();
 
 /**
- * Add product-page specification evidence (and the matching seller's shipping/stock statement)
+ * Add product-page specification evidence (and this offer's own seller's shipping/stock statement)
  * to an offer. Pure; returns a new offer. Product specs describe the product, not a particular
- * seller's listing, which the evidence excerpt states.
+ * seller's listing, which the evidence excerpt states, so they may be shared with another seller's
+ * listing of the same product (`sharedFromOfferId`). Shipping, stock and delivery come only from
+ * the store entry for this offer's own seller; they are never taken from another seller.
  */
-export function applyProductDetails(offer: Offer, details: ProductDetails, fetchedAt: Date, fromCache: boolean, profile: CategoryProfile): Offer {
+export function applyProductDetails(
+  offer: Offer,
+  details: ProductDetails,
+  fetchedAt: Date,
+  fromCache: boolean,
+  profile: CategoryProfile,
+  opts: { timeZone?: string; sharedFromOfferId?: string } = {},
+): Offer {
   const evidence = offer.evidence.filter((e) => e.source !== "serpapi_immersive_product");
   let seq = offer.evidence.length;
-  const add = (attribute: string, value: unknown, title: string, raw: string) => {
-    evidence.push({ id: `${offer.id}_ev${++seq}`, attribute, value, source: "serpapi_immersive_product", sourceField: `about_the_product.features[${title}]`, excerpt: `Product specs: ${title} = ${raw}`.slice(0, 300), method: "provider_field", confidence: "listing_evidence" });
+  const add = (attribute: string, value: unknown, title: string, raw: string, claim?: SpecEvidence["claim"]) => {
+    evidence.push({ id: `${offer.id}_ev${++seq}`, attribute, value, source: "serpapi_immersive_product", sourceField: `about_the_product.features[${title}]`, excerpt: `Google product specs: ${title} = ${raw}`.slice(0, 300), method: "provider_field", confidence: "listing_evidence", ...(claim ? { claim } : {}) });
   };
   const seenPorts = new Set<string>();
   for (const f of details.features) {
@@ -312,31 +394,61 @@ export function applyProductDetails(offer: Offer, details: ProductDetails, fetch
       if (m) add("screw_size", m.value, f.title, v);
     }
     for (const [fid, def] of Object.entries(profile.features)) {
-      if (def.pattern.test(`${f.title} ${v}`) && !evidence.some((e) => e.attribute === "feature" && e.value === fid && e.source === "serpapi_immersive_product")) add("feature", fid, f.title, v);
+      const has = (val: string) => evidence.some((e) => e.attribute === "feature" && e.value === val && e.source === "serpapi_immersive_product");
+      if (def.spec && def.spec.title.test(f.title.trim())) {
+        // A structured field read by its value: "Commercial: Yes", "Rec. use: Commercial", "Rec. use: Household".
+        const yes = def.spec.yes.test(v);
+        const no = def.spec.no.test(v);
+        if (yes && !no && !has(fid)) add("feature", fid, f.title, v, "explicit");
+        else if (no && !yes && !has(`!${fid}`)) add("feature", `!${fid}`, f.title, v);
+        continue;
+      }
+      if (!def.explicit) {
+        if (def.pattern.test(`${f.title} ${v}`) && !has(fid)) add("feature", fid, f.title, v);
+        continue;
+      }
+      // Free-text spec values count only as an explicit statement or a certification of stated scope.
+      for (const c of featureClaims(`${f.title}: ${v}`, fid, def)) {
+        if (c.claim === "explicit" || c.claim === "certification" || c.value === `!${fid}`) {
+          if (!evidence.some((e) => e.attribute === "feature" && e.value === c.value && e.source === "serpapi_immersive_product" && e.claim === c.claim)) add("feature", c.value, f.title, v, c.claim);
+        }
+      }
     }
   }
-  const store = offer.seller ? details.stores.find((s) => norm(s.name) === norm(offer.seller!)) ?? details.stores.find((s) => norm(offer.seller!).startsWith(norm(s.name)) || norm(s.name).startsWith(norm(offer.seller!))) : undefined;
+  // Only this offer's own seller: "Walmart" (first party) is a different seller from "Walmart - ClearBuys".
+  const store = offer.seller ? details.stores.find((s) => sellerKey(s.name) === sellerKey(offer.seller!)) : undefined;
   let shipping = offer.shipping;
   let availability = offer.availability;
   if (store) {
     if (store.shippingExtracted !== null) {
       const c = floatToCents(store.shippingExtracted);
       if (c !== null) shipping = { status: "known", cents: c, source: `product page store ${store.name}: shipping ${store.shipping ?? ""}`.trim() };
-    } else if (store.shipping && /^free/i.test(store.shipping)) shipping = { status: "known", cents: 0, source: `product page store ${store.name}: free shipping` };
+    } else if (store.shipping) {
+      const st = extractShipping(/^free$/i.test(store.shipping.trim()) ? "free shipping" : `${store.shipping} ${store.details.join(" · ")}`);
+      if (st?.kind === "free") shipping = { status: "known", cents: 0, source: `product page store ${store.name}: free shipping` };
+      else if (st?.kind === "free_over") shipping = { status: "unknown", cents: null, source: `product page store ${store.name}: "${st.excerpt}" (minimum order)`, freeOverCents: st.thresholdCents };
+    }
     const stock = store.details.find((d) => /in stock/i.test(d));
     if (stock) availability = { status: "in_stock", excerpt: `${store.name}: ${stock}` };
   }
   let delivery = offer.delivery;
   if (store) {
     for (const d of store.details) {
-      const dd = extractDeliveryDate(d, fetchedAt);
+      const dd = extractDeliveryDate(d, fetchedAt, opts.timeZone ?? offer.delivery.timeZone ?? "UTC");
       if (!dd) continue;
-      delivery = { status: "stated", excerpt: `${store.name}: ${d}`.slice(0, 120), earliest: dd.value.earliest, latest: dd.value.latest, source: "product_page_store" };
+      delivery = { ...offer.delivery, status: "stated", excerpt: `${store.name}: ${d}`.slice(0, 120), earliest: dd.value.earliest, latest: dd.value.latest, source: "product_page_store" };
       evidence.push({ id: `${offer.id}_ev${++seq}`, attribute: "delivery_by", value: dd.value, source: "serpapi_immersive_product", sourceField: `stores[${store.name}].details_and_offers`, excerpt: `${store.name}: ${d}`.slice(0, 300), method: "provider_field", confidence: "listing_evidence" });
       break;
     }
   }
-  return { ...offer, evidence, shipping, availability, delivery, details: { status: "fetched", fetchedAt: fetchedAt.toISOString(), fromCache, matchedStore: store?.name ?? null } };
+  return {
+    ...offer,
+    evidence,
+    shipping,
+    availability,
+    delivery,
+    details: { status: "fetched", fetchedAt: fetchedAt.toISOString(), fromCache, matchedStore: store?.name ?? null, ...(opts.sharedFromOfferId ? { sharedFromOfferId: opts.sharedFromOfferId } : {}) },
+  };
 }
 
 /**

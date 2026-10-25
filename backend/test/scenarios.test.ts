@@ -134,6 +134,9 @@ describe("scenario 3: urgent café blender", () => {
     expect(pro.eligibility).toBe("needs_review");
     expect(check(pro, "feature")).toMatchObject({ state: "unknown" });
     expect(check(pro, "volume").state).toBe("supported"); // 72 oz pitcher read as fluid ounces
+    // The bare word "Commercial" in a seller's title is a keyword, not a designation.
+    expect(check(ok, "feature")).toMatchObject({ state: "supported" });
+    expect(check(ok, "feature").reason).toMatch(/rated for commercial use/i);
     expect(by(/Replacement 64 oz Pitcher/).eligibility).toBe("rejected");
     expect(by(/Personal Blender/).eligibility).toBe("rejected");
     expect(by(/48 oz/).eligibility).toBe("rejected");

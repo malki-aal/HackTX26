@@ -148,7 +148,11 @@ const KNOWN_BRANDS = [
 
 export function extractBrand(text: string): string | null {
   for (const b of KNOWN_BRANDS) {
-    if (new RegExp(`\\b${b}\\b`, "i").test(text)) return b;
+    for (const m of text.matchAll(new RegExp(`\\b${b}\\b`, "gi"))) {
+      // "2.95 HP" and "3 HP motor" are horsepower, not the HP brand.
+      if (b === "HP" && (/\d(?:\.\d+)?\s*-?\s*$/.test(text.slice(0, m.index)) || /^\s*(?:motor|peak|power)\b/i.test(text.slice(m.index + m[0].length)))) continue;
+      return b;
+    }
   }
   return null;
 }
@@ -192,6 +196,15 @@ const VOLUME_TO_ML: Array<[RegExp, number]> = [
  * A bare "oz" is not a volume: it can be weight (net wt), so it never counts as fluid ounces.
  */
 export function extractVolume(text: string, opts: { bareOzIsFluid?: boolean } = {}): Match<number> | null {
+  return extractVolumeClaims(text, opts)[0] ?? null;
+}
+
+/**
+ * Every distinct volume a text states, in the order stated ("2L/70 oz" gives 2000 ml and 2070 ml).
+ * Listings often state one size two ways; callers decide whether the claims conflict.
+ */
+export function extractVolumeClaims(text: string, opts: { bareOzIsFluid?: boolean } = {}): Array<Match<number>> {
+  const out: Array<Match<number>> = [];
   const units = `(?:us\\s+)?fl\\.?\\s*oz\\.?|(?:us\\s+)?fluid\\s+ounces?|ml|milliliters?|millilitres?|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?${opts.bareOzIsFluid ? "|oz|ounces?" : ""}`;
   const re = new RegExp(`(?<![\\d.])(\\d+(?:\\.\\d+)?)\\s*-?\\s*(${units})(?![a-z])`, "gi");
   for (const m of text.matchAll(re)) {
@@ -200,9 +213,9 @@ export function extractVolume(text: string, opts: { bareOzIsFluid?: boolean } = 
     const factor = opts.bareOzIsFluid && /^(?:oz|ounces?)$/i.test(unit) ? 29.5735 : VOLUME_TO_ML.find(([u]) => u.test(unit))?.[1];
     if (!factor) continue;
     const ml = Math.round(Number(m[1]) * factor);
-    if (ml > 0 && ml < 100_000) return { value: ml, excerpt: excerptAround(text, m.index, m[0].length) };
+    if (ml > 0 && ml < 100_000 && !out.some((o) => o.value === ml)) out.push({ value: ml, excerpt: excerptAround(text, m.index, m[0].length) });
   }
-  return null;
+  return out;
 }
 
 const LENGTH_TO_IN: Record<string, number> = { in: 1, inch: 1, inches: 1, '"': 1, "″": 1, ft: 12, feet: 12, foot: 12, mm: 1 / 25.4, cm: 1 / 2.54 };
@@ -272,13 +285,21 @@ function monthDay(token: string, observed: Date): Date | null {
   return d;
 }
 
+/** The calendar day an instant falls on in a time zone, as a UTC-midnight Date. */
+export function localDay(at: Date, timeZone: string): Date {
+  const [y, m, d] = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at).split("-").map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d!));
+}
+
 /**
  * Latest delivery date a listing states, relative to when it was observed: "Free delivery by Mon",
  * "Free delivery between Oct 27 – Nov 4", "Get it today", "Arrives tomorrow", "Delivery Oct 30".
- * Returns null when no date can be established (unknown stays unknown).
+ * Relative words are read on the observation's calendar day in `timeZone` (the company's), so a
+ * Saturday-evening observation in Chicago is still Saturday. Returns null when no date can be
+ * established (unknown stays unknown).
  */
-export function extractDeliveryDate(text: string, observedAt: Date): Match<{ latest: string; earliest: string }> | null {
-  const obs = new Date(Date.UTC(observedAt.getUTCFullYear(), observedAt.getUTCMonth(), observedAt.getUTCDate()));
+export function extractDeliveryDate(text: string, observedAt: Date, timeZone = "UTC"): Match<{ latest: string; earliest: string }> | null {
+  const obs = localDay(observedAt, timeZone);
   const range = /\bbetween\s+([a-z]{3,9}\.?\s+\d{1,2})\s*[–—-]\s*([a-z]{3,9}\.?\s+\d{1,2}|\d{1,2})\b/i.exec(text);
   if (range) {
     const a = monthDay(range[1]!, obs);
@@ -332,5 +353,31 @@ export function extractAcOutlets(text: string): Match<number> | null {
     const n = /^\d$/.test(raw) ? Number(raw) : COUNT_WORDS[raw];
     if (n && n >= 1 && n <= 12) return { value: n, excerpt: excerptAround(text, m.index, m[0].length) };
   }
+  return null;
+}
+
+export type ShippingStatement =
+  | { kind: "free"; excerpt: string }
+  | { kind: "free_over"; thresholdCents: number; excerpt: string }
+  | { kind: "conditional"; excerpt: string }
+  | { kind: "amount"; cents: number; excerpt: string };
+
+/**
+ * What delivery text says about shipping cost. "Free delivery on $1,500+" is free only above that
+ * order subtotal; "Free shipping with Walmart+" depends on a membership. Only an unconditional
+ * statement makes shipping free.
+ */
+export function extractShipping(text: string): ShippingStatement | null {
+  const over = /\bfree\s+(?:shipping|delivery)\s+(?:on|for|with|over|above)\s+(?:orders?\s+(?:of\s+|over\s+|above\s+)?)?\$\s?([\d,]+(?:\.\d{1,2})?)\s*\+?(?:\s+orders?)?/i.exec(text);
+  if (over) {
+    const cents = Math.round(Number(over[1]!.replace(/,/g, "")) * 100);
+    if (cents > 0) return { kind: "free_over", thresholdCents: cents, excerpt: over[0].trim() };
+  }
+  const cond = /\bfree\s+(?:shipping|delivery)\s+(?:with|for)\s+(?:a\s+)?(?:prime|walmart\s?\+|[a-z]+\s?\+|members?(?:hip)?|subscription|plus|qualifying)(?![a-z])/i.exec(text);
+  if (cond) return { kind: "conditional", excerpt: cond[0].trim() };
+  const free = /\bfree\s+(?:shipping|delivery)\b/i.exec(text);
+  if (free) return { kind: "free", excerpt: free[0] };
+  const amt = /(?:\+\s*)?\$([\d,]+(?:\.\d{1,2})?)\s*(?:shipping|delivery)\b/i.exec(text);
+  if (amt) return { kind: "amount", cents: Math.round(Number(amt[1]!.replace(/,/g, "")) * 100), excerpt: amt[0] };
   return null;
 }

@@ -39,6 +39,10 @@ const Env = z.object({
   ACCESS_BOOTSTRAP_JSON: z.string().optional(),
   /** The company that owns the configured Nessie account. */
   ACCOUNT_COMPANY_ID: z.string().default("org_demo"),
+  /** IANA time zone used to read relative delivery dates ("by Wed") for the company. */
+  COMPANY_TIMEZONE: z.string().default("America/Chicago"),
+  /** Optional Google Shopping delivery location (e.g. "Austin, Texas, United States"). Unset: Google's own guess. */
+  SHOPPING_LOCATION: z.string().optional(),
 });
 
 export interface AppConfig {
@@ -54,6 +58,8 @@ export interface AppConfig {
   nessie: { apiKey: string | null; baseUrl: string; customerId: string | null; accountId: string | null };
   limits: { maxSearchCallsPerRun: number; maxAgentSteps: number; maxResearchDurationMs: number; offerMaxAgeMinutes: number };
   agentRuntimePort: number;
+  timeZone: string;
+  shoppingLocation: string | null;
   auth: {
     mode: "clerk" | "demo";
     clerkSecretKey: string | null;
@@ -104,8 +110,19 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
       offerMaxAgeMinutes: e.OFFER_MAX_AGE_MINUTES,
     },
     agentRuntimePort: e.AGENT_RUNTIME_PORT,
+    timeZone: validTimeZone(e.COMPANY_TIMEZONE),
+    shoppingLocation: blank(e.SHOPPING_LOCATION),
     auth: resolveAuth(e),
   };
+}
+
+function validTimeZone(tz: string): string {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    throw new Error(`COMPANY_TIMEZONE "${tz}" is not a valid IANA time zone`);
+  }
 }
 
 function resolveAuth(e: z.infer<typeof Env>): AppConfig["auth"] {
