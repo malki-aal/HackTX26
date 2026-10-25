@@ -63,36 +63,43 @@ export default function ExecutivePage() {
         <ul className="space-y-3">
           {rows.map((a) => (
             <li key={a.proposalId}>
-              <Link
-                href={`/executive/${a.proposalId}`}
-                className="block rounded-2xl bg-paper p-4 shadow-[0_1px_2px_rgba(16,24,40,0.06),0_2px_8px_rgba(16,24,40,0.04)] active:bg-raised"
-              >
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[17px] font-semibold leading-snug">{a.title}</span>
-                  <span className="shrink-0 text-[16px] font-semibold tabular-nums">{formatCents(a.exactAmountCents)}</span>
-                </div>
-                <p className="mt-1 text-[14px]">{a.selectedTitle}</p>
-                <p className="text-[13px] text-muted">
-                  {[a.quantityText, a.seller].filter(Boolean).join(" · ")}
-                </p>
-                <p className="mt-1 flex items-center gap-1.5 text-[13px] text-muted">
-                  <Avatar role="employee" size={20} />
-                  <span>
-                    Requested by {a.requester} · {tab === "pending" ? "Submitted" : "Updated"} {formatWhen(a.updatedAt)}
-                  </span>
-                </p>
-                {tab === "decided" && (
-                  <p className="mt-2 text-[14px] font-medium">
-                    {DECISION_LABEL[a.decision]}
-                    {a.execution && (
-                      <>
-                        {" · "}
-                        <ExecutionStatusText status={a.execution.status} />
-                      </>
-                    )}
+              <div className="rounded-2xl bg-paper p-4 shadow-[0_1px_2px_rgba(16,24,40,0.06),0_2px_8px_rgba(16,24,40,0.04)]">
+                <Link href={`/executive/${a.proposalId}`} className="block active:opacity-80">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[17px] font-semibold leading-snug">{a.title}</span>
+                    <span className="shrink-0 text-[16px] font-semibold tabular-nums">{formatCents(a.exactAmountCents)}</span>
+                  </div>
+                  <p className="mt-1 text-[14px]">{a.selectedTitle}</p>
+                  <p className="text-[13px] text-muted">
+                    {[a.quantityText, a.seller].filter(Boolean).join(" · ")}
                   </p>
+                  <p className="mt-1 flex items-center gap-1.5 text-[13px] text-muted">
+                    <Avatar role="employee" size={20} />
+                    <span>
+                      Requested by {a.requester} · {tab === "pending" ? "Submitted" : "Updated"} {formatWhen(a.updatedAt)}
+                    </span>
+                  </p>
+                  {tab === "decided" && (
+                    <p className="mt-2 text-[14px] font-medium">
+                      {DECISION_LABEL[a.decision]}
+                      {a.execution && (
+                        <>
+                          {" · "}
+                          <ExecutionStatusText status={a.execution.status} />
+                        </>
+                      )}
+                    </p>
+                  )}
+                </Link>
+                {tab === "pending" && (
+                  <Link
+                    href={`/executive/${a.proposalId}`}
+                    className="mt-3 flex h-11 w-full items-center justify-center rounded-xl bg-accent text-[15px] font-semibold text-white active:bg-accent-press"
+                  >
+                    Review
+                  </Link>
                 )}
-              </Link>
+              </div>
             </li>
           ))}
         </ul>

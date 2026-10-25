@@ -65,6 +65,7 @@ function RequestDetail() {
       {req && (
         <>
           <Summary req={req} />
+          {req.status === "changes_requested" && req.proposalId && <ChangesNote proposalId={req.proposalId} requestId={req.id} />}
           {(req.status === "clarifying" || req.status === "awaiting_confirmation") && <Review req={req} onChange={setData} />}
           {req.status === "confirmed" && <StartResearch req={req} onChange={setData} />}
           {req.status === "researching" && req.runId && <Research runId={req.runId} onDone={reload} />}
@@ -89,6 +90,18 @@ function StageBar({ current }: { current: number }) {
         Step {current + 1} of {stages.length} · {stages[current]}
       </p>
     </div>
+  );
+}
+
+/** The executive's notes, shown first so the employee knows exactly what to edit. */
+function ChangesNote({ proposalId, requestId }: { proposalId: string; requestId: string }) {
+  const { data } = useLoad(() => api.getProposal(proposalId), [proposalId]);
+  return (
+    <Section title="Changes requested">
+      <p className="text-[16px]">{data?.decisionNote || "The executive asked for changes."}</p>
+      <p className="mt-2 text-[14px] text-muted">Pick your offers again below, adjust the amount or your case, then resubmit.</p>
+      <Link href={`/requests/${requestId}/proposal`} className="touch text-[15px] font-medium text-accent">View proposal and status</Link>
+    </Section>
   );
 }
 

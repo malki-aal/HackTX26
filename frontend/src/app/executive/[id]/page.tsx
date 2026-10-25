@@ -30,9 +30,9 @@ import {
 type Decision = "approve" | "request_changes" | "reject";
 
 const DECISION_BUTTON: Record<Decision, string> = {
-  approve: "Approve",
-  request_changes: "Request changes",
-  reject: "Reject",
+  approve: "Accept",
+  request_changes: "Change",
+  reject: "Deny",
 };
 
 const TOTAL_STATUS: Record<string, string> = {
@@ -349,15 +349,18 @@ function DecisionStep({
 
   if (!choice) {
     return (
-      <Section title="Decision">
+      <Section title="Review">
         <p className="mb-4 text-[14px] text-muted">
-          Review the proposal above, then choose. Nothing happens until you confirm on the next step.
+          Check the proposal above, then choose. Nothing happens until you confirm on the next step.
         </p>
         <div className="space-y-3">
-          <Button onClick={() => choose("approve")}>Approve</Button>
-          <Button variant="quiet" onClick={() => choose("request_changes")}>Request changes</Button>
-          <Button variant="quiet" onClick={() => choose("reject")}>Reject</Button>
+          <Button onClick={() => choose("approve")}>Accept</Button>
+          <Button variant="quiet" onClick={() => choose("request_changes")}>Change</Button>
+          <Button variant="quiet" onClick={() => choose("reject")}>Deny</Button>
         </div>
+        <p className="mt-3 text-[13px] text-muted">
+          Change sends your notes back to the employee so they can edit the request and resubmit.
+        </p>
       </Section>
     );
   }
@@ -409,9 +412,20 @@ function DecisionStep({
       )}
 
       <div className="mt-4">
-        <label htmlFor="decision-note" className="mb-1.5 block text-[15px] font-medium">Note (optional)</label>
-        <textarea id="decision-note" rows={3} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} />
-        <p className="mt-1 text-[13px] text-muted">The requester will see this note.</p>
+        <label htmlFor="decision-note" className="mb-1.5 block text-[15px] font-medium">
+          {choice === "request_changes" ? "What needs to change?" : "Note (optional)"}
+        </label>
+        <textarea
+          id="decision-note"
+          rows={choice === "request_changes" ? 6 : 3}
+          className={inputClass}
+          value={note}
+          placeholder={choice === "request_changes" ? "Be specific: for example, choose a cheaper monitor, lower the quantity to 2, or add a warranty." : undefined}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        <p className="mt-1 text-[13px] text-muted">
+          {choice === "request_changes" ? "The employee sees this and can edit the request and resubmit." : "The requester will see this note."}
+        </p>
       </div>
 
       {choice === "approve" && (
@@ -452,8 +466,8 @@ function DecisionStep({
       <ErrorNote error={error} />
 
       <div className="mt-4 space-y-3">
-        <Button disabled={pending} onClick={submit}>
-          {pending ? "Working…" : choice === "approve" ? `Approve ${amount}` : choice === "reject" ? "Reject proposal" : "Send back for changes"}
+        <Button disabled={pending || (choice === "request_changes" && !note.trim())} onClick={submit}>
+          {pending ? "Working…" : choice === "approve" ? `Accept ${amount}` : choice === "reject" ? "Deny proposal" : "Send back to employee"}
         </Button>
         <Button variant="quiet" disabled={pending} onClick={() => setChoice(null)}>Back</Button>
       </div>
