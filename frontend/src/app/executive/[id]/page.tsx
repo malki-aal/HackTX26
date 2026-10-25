@@ -353,9 +353,9 @@ function DecisionStep({
           Review the proposal above, then choose. Nothing happens until you confirm on the next step.
         </p>
         <div className="space-y-3">
-          <Button onClick={() => choose("approve")}>Approve…</Button>
-          <Button variant="quiet" onClick={() => choose("request_changes")}>Request changes…</Button>
-          <Button variant="quiet" onClick={() => choose("reject")}>Reject…</Button>
+          <Button onClick={() => choose("approve")}>Approve</Button>
+          <Button variant="quiet" onClick={() => choose("request_changes")}>Request changes</Button>
+          <Button variant="quiet" onClick={() => choose("reject")}>Reject</Button>
         </div>
       </Section>
     );

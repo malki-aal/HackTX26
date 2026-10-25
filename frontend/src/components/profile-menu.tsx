@@ -7,7 +7,7 @@ import { useIdentity } from "@/lib/auth/identity";
 
 /** Circular profile control with the account details people are entitled to see. */
 export function ProfileMenu() {
-  const { identity, signOut } = useIdentity();
+  const { identity, signOut, switchRole } = useIdentity();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
@@ -60,7 +60,10 @@ export function ProfileMenu() {
             {identity.kind === "demo" && (
               <Link
                 href={identity.role === "executive" ? "/" : "/executive"}
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  switchRole?.(identity.role === "executive" ? "employee" : "executive");
+                  setOpen(false);
+                }}
                 className="touch w-full text-[15px] font-medium text-accent"
               >
                 {identity.role === "executive" ? "Switch to the Employee view" : "Switch to the Executive view"}

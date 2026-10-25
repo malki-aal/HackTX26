@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useIdentity } from "@/lib/auth/identity";
 import { PendingActivity } from "@/components/pending";
 import { summarizeItems } from "@/lib/format";
 import { statusLabel, statusTone } from "@/lib/labels";
@@ -11,7 +12,10 @@ import { Empty, ErrorNote, Loading, Page, PageHeader, formatWhen, useLoad, usePo
 export default function RequestsPage() {
   const { data, error, loading, reload, refresh } = useLoad(() => api.listRequests(), []);
   // Cached read: opening the list never asks the bank again.
-  const budget = useLoad(() => api.getBudget({ fresh: false }).catch(() => null), []);
+  const { identity } = useIdentity();
+  const isExecutive = identity.status === "ready" && identity.role === "executive";
+  // Employees never request the company budget. (The backend must refuse it for them too.)
+  const budget = useLoad(() => (isExecutive ? api.getBudget({ fresh: false }).catch(() => null) : Promise.resolve(null)), [isExecutive]);
   const activity = useLoad(() => api.listActivity().catch(() => []), []);
   // A decision or a purchase update shows up on its own. Read-only polling.
   usePolling(async () => {
@@ -25,8 +29,8 @@ export default function RequestsPage() {
     <Page>
       <PageHeader
         title="Requests"
-        amount={budget.loading ? undefined : (budget.data?.availableCents ?? null)}
-        amountLabel="Available budget"
+        amount={isExecutive ? (budget.loading ? undefined : (budget.data?.availableCents ?? null)) : undefined}
+        amountLabel={isExecutive ? "Available budget" : undefined}
         stats={[
           { label: "Requests", value: data ? data.length : "–" },
           { label: "Awaiting approval", value: activity.data ? awaiting : "–" },

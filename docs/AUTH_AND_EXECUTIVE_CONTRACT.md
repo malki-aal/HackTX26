@@ -60,6 +60,7 @@ assignee is wanted).
   the proposals they may decide. Wrong-company and cross-user reads return `404` or `403`.
 - `POST /proposals/:id/decision`: reject employees with `403` (suggested code `FORBIDDEN_ROLE`) whatever the body says.
   The decision actor is the verified executive.
+- `GET /budget` (the company balance, obligations and available budget) must be executive-only. The employee screens no longer show or request it, but that is only the UI; today any caller can read it.
 - `GET /proposals` needs a total and a cursor so the queue can show true counts. Today it returns at most 100 rows; the
   UI shows "100+" when it hits that.
 

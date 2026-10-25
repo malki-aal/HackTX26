@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useIdentity } from "@/lib/auth/identity";
 import { ExecutionStatusText } from "@/components/execution";
 import { formatCents } from "@/lib/money";
 import { ErrorNote, KeyValue, Loading, Page, PageHeader, SandboxNote, Section, formatWhen, useLoad } from "@/components/ui";
@@ -36,7 +37,10 @@ function BudgetBars({ b }: { b: { reportedBalanceCents: number | null; available
 }
 
 export default function AccountPage() {
-  const budget = useLoad(() => api.getBudget(), []);
+  const { identity } = useIdentity();
+  const isExecutive = identity.status === "ready" && identity.role === "executive";
+  // Employees never request the company budget at all. (The backend must refuse it for them too.)
+  const budget = useLoad(() => (isExecutive ? api.getBudget() : Promise.resolve(null)), [isExecutive]);
   const activity = useLoad(() => api.listActivity(), []);
   const purchases = (activity.data ?? []).filter((a) => a.execution);
 
@@ -44,17 +48,17 @@ export default function AccountPage() {
     <Page>
       <PageHeader
         title="Account"
-        amount={budget.loading ? undefined : (budget.data?.availableCents ?? null)}
-        amountLabel="Available budget"
+        amount={isExecutive ? (budget.loading ? undefined : (budget.data?.availableCents ?? null)) : undefined}
+        amountLabel={isExecutive ? "Available budget" : undefined}
         stats={[
-          { label: "Reported balance", value: budget.data ? formatCents(budget.data.reportedBalanceCents) : "–" },
+          ...(isExecutive ? [{ label: "Reported balance", value: budget.data ? formatCents(budget.data.reportedBalanceCents) : "–" }] : []),
           { label: "Purchases", value: activity.data ? purchases.length : "–" },
         ]}
       />
 
       <Section title="You">
         <dl>
-          <KeyValue label="Demo role" value="Employee" />
+          <KeyValue label="Demo role" value={isExecutive ? "Executive" : "Employee"} />
           <KeyValue label="Sign-in" value="Not set up" />
         </dl>
         <p className="mt-1 text-[13px] text-muted">
@@ -90,6 +94,7 @@ export default function AccountPage() {
         {purchases.length > 0 && <SandboxNote />}
       </Section>
 
+      {isExecutive && (
       <Section title="Company budget">
         {budget.loading && <Loading />}
         <ErrorNote error={budget.error} onRetry={budget.reload} />
@@ -115,6 +120,7 @@ export default function AccountPage() {
           </>
         )}
       </Section>
+      )}
     </Page>
   );
 }

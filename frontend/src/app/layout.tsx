@@ -13,7 +13,11 @@ const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin
 export const metadata: Metadata = {
   title: "Runway",
   description: "Purchasing requests, researched and reviewed.",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Runway" },
+  // Installed from the home screen, the app opens full screen with no browser bar.
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Runway" },
+  icons: { icon: [{ url: "/icons/192", sizes: "192x192", type: "image/png" }], apple: [{ url: "/icons/180", sizes: "180x180", type: "image/png" }] },
+  formatDetection: { telephone: false },
+  other: { "mobile-web-app-capable": "yes" },
 };
 
 export const viewport: Viewport = {

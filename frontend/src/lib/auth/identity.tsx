@@ -2,7 +2,7 @@
 
 import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
-import { createContext, Fragment, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api, type ApiError } from "@/lib/api";
 import { authMode } from "./config";
 import { UNAUTHORIZED_EVENT, setTokenProvider } from "./token";
@@ -29,9 +29,11 @@ interface IdentityApi {
   identity: Identity;
   signIn: (() => void) | null;
   signOut: (() => void) | null;
+  /** Demo mode only: switch the label between Employee and Executive. */
+  switchRole: ((r: Role) => void) | null;
 }
 
-const Ctx = createContext<IdentityApi>({ identity: { status: "loading" }, signIn: null, signOut: null });
+const Ctx = createContext<IdentityApi>({ identity: { status: "loading" }, signIn: null, signOut: null, switchRole: null });
 export const useIdentity = () => useContext(Ctx);
 
 /** A person's data must not outlive their session in a shared browser. */
@@ -50,9 +52,37 @@ function Keyed({ id, children }: { id: string; children: React.ReactNode }) {
 
 // ---------------- demo (no sign-in provider) ----------------
 
+const DEMO_ROLE_KEY = "runway.demoRole";
+const roleListeners = new Set<() => void>();
+function readDemoRole(): Role {
+  try {
+    return window.sessionStorage.getItem(DEMO_ROLE_KEY) === "executive" ? "executive" : "employee";
+  } catch {
+    return "employee";
+  }
+}
+function writeDemoRole(r: Role) {
+  try {
+    window.sessionStorage.setItem(DEMO_ROLE_KEY, r);
+  } catch {}
+  roleListeners.forEach((l) => l());
+}
+function subscribeRole(l: () => void) {
+  roleListeners.add(l);
+  return () => {
+    roleListeners.delete(l);
+  };
+}
+
 function DemoProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const role: Role = pathname.startsWith("/executive") ? "executive" : "employee";
+  const stored = useSyncExternalStore(subscribeRole, readDemoRole, () => "employee" as Role);
+  const onExecutivePage = pathname.startsWith("/executive");
+  // Opening the approvals screens makes the demo role Executive and keeps it until it is switched back.
+  useEffect(() => {
+    if (onExecutivePage) writeDemoRole("executive");
+  }, [onExecutivePage]);
+  const role: Role = onExecutivePage ? "executive" : stored;
   const value = useMemo<IdentityApi>(
     () => ({
       identity: {
@@ -66,6 +96,7 @@ function DemoProvider({ children }: { children: React.ReactNode }) {
       },
       signIn: null,
       signOut: null,
+      switchRole: writeDemoRole,
     }),
     [role],
   );
@@ -85,6 +116,7 @@ function MisconfiguredProvider({ children }: { children: React.ReactNode }) {
       },
       signIn: null,
       signOut: null,
+      switchRole: null,
     }),
     [],
   );
@@ -179,7 +211,7 @@ function ClerkProviderBridge({ children }: { children: React.ReactNode }) {
     void clerk.signOut();
   }, [clerk]);
 
-  const value = useMemo<IdentityApi>(() => ({ identity, signIn, signOut }), [identity, signIn, signOut]);
+  const value = useMemo<IdentityApi>(() => ({ identity, signIn, signOut, switchRole: null }), [identity, signIn, signOut]);
   const key = identity.status === "ready" && identity.userId ? identity.userId : identity.status;
   return (
     <Ctx.Provider value={value}>
