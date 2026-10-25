@@ -35,6 +35,8 @@ const Env = z.object({
   CLERK_AUTHORIZED_PARTIES: z.string().optional(),
   /** Team-supplied allowlist mapping verified emails to company and role (gitignored). */
   ACCESS_BOOTSTRAP_FILE: z.string().default("./config/access.json"),
+  /** The same allowlist as inline JSON, for hosts without secret files. Takes precedence over the file. */
+  ACCESS_BOOTSTRAP_JSON: z.string().optional(),
   /** The company that owns the configured Nessie account. */
   ACCOUNT_COMPANY_ID: z.string().default("org_demo"),
 });
@@ -58,11 +60,14 @@ export interface AppConfig {
     clerkJwtKey: string | null;
     authorizedParties: string[];
     bootstrapFile: string;
+    bootstrapJson: string | null;
     accountCompanyId: string;
   };
 }
 
 const blank = (v: string | undefined) => (v && v.trim() ? v.trim() : null);
+// Browsers send Origin without a trailing slash, so "https://app.example/" in a dashboard must still match.
+const originList = (v: string) => v.split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean);
 
 export function loadEnvFile(path = ".env"): void {
   const p = resolve(path);
@@ -80,7 +85,7 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
     nodeEnv: e.NODE_ENV,
     host: e.HOST,
     port: e.PORT,
-    frontendOrigins: e.FRONTEND_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),
+    frontendOrigins: originList(e.FRONTEND_ORIGINS),
     demoMode: e.DEMO_MODE !== "false",
     mode: e.INTEGRATION_MODE,
     databasePath: e.DATABASE_PATH,
@@ -108,7 +113,7 @@ function resolveAuth(e: z.infer<typeof Env>): AppConfig["auth"] {
   // Demo actors are an explicit fixtures-only convenience, never a fallback for live money paths.
   if (mode === "demo" && e.INTEGRATION_MODE === "live") throw new Error("AUTH_MODE=demo is only allowed with INTEGRATION_MODE=fixtures");
   // A blank value means "use FRONTEND_ORIGINS"; an empty list would let any origin's token through azp.
-  const origins = (blank(e.CLERK_AUTHORIZED_PARTIES) ?? e.FRONTEND_ORIGINS).split(",").map((s) => s.trim()).filter(Boolean);
+  const origins = originList(blank(e.CLERK_AUTHORIZED_PARTIES) ?? e.FRONTEND_ORIGINS);
   if (mode === "clerk" && origins.length === 0) throw new Error("CLERK_AUTHORIZED_PARTIES/FRONTEND_ORIGINS must list at least one frontend origin");
   return {
     mode,
@@ -116,6 +121,7 @@ function resolveAuth(e: z.infer<typeof Env>): AppConfig["auth"] {
     clerkJwtKey: blank(e.CLERK_JWT_KEY),
     authorizedParties: origins,
     bootstrapFile: e.ACCESS_BOOTSTRAP_FILE,
+    bootstrapJson: blank(e.ACCESS_BOOTSTRAP_JSON),
     accountCompanyId: e.ACCOUNT_COMPANY_ID,
   };
 }

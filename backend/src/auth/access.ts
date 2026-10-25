@@ -42,22 +42,62 @@ const Bootstrap = z.object({
 });
 type Bootstrap = z.infer<typeof Bootstrap>;
 
-let cache: { path: string; mtimeMs: number; data: Bootstrap } | null = null;
+let cache: { key: string; data: Bootstrap } | null = null;
 
-/** Load the allowlist (re-read when the file changes). A missing file means nobody has access. */
-export function loadBootstrap(path: string): Bootstrap {
-  const p = resolve(path);
-  if (!existsSync(p)) return { companies: [], members: [] };
-  const mtimeMs = statSync(p).mtimeMs;
-  if (cache && cache.path === p && cache.mtimeMs === mtimeMs) return cache.data;
-  const data = Bootstrap.parse(JSON.parse(readFileSync(p, "utf8")));
-  const seen = new Set<string>();
-  for (const m of data.members) {
-    if (seen.has(m.email)) throw new Error(`Access bootstrap lists ${m.email} more than once`);
-    seen.add(m.email);
+export interface BootstrapSource {
+  bootstrapFile: string;
+  bootstrapJson: string | null;
+}
+
+/**
+ * Parse and validate allowlist text. Errors name the source and the failing field path only:
+ * the text holds real emails, so neither it nor any email is ever put in a message or a log.
+ */
+function parseBootstrap(text: string, source: string): Bootstrap {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error(`${source} is not valid JSON`);
   }
-  cache = { path: p, mtimeMs, data };
+  const parsed = Bootstrap.safeParse(raw);
+  if (!parsed.success) {
+    const where = parsed.error.issues.map((i) => i.path.join(".") || "(root)").join(", ");
+    throw new Error(`${source} does not match the allowlist schema (check: ${where})`);
+  }
+  const seen = new Set<string>();
+  parsed.data.members.forEach((m, i) => {
+    if (seen.has(m.email)) throw new Error(`${source} lists the same email more than once (members.${i})`);
+    seen.add(m.email);
+  });
+  return parsed.data;
+}
+
+/**
+ * Load the allowlist. ACCESS_BOOTSTRAP_JSON (inline, for hosts without secret files) wins;
+ * otherwise the file is read and re-read when it changes. Nothing configured means nobody has access.
+ */
+export function loadBootstrap(src: BootstrapSource): Bootstrap {
+  if (src.bootstrapJson !== null) {
+    const key = `json:${src.bootstrapJson}`;
+    if (cache?.key === key) return cache.data;
+    const data = parseBootstrap(src.bootstrapJson, "ACCESS_BOOTSTRAP_JSON");
+    cache = { key, data };
+    return data;
+  }
+  const p = resolve(src.bootstrapFile);
+  if (!existsSync(p)) return { companies: [], members: [] };
+  const key = `file:${p}:${statSync(p).mtimeMs}`;
+  if (cache?.key === key) return cache.data;
+  const data = parseBootstrap(readFileSync(p, "utf8"), "ACCESS_BOOTSTRAP_FILE");
+  cache = { key, data };
   return data;
+}
+
+/** Where the allowlist comes from, for startup logs. Never includes its contents. */
+export function bootstrapSourceLabel(src: BootstrapSource): string {
+  if (src.bootstrapJson !== null) return "ACCESS_BOOTSTRAP_JSON";
+  return existsSync(resolve(src.bootstrapFile)) ? "ACCESS_BOOTSTRAP_FILE" : "none (no allowlist: every signed-in account stays pending)";
 }
 
 // ---------- Users ----------
@@ -106,7 +146,7 @@ type MembershipRow = { user_id: string; org_id: string; role: Role; status: stri
  * only provider-verified emails. Memberships are bound to the internal user id (provider id).
  */
 export function syncMembership(ctx: AppContext, user: UserRow): MembershipRow | null {
-  const boot = loadBootstrap(ctx.config.auth.bootstrapFile);
+  const boot = loadBootstrap(ctx.config.auth);
   const verified: string[] = json(user.verified_emails);
   const entry = boot.members.find((m) => verified.includes(m.email)) ?? null;
   const now = nowIso();

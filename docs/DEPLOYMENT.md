@@ -19,11 +19,13 @@ Two hosts. Secrets are typed only into each host's dashboard. They are never com
 | `GEMINI_MODEL` | no | run `npm run check:gemini` locally to pick one |
 | `SERPAPI_API_KEY` | yes | SerpApi key |
 | `NESSIE_API_KEY` | yes | Nessie sandbox key |
-| `NESSIE_CUSTOMER_ID`, `NESSIE_ACCOUNT_ID` | no | ids from `npm run seed:nessie` (local `backend/.env`) |
+| `NESSIE_CUSTOMER_ID`, `NESSIE_ACCOUNT_ID` | no | ids from `npm run seed:nessie` (local `backend/.env`). **`NESSIE_ACCOUNT_ID` is required on the host:** the hosted database starts empty, so the locally seeded id is not there to fall back on. |
 | `CLERK_SECRET_KEY` | yes | Clerk secret from the same Clerk app as the frontend |
 | `FRONTEND_ORIGINS` | no | the Vercel origin, e.g. `https://malakai-saleh-h26.vercel.app` (no trailing slash, no path). Also used as the Clerk authorized party. |
-| Secret file `access.json` | yes (emails) | see below |
-| Preset in `render.yaml` | no | `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=8000`, `INTEGRATION_MODE=live`, `AUTH_MODE=clerk`, `DEMO_MODE=false`, `DATABASE_PATH=/data/runway.sqlite` (persistent disk), `ACCESS_BOOTSTRAP_FILE=/etc/secrets/access.json`, `ACCOUNT_COMPANY_ID=runway_team` |
+| Allowlist: Secret File `access.json` **or** `ACCESS_BOOTSTRAP_JSON` | yes (emails) | see step 4. Use one, not both (the env var wins if both are set). |
+| `CLERK_AUTHORIZED_PARTIES` | no | optional; defaults to `FRONTEND_ORIGINS` |
+| Preset in `render.yaml` | no | `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=8000`, `INTEGRATION_MODE=live`, `AUTH_MODE=clerk`, `DEMO_MODE=false`, `DATABASE_PATH=/data/runway.sqlite` (persistent disk), `ACCESS_BOOTSTRAP_FILE=/etc/secrets/access.json`, `ACCOUNT_COMPANY_ID=runway_team`, `GEMINI_MAX_RPM=4` |
+| Preset in the `Dockerfile` | no | `RUNWAY_SKIP_AGENT_BUILD=1`. The eve agent is built at image build time (no keys needed), so boot takes about a second and health checks pass right away. |
 
 ### Frontend host (Vercel → Project → Settings → Environment Variables, Production)
 
@@ -41,7 +43,11 @@ Two hosts. Secrets are typed only into each host's dashboard. They are never com
 1. Sign in at render.com with GitHub and grant access to `malki-aal/HackTX26`.
 2. New → Blueprint → select the repo. Render reads `render.yaml` and creates `runway-backend` with a 1 GB disk (disk needs the Starter plan).
 3. Fill the `sync: false` fields from the table above when prompted (or later under Environment).
-4. Environment → Secret Files → add `access.json` with this shape, using the real Google emails:
+4. Add the allowlist in **one** of two ways:
+   - **Secret file:** Environment → Secret Files → `access.json` (Render serves it at `/etc/secrets/access.json`, which is `ACCESS_BOOTSTRAP_FILE`). Leave `ACCESS_BOOTSTRAP_JSON` empty.
+   - **Env var** (for hosts without secret files, e.g. Railway or Fly): paste the same JSON on one line into `ACCESS_BOOTSTRAP_JSON`.
+
+   Malformed JSON stops the server at boot. The error names only the field path, never an email or the text. Change the env var and redeploy to update it; the file is re-read live. Use this shape with the real Google emails:
    ```json
    { "companies": [{ "id": "runway_team", "name": "Runway HackTX team" }],
      "members": [
@@ -49,7 +55,9 @@ Two hosts. Secrets are typed only into each host's dashboard. They are never com
        { "email": "<employee google email>", "role": "employee", "company": "runway_team" } ] }
    ```
    Only provider-verified emails match. The file is re-read when it changes.
-5. Deploy, then open `https://<backend>/api/v1/health`. It should return 200.
+5. Deploy, then open `https://<backend>/api/v1/health`. It should return 200 with `"auth":{"mode":"clerk","configured":true}`. The boot log should say `access allowlist source: ACCESS_BOOTSTRAP_FILE` (or `_JSON`). If it says `none`, every account will stay "Access pending".
+   - The hosted database starts empty, so an executive must re-create the merchant mappings from the app before the first approval. Approvals stay blocked with `MERCHANT_MAPPING_REQUIRED` until then.
+   - The frontend's `NEXT_PUBLIC_API_BASE_URL` is `https://<service-name>.onrender.com/api/v1`, with no trailing slash.
 6. In the Clerk dashboard, add the Vercel domain to the allowed origins for the app, and confirm Google is enabled as a social connection.
 7. Auto-deploy: Render redeploys on push to `main` (`autoDeploy: true`).
 
