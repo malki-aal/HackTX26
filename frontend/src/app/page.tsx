@@ -10,6 +10,8 @@ import { Empty, ErrorNote, Loading, Page, PageHeader, formatWhen, useLoad, usePo
 
 export default function RequestsPage() {
   const { data, error, loading, reload, refresh } = useLoad(() => api.listRequests(), []);
+  // Cached read: opening the list never asks the bank again.
+  const budget = useLoad(() => api.getBudget({ fresh: false }).catch(() => null), []);
   const activity = useLoad(() => api.listActivity().catch(() => []), []);
   // A decision or a purchase update shows up on its own. Read-only polling.
   usePolling(async () => {
@@ -23,6 +25,8 @@ export default function RequestsPage() {
     <Page>
       <PageHeader
         title="Requests"
+        amount={budget.loading ? undefined : (budget.data?.availableCents ?? null)}
+        amountLabel="Available budget"
         stats={[
           { label: "Requests", value: data ? data.length : "–" },
           { label: "Awaiting approval", value: activity.data ? awaiting : "–" },
