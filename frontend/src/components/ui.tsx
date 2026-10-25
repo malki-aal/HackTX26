@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Children, isValidElement, useCallback, useEffect, useRef, useState } from "react";
+import { ProfileMenu } from "@/components/profile-menu";
 import { api, type ApiError, type BackendMode, type Eligibility, type FindingStatus } from "@/lib/api";
 
 let modePromise: Promise<BackendMode> | null = null;
@@ -75,7 +76,8 @@ export function PageHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <header className="bg-hero px-5 pb-12 text-white" style={{ paddingTop: "calc(env(safe-area-inset-top) + 16px)" }}>
+    <header className="relative bg-hero px-5 pb-12 text-white" style={{ paddingTop: "calc(env(safe-area-inset-top) + 16px)" }}>
+      <ProfileMenu />
       <DataNote />
       {back && (
         <Link
@@ -86,7 +88,7 @@ export function PageHeader({
           <span aria-hidden>‹</span>
         </Link>
       )}
-      <h1 className="text-[26px] font-bold leading-[1.2]">{title}</h1>
+      <h1 className="pr-12 text-[26px] font-bold leading-[1.2]">{title}</h1>
       {amount !== undefined && (
         <div className="mt-4">
           {amountLabel && <p className="text-[14px] text-white/85">{amountLabel}</p>}
@@ -116,7 +118,7 @@ export function ProgressBar({ value, max, over }: { value: number; max: number; 
   const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-hero-tile" aria-hidden>
-      <div className={`h-full rounded-full ${over ? "bg-[#FFB4B4]" : "bg-white"}`} style={{ width: `${pct}%` }} />
+      <div className={`h-full rounded-full ${over ? "bg-orange-bar" : "bg-white"}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -151,7 +153,7 @@ export function Button({
   const styles =
     variant === "primary"
       ? "bg-accent text-white active:bg-accent-press"
-      : "bg-accent-soft text-accent active:bg-[#D6E6FF]";
+      : "bg-accent-soft text-accent active:bg-accent-soft-press";
   return <button {...props} className={`${base} ${styles} ${props.className ?? ""}`} />;
 }
 
@@ -212,7 +214,7 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-full bg-[#E9EDF5] p-1">
+    <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-full bg-track p-1">
       {options.map((o) => (
         <button
           key={o.value}
@@ -236,7 +238,7 @@ export function Segmented<T extends string>({
 export function ErrorNote({ error, onRetry }: { error: ApiError | null; onRetry?: () => void }) {
   if (!error) return null;
   return (
-    <div role="alert" className="my-4 rounded-xl border-l-4 border-bad bg-[#FDEEEE] p-3 text-[14px]">
+    <div role="alert" className="my-4 rounded-xl border-l-4 border-bad bg-bad-soft p-3 text-[14px]">
       <p className="text-bad">{error.message}</p>
       <p className="mt-0.5 text-[13px] text-muted">
         Code: {error.code}
@@ -269,9 +271,9 @@ export function Empty({ title, body }: { title: string; body: string }) {
 }
 
 const finding: Record<FindingStatus, { glyph: string; label: string; cls: string }> = {
-  supported: { glyph: "✓", label: "Supported", cls: "bg-[#E7F4EC] text-ok" },
-  contradicted: { glyph: "✕", label: "Contradicted", cls: "bg-[#FDEEEE] text-bad" },
-  unknown: { glyph: "?", label: "Unknown", cls: "bg-[#FDF0E3] text-warn" },
+  supported: { glyph: "✓", label: "Supported", cls: "bg-green-soft text-green-ink" },
+  contradicted: { glyph: "✕", label: "Contradicted", cls: "bg-bad-soft text-bad" },
+  unknown: { glyph: "?", label: "Unknown", cls: "bg-orange-soft text-orange-ink" },
 };
 export function FindingMark({ status }: { status: FindingStatus }) {
   const f = finding[status];
@@ -284,9 +286,9 @@ export function FindingMark({ status }: { status: FindingStatus }) {
 }
 
 const elig: Record<Eligibility, { label: string; cls: string }> = {
-  eligible: { label: "Eligible", cls: "bg-[#E7F4EC] text-ok" },
-  needs_review: { label: "Needs review", cls: "bg-[#FDF0E3] text-warn" },
-  rejected: { label: "Rejected", cls: "bg-[#FDEEEE] text-bad" },
+  eligible: { label: "Eligible", cls: "bg-green-soft text-green-ink" },
+  needs_review: { label: "Needs review", cls: "bg-orange-soft text-orange-ink" },
+  rejected: { label: "Rejected", cls: "bg-bad-soft text-bad" },
 };
 export function EligibilityMark({ value }: { value: Eligibility }) {
   return (
@@ -351,5 +353,56 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
   }, [key, tick]);
 
   const reload = useCallback(async () => setTick((t) => t + 1), []);
-  return { data, error, loading, reload, setData };
+
+  // Quiet re-read for polling: no loading flash, never overlaps itself.
+  const inflight = useRef(false);
+  const refresh = useCallback(async () => {
+    if (inflight.current) return;
+    inflight.current = true;
+    try {
+      const d = await fnRef.current();
+      setData(d);
+      setError(null);
+    } catch (e) {
+      setError(normalizeError(e));
+    } finally {
+      inflight.current = false;
+    }
+  }, []);
+
+  return { data, error, loading, reload, refresh, setData };
+}
+
+/**
+ * Calls `tick` about every `ms` while the page is visible, one call at a time. Hidden tabs pause and
+ * refresh as soon as they return. It only ever runs read calls the caller passes in; it never mutates.
+ */
+export function usePolling(tick: () => Promise<unknown>, ms = 5000, enabled = true) {
+  const tickRef = useRef(tick);
+  useEffect(() => {
+    tickRef.current = tick;
+  });
+  useEffect(() => {
+    if (!enabled) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const loop = async () => {
+      if (stopped) return;
+      if (!document.hidden) await tickRef.current();
+      if (!stopped) timer = setTimeout(loop, ms);
+    };
+    const onVisible = () => {
+      if (!document.hidden && !stopped) {
+        clearTimeout(timer);
+        void loop();
+      }
+    };
+    timer = setTimeout(loop, ms);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ms, enabled]);
 }

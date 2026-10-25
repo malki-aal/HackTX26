@@ -23,6 +23,7 @@ import {
   inputClass,
   normalizeError,
   useLoad,
+  usePolling,
 } from "@/components/ui";
 
 export default function ProposalPage() {
@@ -66,6 +67,16 @@ function ProposalInner() {
     [req.data?.proposalId],
   );
 
+  // Watch for the executive's decision and for the purchase result. Read-only; never starts research.
+  const live = existing.data;
+  usePolling(
+    async () => {
+      await Promise.all([existing.refresh(), req.refresh()]);
+    },
+    5000,
+    !!live && (live.decision === "awaiting_review" || live.execution === "queued" || live.execution === "submitting"),
+  );
+
   const [justification, setJustification] = useState("");
   const [expense, setExpense] = useState("");
   const [suitable, setSuitable] = useState(false);
@@ -84,6 +95,9 @@ function ProposalInner() {
     if (offer) chosen.push({ itemId: item.id, offer });
   }
   const itemsReady = !!req.data && chosen.length === req.data.items.length;
+  // After "request changes" the requester may revise: choose offers again, then resubmit as a new revision.
+  const revising = submitted?.decision === "changes_requested" && itemsReady && Object.keys(fromQuery).length > 0;
+  const showStatus = !!submitted && !revising;
   const knownSubtotal = chosen.every((c) => c.offer.listedSubtotalCents !== null)
     ? chosen.reduce((s, c) => s + (c.offer.listedSubtotalCents ?? 0), 0)
     : null;
@@ -124,7 +138,7 @@ function ProposalInner() {
         expenseCents: cents as number,
       });
       router.replace(`/requests/${id}/proposal`);
-      await req.reload();
+      await Promise.all([req.reload(), existing.reload()]); // a revision keeps the same proposal id
     } catch (e) {
       setApiError(normalizeError(e)); // inputs stay as typed
     } finally {
@@ -137,18 +151,18 @@ function ProposalInner() {
   return (
     <Page>
       <PageHeader
-        title={submitted ? "Proposal" : "Proposal review"}
+        title={showStatus ? "Proposal" : revising ? "Revise proposal" : "Proposal review"}
         back={{ href: `/requests/${id}`, label: "Request" }}
-        amount={submitted ? submitted.expenseCents : (enteredCents ?? 0)}
-        amountLabel={submitted ? "Simulated expense to record" : "Exact total to record"}
-        amountNote={!submitted && enteredCents === null ? (expense ? "That isn’t a valid amount" : "Enter it below") : undefined}
+        amount={showStatus && submitted ? submitted.expenseCents : (enteredCents ?? 0)}
+        amountLabel={showStatus ? "Simulated expense to record" : "Exact total to record"}
+        amountNote={!showStatus && enteredCents === null ? (expense ? "That isn’t a valid amount" : "Enter it below") : undefined}
       >
         {req.data && (
           <div className="mt-4">
             <ProgressBar
-              value={submitted ? submitted.expenseCents : (enteredCents ?? 0)}
+              value={showStatus && submitted ? submitted.expenseCents : (enteredCents ?? 0)}
               max={req.data.budgetTotalCents}
-              over={(submitted ? submitted.expenseCents : (enteredCents ?? 0)) > req.data.budgetTotalCents}
+              over={(showStatus && submitted ? submitted.expenseCents : (enteredCents ?? 0)) > req.data.budgetTotalCents}
             />
             <p className="mt-1.5 text-[13px] text-white/85">of {formatCents(req.data.budgetTotalCents)} budget ceiling</p>
           </div>
@@ -157,7 +171,7 @@ function ProposalInner() {
       {loading && <Loading />}
       <ErrorNote error={req.error ?? offers.error} />
 
-      {submitted && (
+      {submitted && showStatus && (
         <>
           <Section title="Selected items">
             <Lines lines={submitted.lines} />
@@ -182,9 +196,13 @@ function ProposalInner() {
               <p className="mt-2 text-[16px]"><span className="text-muted">Executive note: </span>{submitted.decisionNote}</p>
             )}
             {submitted.decision === "changes_requested" && (
-              <p className="mt-2 text-[14px] text-muted">
-                The executive asked for changes. Editing a request after changes are requested isn&apos;t available in this version.
-              </p>
+              <div className="mt-3">
+                <p className="mb-2 text-[14px] text-muted">
+                  The executive asked for changes. Choose your offers again, adjust the amount or your case, and resubmit.
+                  The earlier decision stays in the history and doesn&apos;t approve the new revision.
+                </p>
+                <Link href={`/requests/${id}`} className="touch text-[15px] font-medium text-accent">Revise and resubmit</Link>
+              </div>
             )}
             {submitted.executionDetail && (
               <div className="mt-3">
@@ -212,12 +230,17 @@ function ProposalInner() {
         </>
       )}
 
-      {!submitted && req.data && !loading && !itemsReady && (
+      {!showStatus && req.data && !loading && !itemsReady && (
         <p className="text-[14px] text-muted">Choose an offer for every item on the request page first.</p>
       )}
 
-      {!submitted && req.data && itemsReady && (
+      {!showStatus && req.data && itemsReady && (
         <>
+          {revising && submitted?.decisionNote && (
+            <p className="mb-4 rounded-xl bg-accent-soft p-3 text-[14px]">
+              <span className="font-medium">Executive note:</span> {submitted.decisionNote}
+            </p>
+          )}
           <Section title="Selected items">
             <Lines lines={lines} />
             {late.length > 0 && (

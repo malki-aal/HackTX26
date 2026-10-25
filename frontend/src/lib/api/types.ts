@@ -64,7 +64,7 @@ export interface PurchaseRequest {
 export interface NewRequestInput {
   title: string;
   purpose: string;
-  category: string;
+  category?: string;
   items: Omit<RequestItem, "id">[];
   budgetTotalCents: number;
   mandatory: string[];
@@ -195,6 +195,28 @@ export type ExecutionState =
   | "failed"
   | "uncertain";
 
+export interface ProposalReview {
+  purpose: string;
+  requirements: { label: string; mandatory: boolean }[];
+  findings: Finding[];
+  observedAt: string | null;
+  expiresAt: string | null;
+  stale: boolean;
+  fromCache: boolean;
+  cost: {
+    unitPriceCents: number | null;
+    packagesRequired: number | null;
+    listedSubtotalCents: number | null;
+    shippingCents: number | null;
+    taxCents: number | null; // always null: the backend never knows tax
+    totalStatus: string;
+  };
+  alternatives: { title: string; seller: string | null; eligibility: string; costCents: number | null }[];
+  budget: { status: string; availableCents: number | null; notes: string[] };
+  history: { version: number; at: string; decision: string; actor: string; note: string }[];
+  revisions: { version: number; submittedAt: string | null; exactAmountCents: number | null }[];
+}
+
 export interface MerchantInfo {
   /** Seller found by research. */
   researchedSeller: string | null;
@@ -219,6 +241,8 @@ export interface ExecutionDetail {
   merchant: MerchantInfo;
   lastError: string | null;
   disclaimer: string;
+  accountMasked?: string | null;
+  recordedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -254,6 +278,7 @@ export interface Proposal {
   execution: ExecutionState;
   executionDetail?: ExecutionDetail;
   unresolved: string[];
+  review?: ProposalReview;
   submittedAt?: string;
 }
 
@@ -272,6 +297,10 @@ export interface ActivityItem {
   decision: DecisionState;
   exactAmountCents: number;
   updatedAt: string;
+  selectedTitle: string;
+  seller: string | null;
+  quantityText: string;
+  requester: string;
   execution?: ExecutionDetail;
 }
 
@@ -283,3 +312,12 @@ export interface ApiError {
 }
 
 export type BackendMode = "live" | "fixtures" | "offline";
+
+/** PROPOSED (not in the backend yet): the verified current user, role and company. */
+export interface Me {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  role: "employee" | "executive";
+  company: { id: string; name: string };
+}

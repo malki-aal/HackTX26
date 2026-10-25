@@ -79,7 +79,7 @@ function TabBar() {
             href="/new"
             aria-label="New request"
             aria-current={create ? "page" : undefined}
-            className="-mt-7 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-[0_4px_12px_rgba(0,87,217,0.35)] ring-4 ring-paper active:bg-accent-press"
+            className="-mt-7 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-[0_4px_12px_rgba(79,70,229,0.35)] ring-4 ring-paper active:bg-accent-press"
           >
             <PlusIcon />
           </Link>

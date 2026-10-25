@@ -1,6 +1,7 @@
 import type { RunwayApi } from "./client";
 import type {
   ActivityItem,
+  Me,
   AgentConfig,
   AgentConfigDetail,
   AgentConfigInput,
@@ -12,6 +13,7 @@ import type {
   OfferHighlight,
   Proposal,
   ProposalLine,
+  ProposalReview,
   PurchaseRequest,
   Run,
   SaveProposalInput,
@@ -284,12 +286,48 @@ function syncStatus(db: Db, r: PurchaseRequest) {
 
 // ---------- proposals / executions ----------
 
+function buildReview(db: Db, p: StoredProposal): ProposalReview | undefined {
+  const r = db.requests.find((x) => x.id === p.requestId);
+  if (!r) return undefined;
+  const offers = fixtureOffers(r);
+  const chosen = p.lines.map((l) => offers.find((o) => o.id === l.offerId)).filter((o): o is Offer => !!o);
+  const first = chosen[0];
+  const taken = new Set(chosen.map((o) => o.id));
+  return {
+    purpose: r.purpose,
+    requirements: [
+      ...r.mandatory.map((label) => ({ label, mandatory: true })),
+      ...r.preferences.map((label) => ({ label, mandatory: false })),
+    ],
+    findings: first ? first.findings : [],
+    observedAt: first?.observedAt ?? null,
+    expiresAt: first?.expiresAt ?? null,
+    stale: false,
+    fromCache: false,
+    cost: {
+      unitPriceCents: first?.unitPriceCents ?? null,
+      packagesRequired: first?.packagesRequired ?? null,
+      listedSubtotalCents: p.researchSubtotalCents,
+      shippingCents: first?.shippingCents ?? null,
+      taxCents: null,
+      totalStatus: "subtotal_plus_shipping_tax_unknown",
+    },
+    alternatives: offers
+      .filter((o) => !taken.has(o.id) && o.eligibility !== "rejected" && chosen.some((c) => c.itemId === o.itemId))
+      .slice(0, 3)
+      .map((o) => ({ title: o.title, seller: o.seller, eligibility: o.eligibility, costCents: o.listedSubtotalCents })),
+    budget: { status: "within_budget", availableCents: null, notes: [] },
+    history: p.approval ? [{ version: p.version, at: p.approval.at, decision: p.approval.decision, actor: p.approval.actor, note: p.decisionNote ?? "" }] : [],
+    revisions: [{ version: p.version, submittedAt: p.submittedAt ?? null, exactAmountCents: p.expenseCents }],
+  };
+}
+
 function proposalView(db: Db, p: StoredProposal): Proposal {
   const ex = p.executionId ? db.executions.find((e) => e.id === p.executionId) : undefined;
   const { version, executionId, ...rest } = p;
   void version;
   void executionId;
-  return { ...rest, execution: ex?.status ?? "not_started", executionDetail: ex };
+  return { ...rest, execution: ex?.status ?? "not_started", executionDetail: ex, review: buildReview(db, p) };
 }
 
 function activity(db: Db): ActivityItem[] {
@@ -303,6 +341,10 @@ function activity(db: Db): ActivityItem[] {
       decision: p.decision,
       exactAmountCents: p.expenseCents,
       updatedAt: p.approval?.at ?? p.submittedAt ?? now(),
+      selectedTitle: p.lines.map((l) => l.title).join(", "),
+      seller: p.lines[0]?.seller ?? null,
+      quantityText: p.lines.map((l) => l.quantityText).join(" · "),
+      requester: p.requester,
       execution: p.executionId ? db.executions.find((e) => e.id === p.executionId) : undefined,
     }));
 }
@@ -312,6 +354,11 @@ export const fixtureApi: RunwayApi = {
 
   async getBackendMode() {
     return "fixtures";
+  },
+
+  async getMe(): Promise<Me> {
+    // Fixture mode has no accounts; the demo role is a label chosen by the screen.
+    throw { code: "NO_ACCOUNTS", message: "Sample data has no accounts." };
   },
 
   async listRequests() {
@@ -340,6 +387,7 @@ export const fixtureApi: RunwayApi = {
           id: uid("req"),
           version: 1,
           ...input,
+          category: input.category ?? "",
           items: input.items.map((it, i) => ({ ...it, id: `item_${i + 1}` })),
           status: "clarifying",
           clarifications: [
@@ -636,6 +684,10 @@ export const fixtureApi: RunwayApi = {
         return saved;
       }),
     );
+  },
+
+  async createMerchantMapping(seller) {
+    return delay({ seller, merchantName: `[FIXTURE] ${seller}`, nessieMerchantId: `fixture_merchant_${slug(seller)}` });
   },
 
   async getIntegrations(): Promise<IntegrationStatus[]> {

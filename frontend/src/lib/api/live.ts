@@ -1,6 +1,9 @@
 import type { RunwayApi } from "./client";
+import { UNAUTHORIZED_EVENT, getAuthToken } from "../auth/token";
 import type {
   ActivityItem,
+  Me,
+  ProposalReview,
   AgentConfig,
   AgentConfigDetail,
   AgentConfigInput,
@@ -40,11 +43,13 @@ async function call<T>(
   init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<T> {
   let res: Response;
+  const token = await getAuthToken();
   try {
     res = await fetch(`${BASE}${path}`, {
       method: init.method ?? "GET",
       headers: {
         ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...init.headers,
       },
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
@@ -62,6 +67,7 @@ async function call<T>(
     | { data: T }
     | { error: { code: string; message: string; retryable?: boolean; requestId?: string } }
     | null;
+  if (res.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   if (!res.ok || !json || "error" in json) {
     const err = json && "error" in json ? json.error : null;
     const e: ApiError = {
@@ -83,6 +89,15 @@ interface BRequirement {
   operator: string;
   value: unknown;
   mandatory: boolean;
+  /** Backend-provided label; preferred over local formatting. */
+  display?: string;
+}
+interface BItem {
+  resolved: boolean;
+  category: string | null;
+  label: string;
+  plural: string;
+  unit: string;
 }
 interface BQuestion {
   id: string;
@@ -97,11 +112,13 @@ interface BRequest {
   isCurrentVersionConfirmed: boolean;
   title: string;
   purpose: string;
+  category: string | null;
+  item: BItem;
   quantity: number;
   totalBudgetCents: number;
   allowedCondition: PurchaseRequest["condition"];
   deadline: string | null;
-  rankingPriority: string;
+  deadlineType?: "hard" | "target";
   agentConfigId: string;
   agentConfigVersion: number | null;
   requirements: BRequirement[];
@@ -115,9 +132,12 @@ interface BRequestSummary {
   id: string;
   version: number;
   title: string;
+  category?: string | null;
+  item?: BItem;
   status: string;
   quantity: number;
   totalBudgetCents: number;
+  deadlineType?: "hard" | "target";
   latestRunId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -135,9 +155,10 @@ const PORT_LABEL: Record<string, string> = {
 };
 
 export function describeRequirement(r: BRequirement): string {
+  if (r.display) return r.display;
   switch (r.attribute) {
     case "product_type":
-      return "Monitor";
+      return `Category: ${String(r.value)}`;
     case "screen_size":
       return `${Math.floor((r.value as { min: number }).min)} inch screen`;
     case "resolution":
@@ -171,7 +192,9 @@ const REQUEST_STATUS: Record<string, RequestStatus> = {
   rejected: "rejected",
 };
 
-const MONITOR_ITEM = (quantity: number) => [{ id: "item_1", name: "Monitors", quantity, unit: "units" }];
+const itemsOf = (item: BItem | undefined, quantity: number) => [
+  { id: "item_1", name: item ? (item.resolved ? item.plural : item.label) : "Items", quantity, unit: item?.unit ?? "units" },
+];
 
 function mapRequest(b: BRequest): PurchaseRequest {
   // Product type and condition are shown separately, so they are not listed as specs.
@@ -182,14 +205,14 @@ function mapRequest(b: BRequest): PurchaseRequest {
     version: b.version,
     title: b.title,
     purpose: b.purpose,
-    category: "monitors",
-    items: MONITOR_ITEM(b.quantity),
+    category: b.category ?? "",
+    items: itemsOf(b.item, b.quantity),
     budgetTotalCents: b.totalBudgetCents,
     mandatory: specs.filter((r) => r.mandatory).map(describeRequirement),
     preferences: specs.filter((r) => !r.mandatory).map(describeRequirement),
     condition: b.allowedCondition,
     deadline: b.deadline ?? undefined,
-    deadlineKind: "flexible", // the backend stores a date but has no hard/flexible distinction
+    deadlineKind: b.deadlineType === "hard" ? "hard" : "flexible",
     agentConfigId: b.agentConfigId,
     agentConfigVersion: b.agentConfigVersion,
     status: REQUEST_STATUS[b.status] ?? "clarifying",
@@ -215,13 +238,13 @@ function mapSummary(b: BRequestSummary): PurchaseRequest {
     version: b.version,
     title: b.title,
     purpose: "",
-    category: "monitors",
-    items: MONITOR_ITEM(b.quantity),
+    category: b.category ?? "",
+    items: itemsOf(b.item, b.quantity),
     budgetTotalCents: b.totalBudgetCents,
     mandatory: [],
     preferences: [],
     condition: "any",
-    deadlineKind: "flexible",
+    deadlineKind: b.deadlineType === "hard" ? "hard" : "flexible",
     agentConfigId: "",
     status: REQUEST_STATUS[b.status] ?? "clarifying",
     clarifications: [],
@@ -240,7 +263,7 @@ function mapSummary(b: BRequestSummary): PurchaseRequest {
 const SECTION_GAP = " ".repeat(80);
 function buildDescription(input: NewRequestInput): string {
   const clean = (l: string) => l.replace(/[.\s]+$/, "");
-  const must = input.mandatory.map(clean).filter(Boolean).map((l) => `${l}.`).join(" ");
+  const must = input.mandatory.map(clean).filter(Boolean).map((l) => `${l} (required).`).join(" ");
   const nice = input.preferences.map(clean).filter(Boolean).map((l) => `Nice to have: ${l}.`).join(" ");
   return nice ? `${must}${SECTION_GAP}${nice}` : must;
 }
@@ -282,6 +305,12 @@ async function mapRun(b: BRun): Promise<Run> {
   };
 }
 
+interface BDelivery {
+  status: string;
+  excerpt: string | null;
+  earliest: string | null;
+  latest: string | null;
+}
 interface BCandidate {
   rank: number;
   offerId: string;
@@ -301,10 +330,21 @@ interface BCandidate {
   evidence: { id: string; excerpt: string; source: string }[];
   unknowns: string[];
   recommendationReason: string;
+  recommendationKinds?: string[];
+  delivery?: BDelivery;
   observedAt: string;
   expiresAt: string;
   stale: boolean;
   fromCache: boolean;
+}
+interface BRecommendation {
+  offerId: string;
+  kinds: string[];
+  reasoning: string[];
+}
+interface BNoncompliant {
+  offerId: string;
+  reason: string;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -313,12 +353,26 @@ const SOURCE_LABEL: Record<string, string> = {
   user: "you",
 };
 const sentence = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const KIND: Record<string, Offer["highlights"][number]> = {
+  lowest_cost: "lowest_known_cost",
+  deadline_fit: "best_deadline_fit",
+  best_overall: "best_overall_fit",
+};
 
-function mapCandidate(c: BCandidate, labels: Map<string, string>, req: BRequest): Offer {
+function mapCandidate(
+  c: BCandidate,
+  labels: Map<string, string>,
+  req: BRequest,
+  rec: BRecommendation | undefined,
+  noncompliant: BNoncompliant | undefined,
+): Offer {
   const excerpts = new Map(c.evidence.map((e) => [e.id, e]));
-  // The backend ranks by eligibility, then affordability, then lowest known cost. With its
-  // default ranking priority, the first eligible, priced candidate is the lowest known cost.
-  const lowest = c.rank === 1 && c.eligibility === "eligible" && c.listedSubtotalCents !== null && req.rankingPriority === "lowest_known_total";
+  const d = c.delivery;
+  const stated = !!d && d.status !== "unknown" && !!(d.excerpt || d.latest);
+  let fit: Offer["deadlineFit"] = "not_applicable";
+  if (req.deadline) fit = noncompliant ? "misses" : d?.latest ? (d.latest <= req.deadline ? "meets" : "misses") : "unknown";
+  const kinds = rec?.kinds ?? c.recommendationKinds ?? [];
+  const reasons = [...(rec?.reasoning ?? []), ...(noncompliant ? [noncompliant.reason] : [])];
   return {
     id: c.offerId,
     itemId: "item_1",
@@ -333,9 +387,10 @@ function mapCandidate(c: BCandidate, labels: Map<string, string>, req: BRequest)
     listedSubtotalCents: c.listedSubtotalCents,
     shippingCents: c.shippingCents,
     taxCents: null, // the backend never knows tax
-    delivery: { status: "unknown" }, // candidates carry no delivery data yet
-    deadlineFit: req.deadline ? "unknown" : "not_applicable",
-    highlights: lowest ? ["lowest_known_cost"] : [],
+    delivery: stated ? { status: "stated", text: d?.excerpt ?? (d?.latest ? `Arrives by ${d.latest}` : undefined) } : { status: "unknown" },
+    deadlineFit: fit,
+    highlights: kinds.map((k) => KIND[k]).filter(Boolean),
+    tradeoff: reasons.length ? reasons.join(" ") : undefined,
     eligibility: c.eligibility,
     findings: c.requirementChecks.map((k) => {
       const ev = k.evidenceIds.map((id) => excerpts.get(id)).find(Boolean);
@@ -364,6 +419,11 @@ interface BExecution {
   amountCents: number;
   providerAmountCents: number | null;
   amountDiscrepancyCents: number | null;
+  approvedAmountCents?: number;
+  providerStoredAmountCents?: number | null;
+  accountMasked?: string | null;
+  merchantMapping?: { nessieMerchantId: string; merchant?: { name?: string } | null } | null;
+  timestamps?: { recordedAt?: string | null };
   amountNote: string | null;
   lastError: unknown;
   disclaimer: string;
@@ -372,23 +432,27 @@ interface BExecution {
 }
 
 function mapExecution(e: BExecution, seller: string | null): ExecutionDetail {
+  const stored = e.providerStoredAmountCents ?? e.providerAmountCents;
+  const approved = e.approvedAmountCents ?? e.amountCents;
   return {
     id: e.id,
     proposalId: e.proposalId,
     status: e.status,
     providerStatus: e.providerStatus,
-    amountCents: e.amountCents,
-    providerAmountCents: e.providerAmountCents,
+    amountCents: approved,
+    providerAmountCents: stored,
     amountDiscrepancyCents: e.amountDiscrepancyCents,
     amountNote: e.amountNote,
     purchaseId: e.externalReference?.purchaseId ?? null,
     merchant: {
       researchedSeller: seller,
-      nessieMerchantId: e.externalReference?.merchantId ?? null,
-      // The backend does not return the sandbox merchant's name yet.
+      nessieMerchantId: e.merchantMapping?.nessieMerchantId ?? e.externalReference?.merchantId ?? null,
+      nessieMerchantName: e.merchantMapping?.merchant?.name ?? null,
     },
     lastError: e.lastError == null ? null : typeof e.lastError === "string" ? e.lastError : JSON.stringify(e.lastError),
     disclaimer: e.disclaimer,
+    accountMasked: e.accountMasked ?? null,
+    recordedAt: e.timestamps?.recordedAt ?? null,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   };
@@ -400,7 +464,28 @@ interface BProposal {
   version: number;
   decisionState: DecisionState;
   quantity: number;
-  offer: { id: string; title: string; seller: string | null; sourceUrl: string | null };
+  offer: {
+    id: string;
+    title: string;
+    seller: string | null;
+    sourceUrl: string | null;
+    observedAt?: string;
+    expiresAt?: string;
+    fromCache?: boolean;
+  };
+  evaluation?: {
+    requirementResults: { requirementId: string; attribute: string; state: Offer["findings"][number]["status"]; reason: string }[];
+    cost: {
+      unitPriceCents: number | null;
+      packagesRequired: number | null;
+      listedSubtotalCents: number | null;
+      shippingCents: number | null;
+      totalStatus: string;
+    };
+  };
+  alternatives?: { title: string; seller: string | null; eligibility: string; knownComparableCostCents: number | null }[];
+  offerStale?: boolean;
+  budgetAssessment?: { status: string; availableBudgetCents: number | null; notes: string[] };
   justification: string;
   technicalReviewConfirmed: boolean;
   unresolved: string[];
@@ -409,15 +494,53 @@ interface BProposal {
     requestBudgetCeilingCents: number;
     exactAmountCents: number | null;
   };
-  decisions: { decision: string; note: string; actor: string; createdAt: string }[];
+  decisions: { version: number; decision: string; note: string; actor: string; createdAt: string }[];
   execution: BExecution | null;
-  versions: { version: number; submittedAt?: string | null }[];
+  versions: { version: number; submittedAt?: string | null; exactAmountCents?: number | null }[];
 }
 
 async function mapProposal(p: BProposal): Promise<Proposal> {
   const req = await call<BRequest>(`/requests/${p.requestId}`);
   const last = p.decisions[p.decisions.length - 1];
   const v = p.versions.find((x) => x.version === p.version);
+  const labels = new Map(req.requirements.map((r) => [r.id, describeRequirement(r)]));
+  const unit = req.item?.unit ?? "units";
+  const review: ProposalReview = {
+    purpose: req.purpose,
+    requirements: req.requirements
+      .filter((r) => r.attribute !== "product_type")
+      .map((r) => ({ label: describeRequirement(r), mandatory: r.mandatory })),
+    findings: (p.evaluation?.requirementResults ?? []).map((r) => ({
+      requirement: labels.get(r.requirementId) ?? r.attribute,
+      status: r.state,
+      evidence: r.reason,
+    })),
+    observedAt: p.offer.observedAt ?? null,
+    expiresAt: p.offer.expiresAt ?? null,
+    stale: !!p.offerStale,
+    fromCache: !!p.offer.fromCache,
+    cost: {
+      unitPriceCents: p.evaluation?.cost.unitPriceCents ?? null,
+      packagesRequired: p.evaluation?.cost.packagesRequired ?? null,
+      listedSubtotalCents: p.evaluation?.cost.listedSubtotalCents ?? p.amounts.researchListedSubtotalCents,
+      shippingCents: p.evaluation?.cost.shippingCents ?? null,
+      taxCents: null,
+      totalStatus: p.evaluation?.cost.totalStatus ?? "price_unknown",
+    },
+    alternatives: (p.alternatives ?? []).map((a) => ({
+      title: a.title,
+      seller: a.seller,
+      eligibility: a.eligibility,
+      costCents: a.knownComparableCostCents,
+    })),
+    budget: {
+      status: p.budgetAssessment?.status ?? "amount_unknown",
+      availableCents: p.budgetAssessment?.availableBudgetCents ?? null,
+      notes: p.budgetAssessment?.notes ?? [],
+    },
+    history: p.decisions.map((d) => ({ version: d.version, at: d.createdAt, decision: d.decision, actor: d.actor, note: d.note })),
+    revisions: p.versions.map((x) => ({ version: x.version, submittedAt: x.submittedAt ?? null, exactAmountCents: x.exactAmountCents ?? null })),
+  };
   return {
     id: p.id,
     requestId: p.requestId,
@@ -426,13 +549,13 @@ async function mapProposal(p: BProposal): Promise<Proposal> {
     lines: [
       {
         itemId: "item_1",
-        itemName: "Monitors",
+        itemName: req.item ? (req.item.resolved ? req.item.plural : req.item.label) : "Items",
         offerId: p.offer.id,
         title: p.offer.title,
         seller: p.offer.seller,
         sourceUrl: p.offer.sourceUrl,
         listedSubtotalCents: p.amounts.researchListedSubtotalCents,
-        quantityText: `${p.quantity} units`,
+        quantityText: `${p.quantity} ${unit}`,
       },
     ],
     justification: p.justification,
@@ -448,6 +571,7 @@ async function mapProposal(p: BProposal): Promise<Proposal> {
     execution: p.execution?.status ?? "not_started",
     executionDetail: p.execution ? mapExecution(p.execution, p.offer.seller) : undefined,
     unresolved: p.unresolved,
+    review,
     submittedAt: v?.submittedAt ?? undefined,
   };
 }
@@ -498,6 +622,10 @@ export const liveApi: RunwayApi = {
     }
   },
 
+  async getMe(): Promise<Me> {
+    return call<Me>("/me");
+  },
+
   async listRequests() {
     const rows = await call<BRequestSummary[]>("/requests?limit=50");
     return rows.map(mapSummary);
@@ -506,28 +634,25 @@ export const liveApi: RunwayApi = {
   getRequest: fetchRequest,
 
   async createRequest(input: NewRequestInput) {
-    if (input.category !== "monitors") {
-      throw unsupported("The backend can only research monitors right now. Other categories need a backend contract change.");
-    }
     if (input.items.length !== 1) {
-      throw unsupported("The backend supports one item type per request. Split this into one request per item, or wait for multi-item support.");
+      throw unsupported("This request has several item types. One request covers one item type until project requests are connected.");
     }
-    if (input.deadline && input.deadlineKind === "hard") {
-      throw unsupported("The backend can't enforce hard deadlines yet. Choose a flexible target date.");
-    }
+    const item = input.items[0];
     const b = await call<BRequest>("/requests", {
       method: "POST",
       body: {
         title: input.title,
         purpose: input.purpose,
         description: buildDescription(input),
-        category: "monitors",
-        quantity: input.items[0].quantity,
+        // No category hint: the backend resolves the item type from the text and asks when unsure.
+        quantity: item.quantity,
+        unit: item.unit,
         currency: "USD",
         budgetCents: input.budgetTotalCents,
         budgetBasis: "total",
         allowedCondition: input.condition,
         deadline: input.deadline ?? null,
+        deadlineType: input.deadline && input.deadlineKind === "hard" ? "hard" : "target",
         agentConfigId: input.agentConfigId,
       },
     });
@@ -573,9 +698,15 @@ export const liveApi: RunwayApi = {
   async listCandidates(requestId) {
     const bReq = await call<BRequest>(`/requests/${requestId}`);
     if (!bReq.latestRunId) return [];
-    const data = await call<{ candidates: BCandidate[] }>(`/requests/${requestId}/candidates?runId=${bReq.latestRunId}`);
+    const data = await call<{
+      candidates: BCandidate[];
+      recommendations?: BRecommendation[];
+      noncompliantAlternatives?: BNoncompliant[];
+    }>(`/requests/${requestId}/candidates?runId=${bReq.latestRunId}`);
     const labels = new Map(bReq.requirements.map((r) => [r.id, describeRequirement(r)]));
-    return data.candidates.map((c) => mapCandidate(c, labels, bReq));
+    const recs = new Map((data.recommendations ?? []).map((r) => [r.offerId, r]));
+    const late = new Map((data.noncompliantAlternatives ?? []).map((r) => [r.offerId, r]));
+    return data.candidates.map((c) => mapCandidate(c, labels, bReq, recs.get(c.offerId), late.get(c.offerId)));
   },
 
   async saveAndSubmitProposal(requestId, input: SaveProposalInput) {
@@ -613,15 +744,17 @@ export const liveApi: RunwayApi = {
           id: string;
           requestId: string;
           decisionState: DecisionState;
+          title: string;
           seller: string | null;
           exactAmountCents: number | null;
           executionId: string | null;
           updatedAt: string;
         }[]
-      >("/proposals?limit=50"),
+      >("/proposals?limit=100"),
       call<BRequestSummary[]>("/requests?limit=50"),
     ]);
     const titles = new Map(requests.map((r) => [r.id, r.title]));
+    const sizes = new Map(requests.map((r) => [r.id, `${r.quantity} ${r.item?.unit ?? "units"}`]));
     const submitted = rows.filter((r) => r.decisionState !== "not_submitted");
     return Promise.all(
       submitted.map(async (r): Promise<ActivityItem> => {
@@ -633,6 +766,10 @@ export const liveApi: RunwayApi = {
           decision: r.decisionState,
           exactAmountCents: r.exactAmountCents ?? 0,
           updatedAt: r.updatedAt,
+          selectedTitle: r.title,
+          seller: r.seller,
+          quantityText: sizes.get(r.requestId) ?? "",
+          requester: "employee-demo",
           execution: ex ? mapExecution(ex, r.seller) : undefined,
         };
       }),
@@ -663,6 +800,14 @@ export const liveApi: RunwayApi = {
     });
     const proposal = await call<BProposal>(`/proposals/${ex.proposalId}`);
     return mapExecution(ex, proposal.offer.seller);
+  },
+
+  async createMerchantMapping(seller) {
+    const m = await call<{ seller: string; nessieMerchantId: string; merchant?: { name?: string } | null }>("/merchant-mappings", {
+      method: "POST",
+      body: { action: "create_sandbox_merchant", seller, actor: "executive-demo" },
+    });
+    return { seller: m.seller, merchantName: m.merchant?.name ?? null, nessieMerchantId: m.nessieMerchantId };
   },
 
   async getBudget(opts): Promise<Budget> {

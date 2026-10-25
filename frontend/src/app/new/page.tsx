@@ -20,12 +20,6 @@ import {
 
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
-const CATEGORIES = [
-  { value: "materials", label: "Workshop materials" },
-  { value: "furniture", label: "Furniture and components" },
-  { value: "monitors", label: "Monitors" },
-  { value: "other", label: "Other" },
-];
 
 interface ItemRow {
   key: number;
@@ -46,7 +40,6 @@ export default function NewRequestPage() {
   const configs = useLoad(() => api.listAgentConfigs(), []);
   const [title, setTitle] = useState("");
   const [purpose, setPurpose] = useState("");
-  const [category, setCategory] = useState("materials");
   const [items, setItems] = useState<ItemRow[]>([blankItem(1)]);
   const [budget, setBudget] = useState("");
   const [mandatory, setMandatory] = useState("");
@@ -65,7 +58,6 @@ export default function NewRequestPage() {
     setPurpose(
       "An intern pitched five desk-organizer prototypes built from leftover wood. We need glue, cork backing and screws to finish them.",
     );
-    setCategory("materials");
     setItems([
       { key: 1, name: "Wood glue", quantity: "2", unit: "bottles" },
       { key: 2, name: "Cork sheet with adhesive backing", quantity: "5", unit: "sheets" },
@@ -108,7 +100,6 @@ export default function NewRequestPage() {
       const r = await api.createRequest({
         title: title.trim(),
         purpose: purpose.trim(),
-        category,
         items: items.map((it) => ({ name: it.name.trim(), quantity: Number(it.quantity), unit: it.unit.trim() || "units" })),
         budgetTotalCents: cents as number,
         mandatory: lines(mandatory),
@@ -141,11 +132,6 @@ export default function NewRequestPage() {
         <Field label="What is it for?" htmlFor="purpose">
           <textarea id="purpose" rows={3} className={inputClass} value={purpose} onChange={(e) => setPurpose(e.target.value)}
             placeholder="Optional. Helps the agent ask better questions." />
-        </Field>
-        <Field required label="Category" htmlFor="category">
-          <select id="category" className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
-            {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
         </Field>
 
         </Section>

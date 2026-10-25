@@ -2,20 +2,37 @@
 
 :root {
   --paper: #ffffff;
-  --canvas: #f2f4f9;
-  --hero: #0b3eb8;
-  --hero-tile: #1c55d4;
-  --paper-raised: #f1f2f4;
-  --surface-group: #e2e6ea;
-  --ink: #1c1c1e;
-  --muted: #5c6470;
-  --rule: #d9dde3;
-  --accent: #0057d9;
-  --accent-press: #0045ad;
-  --accent-soft: #eaf2ff;
-  --ok: #1e7b3a;
-  --warn: #b54708;
-  --bad: #c4262e;
+  --canvas: #f5f6fb;
+  --hero: #4f46e5;
+  --hero-tile: #6259eb;
+  --paper-raised: #f3f4fa;
+  --surface-group: #e4e6f2;
+  --track: #eceef8;
+  --ink: #1b1b2f;
+  --muted: #5d6076;
+  --rule: #dcdeed;
+  --accent: #4f46e5;
+  --accent-press: #4338ca;
+  --accent-soft: #eef0ff;
+  --accent-soft-press: #e0e3ff;
+  --ok: #15803d;
+  --warn: #b45309;
+  --bad: #b91c1c;
+  --bad-soft: #fdecec;
+  /* One hue family per meaning, as in the reference: bar colour, soft fill, readable ink. */
+  --orange-bar: #f08a24;
+  --orange-soft: #fff1e0;
+  --orange-ink: #b45309;
+  --green-bar: #3db360;
+  --green-soft: #e6f6ec;
+  --green-ink: #15803d;
+  --pink-bar: #e255c8;
+  --pink-soft: #fde9f8;
+  --pink-ink: #be185d;
+  --purple-bar: #8b5cf6;
+  --purple-soft: #f0eafe;
+  --purple-ink: #6d28d9;
+  --indigo-bar: #5b5bea;
 }
 
 @theme inline {
@@ -25,16 +42,32 @@
   --color-hero-tile: var(--hero-tile);
   --color-raised: var(--paper-raised);
   --color-group: var(--surface-group);
+  --color-track: var(--track);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-rule: var(--rule);
   --color-accent: var(--accent);
   --color-accent-press: var(--accent-press);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-press: var(--accent-soft-press);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", var(--font-inter), "Segoe UI", sans-serif;
+  --color-bad-soft: var(--bad-soft);
+  --color-orange-bar: var(--orange-bar);
+  --color-orange-soft: var(--orange-soft);
+  --color-orange-ink: var(--orange-ink);
+  --color-green-bar: var(--green-bar);
+  --color-green-soft: var(--green-soft);
+  --color-green-ink: var(--green-ink);
+  --color-pink-bar: var(--pink-bar);
+  --color-pink-soft: var(--pink-soft);
+  --color-pink-ink: var(--pink-ink);
+  --color-purple-bar: var(--purple-bar);
+  --color-purple-soft: var(--purple-soft);
+  --color-purple-ink: var(--purple-ink);
+  --color-indigo-bar: var(--indigo-bar);
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --font-serif: var(--font-sans);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -44,12 +77,19 @@ body {
   height: 100%;
   background: var(--canvas);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", var(--font-inter), "Segoe UI", sans-serif;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   font-size: 16px;
   line-height: 1.4;
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+}
+
+/* Standalone text actions get a 44px-tall hit area without changing how they look. */
+.touch {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
 }
 
 /* iOS zooms inputs under 16px */

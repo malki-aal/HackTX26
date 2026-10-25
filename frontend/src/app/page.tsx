@@ -4,15 +4,19 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { PendingActivity } from "@/components/pending";
 import { summarizeItems } from "@/lib/format";
-import { statusLabel } from "@/lib/labels";
+import { statusLabel, statusTone } from "@/lib/labels";
 import { formatCents } from "@/lib/money";
-import { Empty, ErrorNote, Loading, Page, PageHeader, formatWhen, useLoad } from "@/components/ui";
+import { Empty, ErrorNote, Loading, Page, PageHeader, formatWhen, useLoad, usePolling } from "@/components/ui";
 
 export default function RequestsPage() {
-  const { data, error, loading, reload } = useLoad(() => api.listRequests(), []);
+  const { data, error, loading, reload, refresh } = useLoad(() => api.listRequests(), []);
   // Cached read: opening the list never asks the bank again.
   const budget = useLoad(() => api.getBudget({ fresh: false }).catch(() => null), []);
   const activity = useLoad(() => api.listActivity().catch(() => []), []);
+  // A decision or a purchase update shows up on its own. Read-only polling.
+  usePolling(async () => {
+    await Promise.all([refresh(), activity.refresh()]);
+  }, 5000);
   const acts = activity.data ?? [];
   const awaiting = acts.filter((a) => a.decision === "awaiting_review").length;
   const toRecord = acts.filter((a) => a.decision === "approved" && a.execution?.status !== "recorded").length;
@@ -49,7 +53,7 @@ export default function RequestsPage() {
                 <p className="mt-1 text-[13px] text-muted">
                   {summarizeItems(r.items)} · Updated {formatWhen(r.updatedAt)}
                 </p>
-                <p className="mt-2 inline-block rounded-full bg-accent-soft px-2.5 py-0.5 text-[13px] font-medium text-accent">
+                <p className={`mt-2 inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium ${statusTone[r.status]}`}>
                   {statusLabel[r.status]}
                 </p>
               </Link>

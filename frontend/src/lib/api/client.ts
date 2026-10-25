@@ -1,5 +1,6 @@
 import type {
   ActivityItem,
+  Me,
   AgentConfig,
   AgentConfigDetail,
   AgentConfigInput,
@@ -21,6 +22,8 @@ export interface RunwayApi {
   mode: "fixture" | "live";
   /** Mode the backend reports (fixtures means the backend itself serves sample data). */
   getBackendMode(): Promise<BackendMode>;
+  /** PROPOSED endpoint. Rejects when the backend has no sign-in support or the person has no access. */
+  getMe(): Promise<Me>;
   listRequests(): Promise<PurchaseRequest[]>;
   getRequest(id: string): Promise<PurchaseRequest>;
   createRequest(input: NewRequestInput): Promise<PurchaseRequest>;
@@ -47,6 +50,8 @@ export interface RunwayApi {
   reconcile(executionId: string, action: "check" | "mark_failed"): Promise<ExecutionDetail>;
   /** `fresh: false` reads the saved snapshot instead of asking the bank again. */
   getBudget(opts?: { fresh?: boolean }): Promise<Budget>;
+  /** Executive action: link a seller to a new Nessie sandbox merchant. Approval requires a mapping. */
+  createMerchantMapping(seller: string): Promise<{ seller: string; merchantName: string | null; nessieMerchantId: string }>;
   listAgentConfigs(): Promise<AgentConfig[]>;
   listAgentConfigDetails(): Promise<AgentConfigDetail[]>;
   /** Without `existing` creates a configuration; with it saves a new version of that one. */

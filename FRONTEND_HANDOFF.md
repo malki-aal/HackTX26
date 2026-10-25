@@ -67,3 +67,34 @@ with a safe-area aware tab bar. Light theme only. Status and evidence are always
 
 All products, sellers, prices and the balance are invented. No Nessie purchase is recorded from fixtures. A live
 SerpApi plus Nessie demonstration has not been done.
+
+
+## Executive review, profiles and sign-in (branch `frontend/executive-auth`)
+
+Merged `origin/feat/runway-backend` (contract v2, `backend/docs/CONTRACT_V2.md`) into this branch; the workflow-update UI was kept
+and the live adapter updated for v2 (item and unit from the backend, `deadlineType`, requirement `display` labels,
+recommendations and late alternatives, v2 execution fields). The form no longer asks for a category: the backend resolves it.
+One request still covers one item type; project (multi-item) requests are not wired into the UI yet.
+
+**Executive queue** (`/executive`): Pending and Decided tabs with counts, refreshed about every five seconds while visible
+(one read at a time, paused when the tab is hidden, never starts research or touches a purchase). Counts show "100+" at the list limit.
+
+**Proposal review** (`/executive/[id]`): requester, purpose, requirements, selected offer with source link and freshness,
+requirement-by-requirement evidence, cost with unknown shipping and tax, alternatives, justification, revision and decision history.
+
+**Decision step**: choosing Approve, Request changes or Reject opens a separate confirmation with the proposal and revision, the
+exact amount, the optional note, and for approve the available budget with its check time, an estimated projected budget, and an unchecked
+confirmation checkbox (reset when the revision or amount changes). One idempotency key per logical decision. Version conflicts reload the
+proposal and ask for a fresh decision; a missing merchant mapping offers an explicit "create sandbox merchant" action; uncertain executions
+offer "Check status" (never a resend).
+
+**Employee side**: the request, proposal and list screens poll for the decision and the purchase result. After "request changes" the
+employee sees the note and can choose offers again and resubmit a new revision.
+
+**Avatars and profile**: original low-poly SVGs (`src/components/avatars.tsx`), a circular profile menu in every header
+(`src/components/profile-menu.tsx`).
+
+**Sign-in**: Clerk is wired behind `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (see `.env.example` and `docs/AUTH_AND_EXECUTIVE_CONTRACT.md`).
+Without keys the app runs in explicit demo mode. **Not verified:** a real Google sign-in has never run (no Clerk application or keys), and the
+backend does not verify tokens or roles yet, so nothing is protected. With a fake publishable key the build and the middleware engage and redirect to
+Clerk, as expected. Passkey or Face ID approval is not built.

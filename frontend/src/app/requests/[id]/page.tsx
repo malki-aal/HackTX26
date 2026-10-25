@@ -22,6 +22,7 @@ import {
   formatWhen,
   normalizeError,
   useLoad,
+  usePolling,
 } from "@/components/ui";
 
 const POLL_MS = 1500;
@@ -36,7 +37,9 @@ export default function RequestDetailPage() {
 
 function RequestDetail() {
   const { id } = useParams<{ id: string }>();
-  const { data: req, error, loading, reload, setData } = useLoad(() => api.getRequest(id), [id]);
+  const { data: req, error, loading, reload, refresh, setData } = useLoad(() => api.getRequest(id), [id]);
+  // While a proposal waits for a decision, check for the answer. Read-only.
+  usePolling(refresh, 5000, req?.status === "submitted");
 
   return (
     <Page>
@@ -250,6 +253,7 @@ function Research({ runId, onDone }: { runId: string; onDone: () => void }) {
 
 // ---------- compare and select ----------
 
+const HIGHLIGHT_INK = { lowest_known_cost: "text-green-ink", best_deadline_fit: "text-orange-ink", best_overall_fit: "text-purple-ink" } as const;
 const HIGHLIGHT_ORDER = ["lowest_known_cost", "best_deadline_fit", "best_overall_fit"] as const;
 
 function priceLine(o: Offer): string {
@@ -340,7 +344,7 @@ function ItemOffers({
   const row = (o: Offer, note?: string) => (
     <li key={o.id} className="border-t border-rule py-4 first:border-t-0">
       {o.highlights.length > 0 && (
-        <p className="mb-1 text-[14px] font-semibold text-accent">{o.highlights.map((h) => HIGHLIGHT_LABEL[h]).join(" · ")}</p>
+        <p className={`mb-1 text-[14px] font-semibold ${HIGHLIGHT_INK[o.highlights[0]]}`}>{o.highlights.map((h) => HIGHLIGHT_LABEL[h]).join(" · ")}</p>
       )}
       {note && <p className="mb-1 text-[14px] font-semibold text-bad">{note}</p>}
       <div className="flex items-baseline justify-between gap-3">
