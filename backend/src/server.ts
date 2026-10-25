@@ -14,7 +14,9 @@ const config = parseConfig(process.env);
 registerSecrets(secretValues(config));
 const internalToken = randomBytes(32).toString("hex");
 const root = resolve(import.meta.dirname, "..");
-const eveBin = resolve(root, "node_modules/.bin/eve");
+const isWin = process.platform === "win32";
+// On Windows the npm bin entry is a .cmd shim that must run through a shell.
+const eveBin = resolve(root, isWin ? "node_modules/.bin/eve.cmd" : "node_modules/.bin/eve");
 
 let agentProcess: ChildProcess | null = null;
 
@@ -24,6 +26,8 @@ function agentEnv(): NodeJS.ProcessEnv {
   return {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
+    // Windows needs these system variables for node and the .cmd shim to start.
+    ...(isWin ? { SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, USERPROFILE: process.env.USERPROFILE, APPDATA: process.env.APPDATA, LOCALAPPDATA: process.env.LOCALAPPDATA, TEMP: process.env.TEMP, TMP: process.env.TMP } : {}),
     NODE_ENV: "production",
     EVE_TELEMETRY_DISABLED: "1",
     EVE_SCHEDULES_DISABLED: "1",
@@ -42,7 +46,7 @@ function startAgentRuntime() {
   }
   if (process.env.RUNWAY_SKIP_AGENT_BUILD !== "1") {
     console.log("[runway] building agent runtime (eve build)...");
-    const b = spawnSync(eveBin, ["build", "--skip-sandbox-prewarm"], { cwd: root, env: agentEnv(), stdio: "inherit" });
+    const b = spawnSync(eveBin, ["build", "--skip-sandbox-prewarm"], { cwd: root, env: agentEnv(), stdio: "inherit", shell: isWin });
     if (b.status !== 0) {
       console.error("[runway] eve build failed; research runs will report agent_runtime errors.");
       return;
@@ -51,7 +55,7 @@ function startAgentRuntime() {
   // Runway marks research runs interrupted by a restart as failed. Discard eve's local durable
   // session store too, so old agent turns cannot resume in the background and spend model quota.
   rmSync(resolve(root, ".eve/.workflow-data"), { recursive: true, force: true });
-  agentProcess = spawn(eveBin, ["start", "--host", "127.0.0.1", "--port", String(config.agentRuntimePort), "--no-schedules"], { cwd: root, env: agentEnv(), stdio: ["ignore", "inherit", "inherit"] });
+  agentProcess = spawn(eveBin, ["start", "--host", "127.0.0.1", "--port", String(config.agentRuntimePort), "--no-schedules"], { cwd: root, env: agentEnv(), stdio: ["ignore", "inherit", "inherit"], shell: isWin });
   agentProcess.on("exit", (code) => {
     console.warn(`[runway] agent runtime exited (code ${code}).`);
     agentProcess = null;
