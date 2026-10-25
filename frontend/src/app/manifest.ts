@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "Runway",
     short_name: "Runway",
-    description: "Purchasing requests, researched and reviewed.",
+    description: "Tools, materials and equipment for small engineering teams: options researched, people decide.",
     start_url: "/",
     scope: "/",
     display: "standalone",

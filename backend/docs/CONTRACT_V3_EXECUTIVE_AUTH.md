@@ -161,3 +161,28 @@ Header `Idempotency-Key: <uuid>`. Create one key per decision attempt and reuse 
 
 - Real Google sign-in has **not** been verified. The backend tests use a controlled test identity provider, labeled as such. Verifying it needs the team's Clerk application keys and an allowlist of real emails.
 - Passkeys / Face ID are out of scope.
+
+## 11. Integration pass (additive)
+
+### Condition evidence is no longer inferred into "supported"
+- A listing that only lacks a second-hand marker gives `condition` the state **`unknown`**, with the reason "Inferred new …; verify with the seller".
+- Only a stated condition is `supported`: the provider's second-hand field, or listing text such as "New" or "Condition: New".
+- Consequences: many live offers are now `needs_review` instead of `eligible`, and research reports `no_confirmed_match` more often. Nothing unconfirmed is presented as met.
+
+### Unconfirmed must-haves need a recorded verification or exception at submission
+- `POST /proposals/:id/submit` accepts `requirementResolutions: [{ requirementId, kind: "verified" | "exception", note }]`.
+  - There is one entry for every **mandatory requirement whose evidence state is `unknown`** for the proposed offer.
+  - `note`: 3–500 characters of plain text, with no control characters.
+- Missing entries return `422 UNRESOLVED_REQUIREMENTS`, with `details.requirements: [{ requirementId, attribute, reason }]`.
+- Entries for anything else return `422 VALIDATION_ERROR`.
+- Contradicted must-haves still make the offer `rejected`, and it cannot be proposed.
+- **Storage:** resolutions are stored with that (draft) version and returned on proposal detail as `requirementResolutions: [{ requirementId, attribute, evidenceReason, kind, note, recordedAt }]`.
+  - Already-submitted versions are never rewritten.
+  - The evidence state itself stays `unknown`.
+
+### Research progress
+- Search and product-detail tool results now include the deterministic ranking (`evaluation`) when `evaluateCandidates` is enabled for the configuration. This saves model turns.
+- `detailsCouldHelp: false` marks candidates whose only unconfirmed must-haves are things a product page cannot state, such as condition.
+  - `getProductDetails` returns `{ skipped: true }` for them without spending a lookup.
+- New run event `model_quota_wait`, payload `{ waitMs }`. It records a real pause by the agent's Gemini pacing (`GEMINI_MAX_RPM`) and is reported over the loopback-only `/internal/agent-progress`.
+- `GET /runs/:id/events` accepts `limit` up to 500.

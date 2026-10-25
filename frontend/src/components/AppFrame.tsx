@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { PUBLIC_PATHS } from "@/lib/auth/config";
 import { useIdentity } from "@/lib/auth/identity";
+import { tabsFor } from "@/lib/nav";
 
 const icon = "h-6 w-6";
 
@@ -25,6 +26,25 @@ function UserIcon() {
     </svg>
   );
 }
+
+function CheckIcon() {
+  return (
+    <svg className={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+      <path d="M8 12.5l2.7 2.7L16.5 9" />
+    </svg>
+  );
+}
+
+function ActivityIcon() {
+  return (
+    <svg className={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 12h4l3-7 4 14 3-7h4" />
+    </svg>
+  );
+}
+
+const GLYPH = { list: <ListIcon />, check: <CheckIcon />, activity: <ActivityIcon />, user: <UserIcon /> };
 
 function PlusIcon() {
   return (
@@ -65,8 +85,7 @@ function TabBar() {
   const pathname = usePathname();
   const { identity } = useIdentity();
   if (identity.status !== "ready" || PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return null;
-  const requests = pathname === "/" || pathname.startsWith("/requests") || pathname.startsWith("/purchases");
-  const account = pathname === "/account" || pathname.startsWith("/executive") || pathname.startsWith("/settings");
+  const { tabs, showCreate } = tabsFor(identity.role);
   const create = pathname === "/new";
 
   const tab = (href: string, label: string, active: boolean, glyph: React.ReactNode) => (
@@ -86,8 +105,11 @@ function TabBar() {
       className="no-print relative shrink-0 rounded-t-[22px] bg-paper shadow-[0_-4px_16px_rgba(16,24,40,0.08)]"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
+      {!showCreate ? (
+        <div className="grid grid-cols-3 items-end">{tabs.map((t) => <div key={t.href}>{tab(t.href, t.label, t.match(pathname), GLYPH[t.icon])}</div>)}</div>
+      ) : (
       <div className="grid grid-cols-[1fr_72px_1fr] items-end">
-        {tab("/", "Requests", requests, <ListIcon />)}
+        {tab(tabs[0].href, tabs[0].label, tabs[0].match(pathname), GLYPH[tabs[0].icon])}
         <div className="flex justify-center">
           <Link
             href="/new"
@@ -98,8 +120,9 @@ function TabBar() {
             <PlusIcon />
           </Link>
         </div>
-        {tab("/account", "Account", account, <UserIcon />)}
+        {tab(tabs[1].href, tabs[1].label, tabs[1].match(pathname), GLYPH[tabs[1].icon])}
       </div>
+      )}
     </nav>
   );
 }

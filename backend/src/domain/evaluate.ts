@@ -66,8 +66,9 @@ function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): Re
       const e = ev[0];
       if (!e || offer.condition === null) return result("unknown", [], "Condition not stated");
       if (!req.value.includes(offer.condition)) return result("contradicted", [e.id], `Listing condition is ${offer.condition}`);
+      // "Not described as used" is not evidence of new: an inferred condition stays unknown until verified.
       return e.method === "inferred_default"
-        ? result("supported", [e.id], "No second-hand condition reported (treated as new; verify at checkout)")
+        ? result("unknown", [e.id], "Inferred new (no second-hand condition reported); not stated by the listing, verify with the seller")
         : result("supported", [e.id], `Listing condition is ${offer.condition}`);
     }
     case "refresh_rate": {

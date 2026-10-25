@@ -80,6 +80,8 @@ function ProposalInner() {
   const [justification, setJustification] = useState("");
   const [expense, setExpense] = useState("");
   const [suitable, setSuitable] = useState(false);
+  // Per unconfirmed must-have: verified by the requester, or a deliberate exception, with a note.
+  const [resolutions, setResolutions] = useState<Record<string, { kind: "verified" | "exception" | ""; note: string }>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [apiError, setApiError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
@@ -115,6 +117,8 @@ function ProposalInner() {
     };
   });
   const late = chosen.filter((c) => c.offer.deadlineFit === "misses" && req.data?.deadlineKind === "hard");
+  // Must-haves the evidence left unconfirmed. They are never treated as met.
+  const openMust = chosen.flatMap((c) => c.offer.findings.filter((f) => f.mandatory && f.status === "unknown" && f.requirementId));
 
   async function submit() {
     if (pending || !itemsReady) return;
@@ -125,6 +129,11 @@ function ProposalInner() {
     else if (knownSubtotal !== null && cents < knownSubtotal)
       next.expense = `This can't be less than the listed subtotal, ${formatCents(knownSubtotal)}.`;
     if (!suitable) next.suitable = "Confirm that you reviewed technical suitability.";
+    for (const f of openMust) {
+      const r = resolutions[f.requirementId!];
+      if (!r?.kind) next[`res-${f.requirementId}`] = "Choose whether you verified this or are making an exception.";
+      else if ((r.note ?? "").trim().length < 3) next[`res-${f.requirementId}`] = r.kind === "verified" ? "Say how you verified it." : "Say why the exception is acceptable.";
+    }
     setErrors(next);
     if (Object.keys(next).length) return;
 
@@ -136,6 +145,11 @@ function ProposalInner() {
         justification: justification.trim(),
         suitabilityConfirmed: true,
         expenseCents: cents as number,
+        requirementResolutions: openMust.map((f) => ({
+          requirementId: f.requirementId!,
+          kind: resolutions[f.requirementId!]!.kind as "verified" | "exception",
+          note: resolutions[f.requirementId!]!.note.trim(),
+        })),
       });
       router.replace(`/requests/${id}/proposal`);
       await Promise.all([req.reload(), existing.reload()]); // a revision keeps the same proposal id
@@ -180,7 +194,7 @@ function ProposalInner() {
             <dl>
               <KeyValue label="Research subtotal" value={formatCents(submitted.researchSubtotalCents)}
                 note="Listed prices only. Shipping and tax may be missing." />
-              <KeyValue label="Approved budget ceiling" value={formatCents(submitted.budgetCeilingCents)} note="The most this request may spend." />
+              <KeyValue label="Request budget ceiling" value={formatCents(submitted.budgetCeilingCents)} note="The most this request asked to spend. Not an approval." />
               <KeyValue label="Simulated expense to record" value={formatCents(submitted.expenseCents)}
                 note="Confirmed by the requester. Not verified at a merchant checkout." />
             </dl>
@@ -219,6 +233,16 @@ function ProposalInner() {
               </p>
             )}
             <SandboxNote />
+            {submitted.requirementResolutions.length > 0 && (
+              <>
+                <h3 className="mb-1 mt-3 text-[15px] font-semibold">Must-haves you verified or excepted</h3>
+                <ul className="list-disc pl-5 text-[15px]">
+                  {submitted.requirementResolutions.map((r) => (
+                    <li key={r.requirement}>{r.requirement}: {r.kind === "verified" ? "verified by you" : "exception"} — {r.note}</li>
+                  ))}
+                </ul>
+              </>
+            )}
             {submitted.unresolved.length > 0 && (
               <>
                 <h3 className="mb-1 mt-3 text-[15px] font-semibold">Still unresolved</h3>
@@ -249,11 +273,46 @@ function ProposalInner() {
               </p>
             )}
           </Section>
+          {openMust.length > 0 && (
+            <Section title="Unconfirmed must-haves">
+              <p className="mb-3 text-[14px] text-muted">
+                The listing evidence doesn&apos;t confirm these. They aren&apos;t treated as met. For each, either say how you
+                verified it (for example with the seller), or record a deliberate exception. The executive sees both.
+              </p>
+              {openMust.map((f) => {
+                const key = f.requirementId!;
+                const r = resolutions[key] ?? { kind: "", note: "" };
+                const set = (patch: Partial<typeof r>) => setResolutions((prev) => ({ ...prev, [key]: { ...r, ...patch } }));
+                return (
+                  <fieldset key={key} className="mb-4 border-t border-rule pt-3 first:border-t-0 first:pt-0">
+                    <legend className="text-[16px] font-medium">{f.requirement}</legend>
+                    <p className="text-[13px] text-muted">{f.evidence}</p>
+                    <div className="mt-2 flex flex-wrap gap-4 text-[15px]">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name={`res-${key}`} className="h-4 w-4 accent-[var(--accent)]" checked={r.kind === "verified"} onChange={() => set({ kind: "verified" })} />
+                        I verified it
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name={`res-${key}`} className="h-4 w-4 accent-[var(--accent)]" checked={r.kind === "exception"} onChange={() => set({ kind: "exception" })} />
+                        Proceed as an exception
+                      </label>
+                    </div>
+                    {r.kind && (
+                      <textarea rows={2} className={`${inputClass} mt-2`} value={r.note} aria-label={r.kind === "verified" ? "How you verified it" : "Why the exception is acceptable"}
+                        placeholder={r.kind === "verified" ? "How you verified it (who, where, what they said)" : "Why proceeding without confirmation is acceptable"}
+                        onChange={(e) => set({ note: e.target.value })} />
+                    )}
+                    {errors[`res-${key}`] && <p role="alert" className="mt-1.5 text-[13px] text-bad">{errors[`res-${key}`]}</p>}
+                  </fieldset>
+                );
+              })}
+            </Section>
+          )}
           <Section title="Three different amounts">
             <dl>
               <KeyValue label="Research subtotal" value={formatCents(knownSubtotal)}
                 note="Listed prices only. Shipping and tax may be missing." />
-              <KeyValue label="Approved budget ceiling" value={formatCents(req.data.budgetTotalCents)} note="The most this request may spend." />
+              <KeyValue label="Request budget ceiling" value={formatCents(req.data.budgetTotalCents)} note="The most this request asked to spend. Not an approval." />
               <KeyValue label="Simulated expense to record"
                 value={enteredCents === null ? (expense ? "Invalid" : "Not entered") : formatCents(enteredCents)}
                 note="Confirmed by you. Not verified at a merchant checkout." />

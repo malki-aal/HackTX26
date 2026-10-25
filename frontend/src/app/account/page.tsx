@@ -42,7 +42,8 @@ export default function AccountPage() {
   // Employees never request the company budget at all. (The backend must refuse it for them too.)
   const budget = useLoad(() => (isExecutive ? api.getBudget() : Promise.resolve(null)), [isExecutive]);
   const activity = useLoad(() => api.listActivity(), []);
-  const purchases = (activity.data ?? []).filter((a) => a.execution);
+  const purchases = (activity.data?.items ?? []).filter((a) => a.execution);
+  const signedIn = identity.status === "ready" && identity.kind === "signed_in" ? identity : null;
 
   return (
     <Page>
@@ -57,16 +58,32 @@ export default function AccountPage() {
       />
 
       <Section title="You">
-        <dl>
-          <KeyValue label="Demo role" value={isExecutive ? "Executive" : "Employee"} />
-          <KeyValue label="Sign-in" value="Not set up" />
-        </dl>
-        <p className="mt-1 text-[13px] text-muted">
-          There are no accounts yet, so no name or email is available. The role is a label for the demo and protects nothing.
-        </p>
-        <Link href="/executive" className="mt-3 block text-[15px] font-medium text-accent">
-          Open the Executive approvals view
-        </Link>
+        {signedIn ? (
+          <>
+            <dl>
+              <KeyValue label="Name" value={signedIn.name} />
+              <KeyValue label="Email" value={signedIn.email ?? "Not available"} />
+              <KeyValue label="Role" value={isExecutive ? "Executive" : "Employee"} />
+              <KeyValue label="Company" value={signedIn.company} />
+            </dl>
+            <p className="mt-1 text-[13px] text-muted">Signed in with Google. Your role and company are assigned by your team on the server.</p>
+          </>
+        ) : (
+          <>
+            <dl>
+              <KeyValue label="Demo role" value={isExecutive ? "Executive" : "Employee"} />
+              <KeyValue label="Sign-in" value="Not set up" />
+            </dl>
+            <p className="mt-1 text-[13px] text-muted">
+              Sample-data mode has no accounts. The role is a label for the demo and protects nothing.
+            </p>
+          </>
+        )}
+        {isExecutive && (
+          <Link href="/executive" className="mt-3 block text-[15px] font-medium text-accent">
+            Open approvals
+          </Link>
+        )}
         <Link href="/settings" className="mt-3 block text-[15px] font-medium text-accent">
           Agent settings and integration status
         </Link>
@@ -82,10 +99,10 @@ export default function AccountPage() {
               <Link href={`/purchases/${a.execution!.id}`} className="block py-2.5 active:bg-raised">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-[16px]">{a.title}</span>
-                  <span className="shrink-0 text-[15px] tabular-nums">{formatCents(a.execution!.amountCents)}</span>
+                  <span className="shrink-0 text-[15px] tabular-nums">{formatCents(a.exactAmountCents)}</span>
                 </div>
                 <p className="text-[13px] text-muted">
-                  <ExecutionStatusText status={a.execution!.status} /> · {formatWhen(a.execution!.createdAt)}
+                  {a.selectedTitle} · <ExecutionStatusText status={a.execution!.status} /> · {formatWhen(a.updatedAt)}
                 </p>
               </Link>
             </li>

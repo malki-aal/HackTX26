@@ -2680,6 +2680,7 @@
                   "FORBIDDEN_ROLE",
                   "IDENTITY_FIELD_NOT_ALLOWED",
                   "TERMS_CHANGED",
+                  "UNRESOLVED_REQUIREMENTS",
                   "SELF_APPROVAL_NOT_ALLOWED",
                   "INTERNAL_ERROR"
                 ]
@@ -6361,6 +6362,35 @@
               "user_confirmed"
             ]
           },
+          "requirementResolutions": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "requirementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "verified",
+                    "exception"
+                  ]
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "requirementId",
+                "kind",
+                "note"
+              ]
+            }
+          },
           "actor": {
             "type": "string",
             "maxLength": 40
@@ -6488,6 +6518,7 @@
           "details_fetched",
           "candidates_normalized",
           "evaluation_completed",
+          "model_quota_wait",
           "budget_checked",
           "research_completed",
           "research_failed",
@@ -6794,6 +6825,7 @@
           "FORBIDDEN_ROLE",
           "IDENTITY_FIELD_NOT_ALLOWED",
           "TERMS_CHANGED",
+          "UNRESOLVED_REQUIREMENTS",
           "SELF_APPROVAL_NOT_ALLOWED",
           "INTERNAL_ERROR"
         ]

@@ -1,5 +1,6 @@
 import type {
-  ActivityItem,
+  ActivityPage,
+  FinancialPreview,
   Me,
   AgentConfig,
   AgentConfigDetail,
@@ -35,8 +36,10 @@ export interface RunwayApi {
   listCandidates(requestId: string): Promise<Offer[]>;
   saveAndSubmitProposal(requestId: string, input: SaveProposalInput): Promise<Proposal>;
   getProposal(id: string): Promise<Proposal>;
-  /** Submitted proposals with their execution (when one exists), newest first. */
-  listActivity(): Promise<ActivityItem[]>;
+  /** Submitted proposals with their execution status, newest first, plus server counts. */
+  listActivity(): Promise<ActivityPage>;
+  /** Executives: server-calculated effect of approval on available budget. `refresh` re-reads the bank (free). */
+  getFinancialPreview(proposalId: string, opts?: { refresh?: boolean }): Promise<FinancialPreview>;
   getExecution(id: string): Promise<ExecutionDetail>;
   /** Executive demo role. `idempotencyKey` must be reused when retrying the same decision. */
   decide(args: {

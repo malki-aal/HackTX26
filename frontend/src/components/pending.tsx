@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { api, type ActivityItem } from "@/lib/api";
+import { useIdentity } from "@/lib/auth/identity";
 import { formatCents } from "@/lib/money";
 import { ErrorNote, Loading, SandboxNote, Section, formatWhen, useLoad, usePolling } from "@/components/ui";
 
@@ -54,9 +55,11 @@ function groupsOf(all: ActivityItem[]): Group[] {
 }
 
 export function PendingActivity() {
+  const { identity } = useIdentity();
+  const isExecutive = identity.status === "ready" && identity.role === "executive";
   const { data, error, loading, reload, refresh } = useLoad(() => api.listActivity(), []);
   usePolling(refresh, 5000);
-  const groups = data ? groupsOf(data).filter((g) => g.items.length > 0) : [];
+  const groups = data ? groupsOf(data.items).filter((g) => g.items.length > 0) : [];
 
   return (
     <Section title="Pending activity">
@@ -74,7 +77,7 @@ export function PendingActivity() {
             {g.items.map((a) => (
               <li key={a.proposalId} className="border-t border-rule first:border-t-0">
                 <Link
-                  href={a.execution ? `/purchases/${a.execution.id}` : `/requests/${a.requestId}/proposal`}
+                  href={a.execution ? `/purchases/${a.execution.id}` : isExecutive ? `/executive/${a.proposalId}` : `/requests/${a.requestId}/proposal`}
                   className="block py-2.5 active:bg-raised"
                 >
                   <div className="flex items-baseline justify-between gap-3">

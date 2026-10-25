@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
-import { api, type ApiError, type Budget, type Proposal } from "@/lib/api";
+import { api, type ApiError, type Budget, type FinancialPreview, type Proposal } from "@/lib/api";
+import { approvalGate, personLabel, type PreviewState } from "@/lib/api/mappers";
 import { Avatar } from "@/components/avatars";
 import { ExecutionAmounts, ExecutionStatusText, ExecutionWarnings } from "@/components/execution";
 import { newIdempotencyKey } from "@/lib/format";
@@ -52,7 +53,8 @@ export default function ExecutiveProposalPage() {
 function ExecutiveProposal() {
   const { id } = useParams<{ id: string }>();
   const prop = useLoad(() => api.getProposal(id), [id]);
-  const budget = useLoad(() => api.getBudget(), []);
+  // Cached read (no bank call) for Nessie's reported balance, shown separately from Runway's available budget.
+  const budget = useLoad(() => api.getBudget({ fresh: false }), []);
   const [notice, setNotice] = useState<string | null>(null);
   const p = prop.data;
 
@@ -91,7 +93,6 @@ function ExecutiveProposal() {
             key={`${p.id}|${p.revision}|${p.expenseCents}`}
             p={p}
             budget={budget.data}
-            budgetError={budget.error}
             refreshBudget={budget.refresh}
             onDecided={(next) => {
               setNotice(null);
@@ -115,15 +116,47 @@ function ExecutiveProposal() {
 
 function ReviewSections({ p }: { p: Proposal }) {
   const r = p.review;
+  const unknownMandatory = r ? r.findings.filter((f) => f.status !== "supported" && r.requirements.some((q) => q.mandatory && q.label === f.requirement)) : [];
   return (
     <>
+      {(p.unresolved.length > 0 || unknownMandatory.length > 0 || r?.stale || p.requirementResolutions.length > 0) && (
+        <div role="note" className="mb-4 rounded-2xl bg-orange-soft p-4">
+          <p className="text-[15px] font-semibold text-orange-ink">Check before deciding</p>
+          <ul className="mt-1 list-disc pl-5 text-[15px] text-ink">
+            {r?.stale && <li>The offer evidence has expired. Approval is refused until research is rerun.</li>}
+            {unknownMandatory.map((f) => {
+              const res = p.requirementResolutions.find((x) => x.requirement === f.requirement);
+              return (
+                <li key={`m-${f.requirement}`}>
+                  Required: {f.requirement} — {f.status === "contradicted" ? "the listing contradicts it" : "not confirmed by the evidence"}
+                  {res && (
+                    <span className="block text-[14px]">
+                      {res.kind === "verified" ? "Requester says they verified it: " : "Requester recorded an exception: "}“{res.note}”
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+            {p.unresolved.map((u) => <li key={`u-${u}`}>{u}</li>)}
+          </ul>
+        </div>
+      )}
       <Section title="Request">
         <dl>
-          <KeyValue label="Requested by" value={<span className="inline-flex items-center gap-2"><Avatar role="employee" size={24} />{p.requester}</span>} note="A demo role, not an account." />
+          <KeyValue
+            label="Requested by"
+            value={<span className="inline-flex items-center gap-2"><Avatar role="employee" size={24} />{personLabel(p.requester, "Unknown requester")}</span>}
+            note={p.requester?.demo ? "A demo identity, not an account." : undefined}
+          />
           {p.submittedAt && <KeyValue label="Submitted" value={formatWhen(p.submittedAt)} />}
           <KeyValue label="Revision" value={p.revision} />
         </dl>
-        {r?.purpose && <p className="mt-2 text-[16px]">{r.purpose}</p>}
+        {r?.purpose && (
+          <>
+            <h3 className="mb-1 mt-3 text-[15px] font-semibold">Business purpose</h3>
+            <p className="text-[16px]">{r.purpose}</p>
+          </>
+        )}
         {r && r.requirements.length > 0 && (
           <>
             <h3 className="mb-1 mt-3 text-[15px] font-semibold">Requirements</h3>
@@ -144,7 +177,13 @@ function ReviewSections({ p }: { p: Proposal }) {
           {p.lines.map((l) => (
             <li key={l.itemId} className="border-t border-rule py-3 first:border-t-0 first:pt-0">
               <p className="text-[13px] text-muted">{l.itemName} · {l.quantityText}</p>
-              <p className="text-[17px] font-semibold leading-snug">{l.title}</p>
+              <div className="flex gap-3">
+                {l.imageUrl && isSafeHttpUrl(l.imageUrl) && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={l.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded-lg bg-raised object-contain" />
+                )}
+                <p className="text-[17px] font-semibold leading-snug">{l.title}</p>
+              </div>
               <p className="text-[14px] text-muted">
                 {l.seller ?? "Unknown seller"}
                 {l.listedSubtotalCents !== null && ` · ${formatCents(l.listedSubtotalCents)} listed`}
@@ -195,20 +234,14 @@ function ReviewSections({ p }: { p: Proposal }) {
           <KeyValue label="Listed subtotal" value={formatCents(p.researchSubtotalCents)} />
           {r && <KeyValue label="Shipping" value={r.cost.shippingCents === null ? "Unknown" : formatCents(r.cost.shippingCents)} />}
           <KeyValue label="Tax" value="Unknown" />
-          <KeyValue label="Request budget ceiling" value={formatCents(p.budgetCeilingCents)} />
+          <KeyValue label="Request budget ceiling" value={formatCents(p.budgetCeilingCents)} note="The most the requester asked to spend. Not an approved amount." />
           <KeyValue
-            label="Exact proposed expense"
+            label="Proposed expense"
             value={formatCents(p.expenseCents)}
-            note="Confirmed by the requester, not verified at a merchant checkout."
+            note="Entered and confirmed by the requester (may include their shipping/tax estimate). Not verified at a merchant checkout."
           />
         </dl>
         {r && <p className="mt-1 text-[13px] text-muted">{TOTAL_STATUS[r.cost.totalStatus] ?? ""}</p>}
-        {p.unresolved.length > 0 && (
-          <>
-            <h3 className="mb-1 mt-3 text-[15px] font-semibold">Still unresolved</h3>
-            <ul className="list-disc pl-5 text-[16px]">{p.unresolved.map((u) => <li key={u}>{u}</li>)}</ul>
-          </>
-        )}
       </Section>
 
       {r && r.alternatives.length > 0 && (
@@ -247,7 +280,7 @@ function ReviewSections({ p }: { p: Proposal }) {
             ))}
             {r.history.map((h) => (
               <li key={`dec-${h.at}`} className="py-1 text-[14px]">
-                {h.decision.replace("_", " ")} on revision {h.version} by {h.actor}, {formatWhen(h.at)}
+                {h.decision.replace("_", " ")} on revision {h.version} by {personLabel(h.actor)}, {formatWhen(h.at)}
                 {h.note && <span className="text-muted"> — “{h.note}”</span>}
               </li>
             ))}
@@ -263,14 +296,12 @@ function ReviewSections({ p }: { p: Proposal }) {
 function DecisionStep({
   p,
   budget,
-  budgetError,
   refreshBudget,
   onDecided,
   onConflict,
 }: {
   p: Proposal;
   budget: Budget | null;
-  budgetError: ApiError | null;
   refreshBudget: () => Promise<void>;
   onDecided: (p: Proposal) => void;
   onConflict: () => void;
@@ -279,35 +310,44 @@ function DecisionStep({
   const [choice, setChoice] = useState<Decision | null>(null);
   const [note, setNote] = useState("");
   const [ack, setAck] = useState(false); // never checked by default
-  const [needsAck, setNeedsAck] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
-  const [mapping, setMapping] = useState<{ seller: string } | null>(null);
   const [linking, setLinking] = useState(false);
   const [linked, setLinked] = useState<string | null>(null);
+  // The server's preview. Starts from the cached assessment in the proposal detail; refreshed before approval.
+  const [preview, setPreview] = useState<PreviewState>(
+    p.financialAssessment ? { kind: "ready", preview: p.financialAssessment } : { kind: "loading" },
+  );
   // One key per logical decision; a retry with the same decision, note and amount reuses it.
   const keyRef = useRef<{ sig: string; key: string } | null>(null);
 
   const amount = formatCents(p.expenseCents);
-  const available = budget?.availableCents ?? null;
-  const projected = available === null ? null : available - p.expenseCents;
+  const gate = approvalGate(preview, p.revision, ack);
+  const fp: FinancialPreview | null = preview.kind === "ready" ? preview.preview : null;
+  const needsMapping = !!fp?.blockingReasons.some((r) => r.code === "merchant_mapping_required");
+
+  async function refreshPreview() {
+    setPreview({ kind: "loading" });
+    try {
+      // refresh=true re-reads the Nessie sandbox account (a free read; no research, no purchase).
+      const next = await api.getFinancialPreview(p.id, { refresh: true });
+      setPreview({ kind: "ready", preview: next });
+      void refreshBudget();
+    } catch (e) {
+      setPreview({ kind: "error", message: normalizeError(e).message });
+    }
+  }
 
   function choose(d: Decision) {
     setChoice(d);
     setError(null);
-    setMapping(null);
     setLinked(null);
-    setNeedsAck(false);
-    void refreshBudget(); // read-only bank check so the numbers below are current
+    if (d === "approve") void refreshPreview();
   }
 
   async function submit() {
     if (!choice || pending) return;
-    if (choice === "approve" && !ack) {
-      setNeedsAck(true);
-      document.getElementById("approve-ack")?.focus();
-      return;
-    }
+    if (choice === "approve" && !gate.enabled) return;
     const sig = `${p.id}|${p.revision}|${p.expenseCents}|${choice}|${note}`;
     if (keyRef.current?.sig !== sig) keyRef.current = { sig, key: newIdempotencyKey() };
     setPending(true);
@@ -325,21 +365,25 @@ function DecisionStep({
     } catch (e) {
       const err = normalizeError(e);
       if (err.code === "VERSION_CONFLICT" || err.code === "TERMS_CHANGED") onConflict();
-      else if (err.code === "MERCHANT_MAPPING_REQUIRED") setMapping({ seller: p.lines[0]?.seller ?? "this seller" });
-      else setError(err);
+      else {
+        setError(err);
+        // The server refused (budget, offer freshness, mapping…): show its current view of the blockers.
+        if (choice === "approve") void refreshPreview();
+      }
     } finally {
       setPending(false);
     }
   }
 
   async function link() {
-    if (!mapping || linking) return;
+    const seller = p.lines[0]?.seller;
+    if (!seller || linking) return;
     setLinking(true);
     setError(null);
     try {
-      const m = await api.createMerchantMapping(mapping.seller);
+      const m = await api.createMerchantMapping(seller);
       setLinked(`${m.merchantName ?? "Sandbox merchant"} (${m.nessieMerchantId})`);
-      setMapping(null);
+      await refreshPreview();
     } catch (e) {
       setError(normalizeError(e));
     } finally {
@@ -350,7 +394,8 @@ function DecisionStep({
   if (!choice) {
     return (
       <Section title="Decision">
-        <p className="mb-4 text-[14px] text-muted">
+        <BudgetImpact preview={preview} budget={budget} onRefresh={refreshPreview} />
+        <p className="mb-4 mt-4 text-[14px] text-muted">
           Review the proposal above, then choose. Nothing happens until you confirm on the next step.
         </p>
         <div className="space-y-3">
@@ -368,45 +413,9 @@ function DecisionStep({
       <dl>
         <KeyValue label="Proposal" value={p.requestTitle} />
         <KeyValue label="Revision" value={p.revision} />
-        <KeyValue label="Exact purchase amount" value={amount} />
-        {choice === "approve" && (
-          <>
-            <KeyValue
-              label="Available budget now"
-              value={available === null ? "Unknown" : formatCents(available)}
-              note={
-                budget
-                  ? budget.fetchedAt
-                    ? `${budget.source}, checked ${formatWhen(budget.fetchedAt)}`
-                    : budget.source
-                  : budgetError
-                    ? "The budget couldn’t be read."
-                    : "Checking…"
-              }
-            />
-            <KeyValue
-              label="Projected available after approval"
-              value={projected === null ? "Unknown" : formatCents(projected)}
-              note="An estimate. The backend rechecks the budget and the offer when you approve."
-            />
-          </>
-        )}
+        <KeyValue label="Proposed expense" value={amount} />
       </dl>
-      {choice === "approve" && budget?.status === "bank_check_unavailable" && (
-        <p role="alert" className="mt-2 text-[14px] font-medium text-bad">
-          The bank check is unavailable. Approval can’t be completed until it works again.
-        </p>
-      )}
-      {choice === "approve" && projected !== null && projected < 0 && (
-        <p role="alert" className="mt-2 text-[14px] font-medium text-bad">
-          This is more than the available budget, so the approval will be refused.
-        </p>
-      )}
-      {choice === "approve" && (
-        <p className="mt-2 text-[13px] text-muted">
-          This is the available company budget, not the bank balance. Nessie’s reported balance may not change right away.
-        </p>
-      )}
+      {choice === "approve" && <div className="mt-3"><BudgetImpact preview={preview} budget={budget} onRefresh={refreshPreview} /></div>}
 
       <div className="mt-4">
         <label htmlFor="decision-note" className="mb-1.5 block text-[15px] font-medium">Note (optional)</label>
@@ -422,42 +431,88 @@ function DecisionStep({
             className="mt-1 h-5 w-5 accent-[var(--accent)]"
             checked={ack}
             onChange={(e) => setAck(e.target.checked)}
-            aria-describedby={needsAck && !ack ? "approve-ack-error" : undefined}
           />
           <span>
-            I approve this simulated purchase for {amount} and understand that it commits this amount from the available company budget.
+            I approve this simulated purchase for {amount} (revision {p.revision}) and understand that it commits this amount from the available company budget.
           </span>
         </label>
       )}
-      {needsAck && !ack && (
-        <p id="approve-ack-error" role="alert" className="mt-2 text-[13px] text-bad">Tick the box to approve.</p>
-      )}
 
-      {mapping && (
+      {choice === "approve" && needsMapping && (
         <div role="alert" className="mt-4 rounded-xl bg-orange-soft p-3 text-[14px]">
-          <p className="font-medium text-warn">No Nessie sandbox merchant is linked to {mapping.seller}.</p>
+          <p className="font-medium text-warn">No Nessie sandbox merchant is linked to {p.lines[0]?.seller ?? "this seller"}.</p>
           <p className="mt-1 text-ink">
             Approval needs one so the simulated purchase is booked against the right sandbox record. Nothing has been reserved.
           </p>
           <div className="mt-3">
             <Button variant="quiet" disabled={linking} onClick={link}>
-              {linking ? "Linking…" : `Create a sandbox merchant for ${mapping.seller}`}
+              {linking ? "Linking…" : `Create a sandbox merchant for ${p.lines[0]?.seller ?? "this seller"}`}
             </Button>
           </div>
         </div>
       )}
-      {linked && (
-        <p className="mt-4 text-[14px] text-ok">Linked to {linked}. Confirm again to {label.toLowerCase()}.</p>
-      )}
+      {linked && <p className="mt-4 text-[14px] text-ok">Linked to {linked}.</p>}
       <ErrorNote error={error} />
 
+      {choice === "approve" && gate.reason && (
+        <p id="approve-gate" className="mt-3 text-[14px] text-muted">{gate.reason}</p>
+      )}
       <div className="mt-4 space-y-3">
-        <Button disabled={pending} onClick={submit}>
+        <Button
+          disabled={pending || (choice === "approve" && !gate.enabled)}
+          onClick={submit}
+        >
           {pending ? "Working…" : choice === "approve" ? `Approve ${amount}` : choice === "reject" ? "Reject proposal" : "Send back for changes"}
         </Button>
         <Button variant="quiet" disabled={pending} onClick={() => setChoice(null)}>Back</Button>
       </div>
     </Section>
+  );
+}
+
+/** Server-calculated effect of approval. Runway's available budget is kept apart from Nessie's reported balance. */
+function BudgetImpact({ preview, budget, onRefresh }: { preview: PreviewState; budget: Budget | null; onRefresh: () => void }) {
+  if (preview.kind === "loading") return <Loading label="Checking the budget" />;
+  if (preview.kind === "error") {
+    return (
+      <div role="alert" className="rounded-xl bg-bad-soft p-3 text-[14px]">
+        <p className="font-medium text-bad">Budget check unavailable</p>
+        <p className="mt-1 text-ink">{preview.message}</p>
+        <button type="button" className="touch mt-1 text-[14px] font-medium text-accent" onClick={onRefresh}>Try again</button>
+      </div>
+    );
+  }
+  const f = preview.preview;
+  const fetched = f.freshness.fetchedAt ? formatWhen(f.freshness.fetchedAt) : null;
+  return (
+    <div>
+      <h3 className="mb-1 text-[15px] font-semibold">Budget impact</h3>
+      <dl>
+        <KeyValue label="Available budget now" value={f.currentAvailableCents === null ? "Unknown" : formatCents(f.currentAvailableCents)} />
+        <KeyValue label="This expense" value={formatCents(f.exactExpenseCents)} />
+        <KeyValue
+          label="Available after approval"
+          value={f.projectedAvailableCents === null ? "Unknown" : formatCents(f.projectedAvailableCents)}
+          note={f.reservationIncluded ? "This proposal’s reservation is already counted, so it isn’t subtracted again." : undefined}
+        />
+        {budget && budget.reportedBalanceCents !== null && (
+          <KeyValue label="Nessie reported balance" value={formatCents(budget.reportedBalanceCents)} note="The sandbox account’s balance. Not the same as available budget." />
+        )}
+      </dl>
+      <p className="mt-1 text-[13px] text-muted">
+        {f.label} {fetched ? `Bank data ${f.freshness.refreshedNow ? "refreshed" : "cached"} ${fetched}.` : "No bank data yet."}{" "}
+        <button type="button" className="font-medium text-accent" onClick={onRefresh}>Refresh</button>
+      </p>
+      {f.unknowns.length > 0 && <p className="mt-1 text-[13px] text-muted">Not included: {f.unknowns.join(", ")}.</p>}
+      {f.blockingReasons.length > 0 && (
+        <div role="alert" className="mt-2 rounded-xl bg-bad-soft p-3">
+          <p className="text-[14px] font-medium text-bad">Approval blocked</p>
+          <ul className="mt-1 list-disc pl-5 text-[14px] text-ink">
+            {f.blockingReasons.map((r) => <li key={r.code}>{r.message}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 

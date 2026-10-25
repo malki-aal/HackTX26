@@ -7,6 +7,8 @@ export interface ToolHost {
   readonly enabledTools: ToolName[];
   /** Validates input, enforces enablement and limits, executes server-side. */
   call(tool: string, input: unknown): Promise<unknown>;
+  /** Records a real wait for model quota (reported by the agent process) as run progress. */
+  quotaWait?(waitMs: number): void;
 }
 
 export interface AgentRunInput {

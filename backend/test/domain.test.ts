@@ -5,7 +5,7 @@ import { deriveMonitorRequirements, validateRequirements, buildClarificationQues
 import { normalizeOffer, dedupeOffers } from "../src/domain/normalize.js";
 import { evaluateCandidates, evaluateRequirement, calculatePurchaseCost, rankCandidates } from "../src/domain/evaluate.js";
 import { assessBudget, computeFinancialContext, reconcileReflections, type LedgerEntry } from "../src/domain/budget.js";
-import { FIXTURE_MONITOR_ITEMS } from "../src/integrations/fixtures.js";
+import { FIXTURE_MONITOR_ITEMS, withStatedCondition } from "../src/integrations/fixtures.js";
 import { RequestFields } from "../src/contracts/domain.js";
 import { getCategory } from "../src/domain/categories.js";
 import type { Offer, RawShoppingItem } from "../src/domain/types.js";
@@ -126,7 +126,7 @@ describe("requirements", () => {
 
 describe("evaluation and ranking", () => {
   const reqs = deriveMonitorRequirements(fields);
-  const offers = dedupeOffers(FIXTURE_MONITOR_ITEMS.map(norm));
+  const offers = dedupeOffers(withStatedCondition(FIXTURE_MONITOR_ITEMS).map(norm));
   const evals = evaluateCandidates(offers, reqs, 4, 100000);
   const byTitle = (s: string) => {
     const o = offers.find((x) => x.title.includes(s))!;
@@ -154,6 +154,17 @@ describe("evaluation and ranking", () => {
     expect(e.cost.packagesRequired).toBe(2);
     expect(e.cost.listedSubtotalCents).toBe(83996);
     expect(e.cost.totalStatus).toBe("subtotal_plus_shipping_tax_unknown");
+  });
+  it("an inferred condition is unknown, not supported: the offer needs review", () => {
+    const silent = dedupeOffers(FIXTURE_MONITOR_ITEMS.filter((i) => i.title.includes("Acme View 27\" QHD 2560x1440 IPS")).map(norm));
+    const e = evaluateCandidates(silent, reqs, 4, 100000)[0]!;
+    const cond = e.requirementResults.find((r) => r.attribute === "condition")!;
+    expect(cond.state).toBe("unknown");
+    expect(cond.reason).toMatch(/Inferred new/);
+    expect(e.class).toBe("needs_review");
+    // The same listing stating "Condition: New" is supported by evidence.
+    const stated = evaluateCandidates(dedupeOffers(withStatedCondition(FIXTURE_MONITOR_ITEMS.filter((i) => i.title.includes("Acme View 27\" QHD 2560x1440 IPS"))).map(norm)), reqs, 4, 100000)[0]!;
+    expect(stated.requirementResults.find((r) => r.attribute === "condition")!.state).toBe("supported");
   });
   it("ranks eligible lowest known cost first, deterministically", () => {
     const eligible = evals.filter((e) => e.class === "eligible");
