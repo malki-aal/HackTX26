@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.*
+!.env.example
+var
+*.sqlite
+*.sqlite-*
+.eve
+.output
+recordings
+coverage
+config/access.json

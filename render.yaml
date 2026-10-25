@@ -1,0 +1,33 @@
+# Render Blueprint for the Runway backend. Secret values are never stored here:
+# every `sync: false` variable is entered privately in the Render dashboard.
+services:
+  - type: web
+    name: runway-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter            # persistent disks need a paid instance
+    healthCheckPath: /api/v1/health
+    autoDeploy: true         # redeploys on every push to the connected branch (main)
+    disk:
+      name: runway-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - { key: NODE_ENV, value: production }
+      - { key: HOST, value: 0.0.0.0 }
+      - { key: PORT, value: "8000" }
+      - { key: INTEGRATION_MODE, value: live }
+      - { key: AUTH_MODE, value: clerk }
+      - { key: DEMO_MODE, value: "false" }
+      - { key: DATABASE_PATH, value: /data/runway.sqlite }
+      - { key: ACCESS_BOOTSTRAP_FILE, value: /etc/secrets/access.json }
+      - { key: ACCOUNT_COMPANY_ID, value: runway_team }
+      - { key: FRONTEND_ORIGINS, sync: false }
+      - { key: GEMINI_API_KEY, sync: false }
+      - { key: GEMINI_MODEL, sync: false }
+      - { key: SERPAPI_API_KEY, sync: false }
+      - { key: NESSIE_API_KEY, sync: false }
+      - { key: NESSIE_CUSTOMER_ID, sync: false }
+      - { key: NESSIE_ACCOUNT_ID, sync: false }
+      - { key: CLERK_SECRET_KEY, sync: false }
