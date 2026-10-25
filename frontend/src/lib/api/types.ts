@@ -37,6 +37,7 @@ export interface RequestItem {
 
 export interface PurchaseRequest {
   id: string;
+  projectId?: string;
   version: number;
   title: string;
   purpose: string;
@@ -65,7 +66,7 @@ export interface NewRequestInput {
   title: string;
   purpose: string;
   category?: string;
-  items: Omit<RequestItem, "id">[];
+  items: (Omit<RequestItem, "id"> & { budgetCents?: number; specifications?: string[] })[];
   budgetTotalCents: number;
   mandatory: string[];
   preferences: string[];
@@ -74,6 +75,16 @@ export interface NewRequestInput {
   deadlineKind: DeadlineKind;
   agentConfigId: string;
 }
+
+export interface ProjectView {
+  id: string;
+  title: string;
+  purpose: string;
+  budgetCents: number;
+  lines: { key: string; requestId: string; title: string; quantity: number; lineBudgetCents: number; status: string; isCurrentVersionConfirmed: boolean; unansweredQuestionIds: string[]; research: { runStatus: string } | null }[];
+}
+
+export interface ProjectSummary { id: string; title: string; budgetCents: number; lines: number }
 
 export interface AgentConfig {
   id: string;

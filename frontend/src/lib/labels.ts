@@ -1,4 +1,8 @@
-import type { DecisionState, ExecutionState, OfferHighlight, RequestStatus } from "./api";
+import type { Condition, DecisionState, ExecutionState, OfferHighlight, RequestStatus } from "./api";
+
+export const CONDITION_LABEL: Record<Condition, string> = {
+  new: "New", refurbished: "New or refurbished", used: "Any condition", any: "Any condition",
+};
 
 export const statusLabel: Record<RequestStatus, string> = {
   clarifying: "Needs your review",
@@ -7,7 +11,7 @@ export const statusLabel: Record<RequestStatus, string> = {
   researching: "Research running",
   results_ready: "Offers ready",
   proposal_drafted: "Proposal drafted",
-  submitted: "Awaiting executive approval",
+  submitted: "Awaiting approval",
   approved: "Approved",
   changes_requested: "Changes requested",
   rejected: "Rejected",
@@ -27,26 +31,23 @@ export const statusTone: Record<RequestStatus, string> = {
   rejected: "bg-bad-soft text-bad",
 };
 
-export const stages = ["Review", "Research", "Compare", "Proposal", "Approval", "Record"] as const;
+export const stages = ["Find options", "Review choice", "Approval"] as const;
 
 export function stageIndex(s: RequestStatus): number {
   switch (s) {
     case "clarifying":
     case "awaiting_confirmation":
-      return 0;
     case "confirmed":
     case "researching":
-      return 1;
+      return 0;
     case "results_ready":
-      return 2;
     case "proposal_drafted":
-      return 3;
+      return 1;
     case "submitted":
     case "changes_requested":
     case "rejected":
-      return 4;
     case "approved":
-      return 5;
+      return 2;
   }
 }
 

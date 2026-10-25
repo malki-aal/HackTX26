@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { api, type ApiError, type Condition, type DeadlineKind } from "@/lib/api";
+import { api, type ApiError, type Condition, type DeadlineKind, type NewRequestInput } from "@/lib/api";
 import { parseDollarsToCents } from "@/lib/money";
 import {
   Button,
@@ -25,9 +25,11 @@ interface ItemRow {
   name: string;
   quantity: string;
   unit: string;
+  budget: string;
+  specifications: string;
 }
 
-const blankItem = (key: number): ItemRow => ({ key, name: "", quantity: "1", unit: "units" });
+const blankItem = (key: number): ItemRow => ({ key, name: "", quantity: "1", unit: "units", budget: "", specifications: "" });
 
 function isoDateIn(days: number): string {
   const d = new Date(Date.now() + days * 86_400_000);
@@ -56,13 +58,11 @@ export default function NewRequestPage() {
       "An intern pitched five desk-organizer prototypes built from leftover wood. We need glue, cork backing and screws to finish them.",
     );
     setItems([
-      { key: 1, name: "Wood glue", quantity: "2", unit: "bottles" },
-      { key: 2, name: "Cork sheet with adhesive backing", quantity: "5", unit: "sheets" },
-      { key: 3, name: "Wood screws", quantity: "1", unit: "box" },
+      { key: 1, name: "Wood glue", quantity: "2", unit: "bottles", budget: "30", specifications: "Glue rated for wood" },
+      { key: 2, name: "Cork sheet with adhesive backing", quantity: "5", unit: "sheets", budget: "40", specifications: "At least 12 × 12 in\nAdhesive backing" },
+      { key: 3, name: "Wood screws", quantity: "1", unit: "box", budget: "30", specifications: "#6 × 3/4 in\nHardwood-rated" },
     ]);
-    setMandatory(
-      "Glue rated for wood\nCork sheets at least 12 × 12 in, one per prototype\nWood screws #6 × 3/4 in, hardwood-rated",
-    );
+    setMandatory("");
     setPreferences("Free shipping");
     setCondition("new");
     setBudget("100");
@@ -82,22 +82,24 @@ export default function NewRequestPage() {
     const cents = parseDollarsToCents(budget);
     if (!title.trim()) next.title = "Add a short title.";
     if (cents === null || cents <= 0) next.budget = "Enter the total budget in dollars, like 100 or 1,000.00.";
-    if (lines(mandatory).length === 0) next.mandatory = "List at least one must-have specification.";
+    if (items.length === 1 && lines(mandatory).length === 0 && !items[0].specifications.trim()) next.mandatory = "List at least one must-have specification.";
     for (const it of items) {
       const q = Number(it.quantity);
       if (!it.name.trim()) next[`item-${it.key}-name`] = "Name the item.";
       if (!Number.isInteger(q) || q < 1) next[`item-${it.key}-qty`] = "Enter a whole number, 1 or more.";
+      if (items.length > 1 && !(parseDollarsToCents(it.budget)! > 0)) next[`item-${it.key}-budget`] = "Set a budget for this item type.";
     }
+    if (items.length > 1 && cents !== null && items.reduce((n, it) => n + (parseDollarsToCents(it.budget) ?? 0), 0) > cents) next.budget = "Item budgets exceed the total budget.";
     setErrors(next);
     if (Object.keys(next).length) return;
 
     setPending(true);
     setApiError(null);
     try {
-      const r = await api.createRequest({
+      const input: NewRequestInput = {
         title: title.trim(),
         purpose: purpose.trim(),
-        items: items.map((it) => ({ name: it.name.trim(), quantity: Number(it.quantity), unit: it.unit.trim() || "units" })),
+        items: items.map((it) => ({ name: it.name.trim(), quantity: Number(it.quantity), unit: it.unit.trim() || "units", specifications: lines(it.specifications), budgetCents: parseDollarsToCents(it.budget) ?? undefined })),
         budgetTotalCents: cents as number,
         mandatory: lines(mandatory),
         preferences: lines(preferences),
@@ -107,7 +109,24 @@ export default function NewRequestPage() {
         // New requests use the intended preset, independently of API sort order.
         // Existing requests and runs keep their saved configuration/version.
         agentConfigId: "cfg_default",
-      });
+      };
+      if (items.length > 1) {
+        const project = await api.createProject(input);
+        router.push(`/projects/${project.id}`);
+        return;
+      }
+      const r = await api.createRequest(input);
+      if (r.status === "awaiting_confirmation" && r.clarifications.every((c) => c.answer)) {
+        // The user pressed Find options. Do not require two more confirmations to do that.
+        // A failed start leaves a saved request that can be retried without recreating it.
+        try {
+          await api.confirmRequirements(r.id, r.version);
+          await api.startResearch(r.id);
+        } catch {
+          router.push(`/requests/${r.id}`);
+          return;
+        }
+      }
       router.push(`/requests/${r.id}`);
     } catch (err) {
       setApiError(normalizeError(err)); // form state is kept
@@ -118,9 +137,9 @@ export default function NewRequestPage() {
   return (
     <Page>
       <PageHeader title="New request" />
-      <Button type="button" variant="quiet" onClick={loadDemo} className="mb-6">
-        Load demo example
-      </Button>
+      <details className="mb-6 text-[14px]"><summary className="cursor-pointer text-muted">Try an example</summary>
+        <button type="button" onClick={loadDemo} className="mt-2 font-medium text-accent">Load desk organizer project</button>
+      </details>
       <form onSubmit={submit} noValidate>
         <Section title="Basics">
         <Field required label="Title" htmlFor="title" error={errors.title}>
@@ -163,6 +182,14 @@ export default function NewRequestPage() {
                     onChange={(e) => setItem(it.key, { unit: e.target.value })} />
                 </div>
               </div>
+              {items.length > 1 && <div className="mt-3 space-y-3">
+                <Field label="Budget for this item type (USD)" htmlFor={`item-${it.key}-budget`} error={errors[`item-${it.key}-budget`]}>
+                  <input id={`item-${it.key}-budget`} inputMode="decimal" className={inputClass} value={it.budget} onChange={(e) => setItem(it.key, { budget: e.target.value })} />
+                </Field>
+                <Field label="Specifications for this item" htmlFor={`item-${it.key}-specs`}>
+                  <textarea id={`item-${it.key}-specs`} rows={2} className={inputClass} value={it.specifications} onChange={(e) => setItem(it.key, { specifications: e.target.value })} />
+                </Field>
+              </div>}
               {items.length > 1 && (
                 <button type="button" onClick={() => setItems((rows) => rows.filter((r) => r.key !== it.key))}
                   className="mt-2 text-[14px] font-medium text-accent">
@@ -171,7 +198,7 @@ export default function NewRequestPage() {
               )}
             </div>
           ))}
-          <button type="button" onClick={() => setItems((rows) => [...rows, blankItem(Math.max(...rows.map((r) => r.key)) + 1)])}
+          <button type="button" disabled={items.length >= 10} onClick={() => setItems((rows) => [...rows, blankItem(Math.max(...rows.map((r) => r.key)) + 1)])}
             className="text-[15px] font-medium text-accent">
             Add another item
           </button>
@@ -179,7 +206,7 @@ export default function NewRequestPage() {
         </Section>
         <Section title="Requirements">
 
-        <Field required label="Must-have specifications" htmlFor="mandatory" error={errors.mandatory}>
+        <Field required={items.length === 1} label={items.length > 1 ? "Shared specifications (optional)" : "Must-have specifications"} htmlFor="mandatory" error={errors.mandatory}>
           <textarea id="mandatory" rows={4} className={inputClass} value={mandatory}
             onChange={(e) => setMandatory(e.target.value)} placeholder="Dimensions, compatibility, standards. One per line."
             aria-invalid={!!errors.mandatory} aria-describedby={errors.mandatory ? "mandatory-error" : undefined} />
@@ -190,8 +217,8 @@ export default function NewRequestPage() {
         <div>
           <p className="mb-1.5 text-[15px] font-medium">Condition<RequiredMark /></p>
           <Segmented label="Condition" value={condition} onChange={setCondition}
-            options={[{ value: "new", label: "New" }, { value: "refurbished", label: "Refurbished" },
-              { value: "used", label: "Used" }, { value: "any", label: "Any" }]} />
+            options={[{ value: "new", label: "New" }, { value: "refurbished", label: "New or refurbished" },
+              { value: "any", label: "Any condition" }]} />
         </div>
         </Section>
         <Section title="Budget and timing">
@@ -207,16 +234,12 @@ export default function NewRequestPage() {
           <div className="-mt-2 mb-5">
             <Segmented label="Deadline type" value={deadlineKind} onChange={setDeadlineKind}
               options={[{ value: "flexible", label: "Flexible target" }, { value: "hard", label: "Hard deadline" }]} />
-            <p className="mt-1.5 text-[13px] text-muted">
-              {deadlineKind === "hard"
-                ? "Options that arrive later are listed separately and don't count as meeting the request."
-                : "A target only. Later options can still be chosen."}
-            </p>
           </div>
         )}
         </Section>
         <ErrorNote error={apiError} />
-        <Button type="submit" disabled={pending}>{pending ? "Creating…" : "Continue"}</Button>
+        <Button type="submit" disabled={pending}>{pending ? "Preparing…" : items.length > 1 ? "Create grouped request" : "Find options"}</Button>
+        {items.length === 1 && <p className="mt-2 text-[12px] text-muted">Starts research using search quota once requirements are clear.</p>}
       </form>
     </Page>
   );

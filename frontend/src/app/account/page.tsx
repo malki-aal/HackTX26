@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useIdentity } from "@/lib/auth/identity";
-import { ExecutionStatusText } from "@/components/execution";
 import { formatCents } from "@/lib/money";
 import { ErrorNote, KeyValue, Loading, Page, PageHeader, Section, formatWhen, useLoad } from "@/components/ui";
 
@@ -42,7 +41,7 @@ export default function AccountPage() {
   // Employees never request the company budget at all. (The backend must refuse it for them too.)
   const budget = useLoad(() => (isExecutive ? api.getBudget() : Promise.resolve(null)), [isExecutive]);
   const activity = useLoad(() => api.listActivity(), []);
-  const purchases = (activity.data?.items ?? []).filter((a) => a.execution);
+  const purchases = (activity.data?.items ?? []).filter((a) => a.execution?.status === "recorded");
   const signedIn = identity.status === "ready" && identity.kind === "signed_in" ? identity : null;
 
   return (
@@ -101,10 +100,10 @@ export default function AccountPage() {
               <Link href={`/purchases/${a.execution!.id}`} className="block py-2.5 active:bg-raised">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-[16px]">{a.title}</span>
-                  <span className="shrink-0 text-[15px] tabular-nums">{formatCents(a.exactAmountCents)}</span>
+                  <span className="shrink-0 text-[15px] font-semibold tabular-nums text-bad">−{formatCents(a.exactAmountCents)}</span>
                 </div>
                 <p className="text-[13px] text-muted">
-                  {a.selectedTitle} · <ExecutionStatusText status={a.execution!.status} /> · {formatWhen(a.updatedAt)}
+                  {a.seller || "Purchase"} · {formatWhen(a.updatedAt)} · View details
                 </p>
               </Link>
             </li>

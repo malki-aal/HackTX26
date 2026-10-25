@@ -21,7 +21,7 @@ function groupsOf(all: ActivityItem[]): Group[] {
     {
       key: "awaiting",
       tone: "bg-orange-bar",
-      title: "Awaiting executive approval",
+      title: "Awaiting approval",
       explain: "Submitted and waiting for a decision.",
       items: all.filter((a) => a.decision === "awaiting_review"),
       caption: () => "Not approved yet",
@@ -29,7 +29,7 @@ function groupsOf(all: ActivityItem[]): Group[] {
     {
       key: "not_started",
       tone: "bg-indigo-bar",
-      title: "Approved, purchase recording not started",
+      title: "Ready to record",
       explain: "Approved, but no purchase has been recorded in Nessie.",
       items: all.filter((a) => a.decision === "approved" && (!a.execution || status(a) === "not_started")),
       caption: () => "Recording not started",
@@ -37,7 +37,7 @@ function groupsOf(all: ActivityItem[]): Group[] {
     {
       key: "in_progress",
       tone: "bg-pink-bar",
-      title: "Purchase recording in progress or uncertain",
+      title: "Needs attention",
       explain: "Not confirmed as recorded. Uncertain ones need checking, not resending.",
       items: all.filter((a) => ["queued", "submitting", "uncertain", "failed"].includes(status(a) ?? "")),
       caption: (a) =>
@@ -46,7 +46,7 @@ function groupsOf(all: ActivityItem[]): Group[] {
     {
       key: "provider_pending",
       tone: "bg-purple-bar",
-      title: "Pending at Nessie",
+      title: "Pending transactions",
       explain: "Recorded, and Nessie reports the purchase as pending.",
       items: all.filter((a) => status(a) === "recorded" && (a.execution?.providerStatus ?? "").toLowerCase() === "pending"),
       caption: () => "Nessie status: pending",
@@ -54,12 +54,12 @@ function groupsOf(all: ActivityItem[]): Group[] {
   ];
 }
 
-export function PendingActivity() {
+export function PendingActivity({ hideAwaiting = false }: { hideAwaiting?: boolean }) {
   const { identity } = useIdentity();
   const isExecutive = identity.status === "ready" && identity.role === "executive";
   const { data, error, loading, reload, refresh } = useLoad(() => api.listActivity(), []);
   usePolling(refresh, 5000);
-  const groups = data ? groupsOf(data.items).filter((g) => g.items.length > 0) : [];
+  const groups = data ? groupsOf(data.items).filter((g) => g.items.length > 0 && (!hideAwaiting || g.key !== "awaiting")) : [];
 
   return (
     <Section title="Pending activity">
@@ -72,7 +72,6 @@ export function PendingActivity() {
             <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${g.tone}`} />
             {g.title} <span className="font-normal text-muted">({g.items.length})</span>
           </h3>
-          <p className="text-[13px] text-muted">{g.explain}</p>
           <ul>
             {g.items.map((a) => (
               <li key={a.proposalId} className="border-t border-rule first:border-t-0">
@@ -82,10 +81,12 @@ export function PendingActivity() {
                 >
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="text-[16px]">{a.title}</span>
-                    <span className="shrink-0 text-[15px] tabular-nums">{formatCents(a.exactAmountCents)}</span>
+                    <span className={`shrink-0 text-[15px] tabular-nums ${a.execution?.status === "recorded" ? "text-bad" : ""}`}>
+                      {a.execution?.status === "recorded" ? "−" : ""}{formatCents(a.exactAmountCents)}
+                    </span>
                   </div>
                   <p className="text-[13px] text-muted">
-                    {g.caption(a)} · {formatWhen(a.updatedAt)}
+                    {a.execution?.status === "recorded" ? "Pending" : g.caption(a)} · {formatWhen(a.updatedAt)}
                   </p>
                 </Link>
               </li>

@@ -467,7 +467,8 @@ function DecisionPanel({
       </p>
 
       {choice === "approve" && checking && <p className="mt-2 text-[13px] text-muted">Checking the latest bank figures…</p>}
-      {choice === "approve" && needsMapping && seller && (
+      {/* Seller setup is offered up front: it is a one-time sandbox step, not an approval. */}
+      {needsMapping && seller && (
         <div className="mt-3 rounded-xl bg-orange-soft p-3 text-[14px]">
           <p className="font-medium text-warn">No Nessie sandbox merchant is linked to {seller}.</p>
           <p className="mt-1 text-ink">Approval needs one so the simulated purchase is booked against the right record. Nothing has been reserved.</p>

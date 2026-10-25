@@ -10,6 +10,7 @@ import type {
   Budget,
   ExecutionDetail,
   NewRequestInput,
+  ProjectView,
   Offer,
   OfferHighlight,
   Proposal,
@@ -36,6 +37,7 @@ interface StoredProposal extends Omit<Proposal, "executionDetail" | "execution">
 }
 
 interface Db {
+  projects?: ProjectView[];
   configs?: AgentConfigDetail[];
   requests: PurchaseRequest[];
   runs: Record<string, RunEntry>;
@@ -367,6 +369,45 @@ function activity(db: Db): ActivityPage {
 }
 
 export const fixtureApi: RunwayApi = {
+  async createProject(input) {
+    const id = uid("prj");
+    const lines: ProjectView["lines"] = [];
+    for (const [i, item] of input.items.entries()) {
+      const r = await this.createRequest({ ...input, title: item.name, items: [item], budgetTotalCents: item.budgetCents! });
+      mutate((db) => { find(db, r.id).projectId = id; });
+      lines.push({ key: `item_${i + 1}`, requestId: r.id, title: item.name, quantity: item.quantity, lineBudgetCents: item.budgetCents!, status: r.status, isCurrentVersionConfirmed: false, unansweredQuestionIds: [], research: null });
+    }
+    const project: ProjectView = { id, title: input.title, purpose: input.purpose, budgetCents: input.budgetTotalCents, lines };
+    mutate((db) => { (db.projects ??= []).push(project); });
+    return project;
+  },
+  async listProjects() {
+    return mutate((db) => (db.projects ?? []).map((p) => ({ id: p.id, title: p.title, budgetCents: p.budgetCents, lines: p.lines.length })));
+  },
+  async getProject(id) {
+    return mutate((db) => {
+      const p = db.projects?.find((p) => p.id === id);
+      if (!p) throw { code: "NOT_FOUND", message: "Request group not found." };
+      return { ...p, lines: p.lines.map((line) => {
+        const r = find(db, line.requestId);
+        syncStatus(db, r);
+        return { ...line, status: r.status, isCurrentVersionConfirmed: r.confirmedVersion === r.version, unansweredQuestionIds: r.clarifications.filter((c) => !c.answer).map((c) => c.id), research: r.status === "researching" ? { runStatus: "running" } : null };
+      }) };
+    });
+  },
+  async startProjectResearch(id) {
+    const p = await this.getProject(id);
+    const results = [];
+    for (const line of p.lines) {
+      if (line.unansweredQuestionIds.length) { results.push({ key: line.key, result: "not_confirmed" }); continue; }
+      const r = await this.getRequest(line.requestId);
+      if (r.status === "researching" || r.status === "results_ready" || r.status === "submitted" || r.status === "approved") { results.push({ key: line.key, result: "skipped" }); continue; }
+      await this.confirmRequirements(r.id, r.version);
+      await this.startResearch(r.id);
+      results.push({ key: line.key, result: "started" });
+    }
+    return { results };
+  },
   mode: "fixture",
 
   async getBackendMode() {
@@ -406,17 +447,8 @@ export const fixtureApi: RunwayApi = {
           ...input,
           category: input.category ?? "",
           items: input.items.map((it, i) => ({ ...it, id: `item_${i + 1}` })),
-          status: "clarifying",
-          clarifications: [
-            {
-              id: "q1",
-              question: "If an item meets every must-have, is a refurbished or open-box version acceptable?",
-              options: [
-                { value: "no", label: "No, new only" },
-                { value: "yes", label: "Yes" },
-              ],
-            },
-          ],
+          status: "awaiting_confirmation",
+          clarifications: [],
           createdAt: now(),
           updatedAt: now(),
         };
@@ -562,7 +594,7 @@ export const fixtureApi: RunwayApi = {
           expenseSource: "user_confirmed",
           decision: "awaiting_review",
           requester: DEMO_EMPLOYEE,
-          unresolved: ["Shipping cost unknown", "Sales tax unknown"],
+          unresolved: [...(input.selections.some((s) => offers.find((o) => o.id === s.offerId)?.shippingCents == null) ? ["Shipping cost unknown"] : []), "Sales tax unknown"],
           requirementResolutions: [],
           submittedAt: now(),
         };

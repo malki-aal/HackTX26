@@ -103,6 +103,14 @@ export function enforceCategoryQuery(q: string, profile: CategoryProfile): strin
   return profile.identify.test(q) ? q : `${profile.searchTerm} ${q}`.slice(0, 120);
 }
 
+/** Model-written queries cannot drop explicitly required features in favor of cheaper generic products. */
+export function enforceRequiredFeatures(q: string, requirements: Requirement[], profile: CategoryProfile): string {
+  const missing = requirements.filter((r) => r.mandatory && r.attribute === "feature")
+    .filter((r) => r.attribute === "feature" && !profile.features[r.value]?.pattern.test(q))
+    .map((r) => specPhrase(r)).filter(Boolean);
+  return missing.length ? `${profile.searchTerm} ${missing.join(" ")} ${q}`.replace(/\s+/g, " ").trim().slice(0, 120) : enforceCategoryQuery(q, profile);
+}
+
 export function sanitizeQuery(q: string): string {
   return q.replace(/[^\p{L}\p{N}\s".\-+/]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120);
 }
@@ -260,7 +268,8 @@ function makeToolHost(ctx: AppContext, st: RunState, signal: AbortSignal): ToolH
     getConfirmedRequirements: async () => confirmedRequirements(st),
     searchProducts: async (input: { query?: string }) => {
       if (st.searchCalls >= st.limits.maxSearchCalls) return { exhausted: true, message: `Search limit of ${st.limits.maxSearchCalls} reached for this run` };
-      const q = input.query ? enforceCategoryQuery(sanitizeQuery(input.query), st.profile) : st.plan[st.searchCalls % Math.max(1, st.plan.length)]!;
+      const proposed = input.query ? sanitizeQuery(input.query) : st.plan[st.searchCalls % Math.max(1, st.plan.length)]!;
+      const q = enforceRequiredFeatures(enforceCategoryQuery(proposed, st.profile), st.requirements, st.profile);
       st.searchCalls++;
       ctx.db.prepare("UPDATE runs SET search_calls = ? WHERE id = ?").run(st.searchCalls, st.runId);
       const queryId = `q_${randomUUID().slice(0, 8)}`;

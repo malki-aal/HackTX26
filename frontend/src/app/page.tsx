@@ -25,6 +25,7 @@ export default function RequestsPage() {
 }
 
 function EmployeeRequests() {
+  const projects = useLoad(() => api.listProjects(), []);
   const { data, error, loading, reload, refresh } = useLoad(() => api.listRequests(), []);
   // Errors are shown, never replaced with an empty list.
   const activity = useLoad(() => api.listActivity(), []);
@@ -41,19 +42,19 @@ function EmployeeRequests() {
       <PageHeader
         title="Requests"
         stats={[
-          { label: "Requests", value: data ? data.length : "–" },
+          { label: "Requests", value: data ? data.filter((r) => !r.projectId).length + (projects.data?.length ?? 0) : "–" },
           { label: "Awaiting approval", value: activity.data ? awaiting : "–" },
           { label: "To record", value: activity.data ? toRecord : "–" },
         ]}
       />
       {loading && <Loading />}
       <ErrorNote error={error} onRetry={reload} />
-      {data && data.length === 0 && (
+      {data && data.length === 0 && !projects.data?.length && (
         <Empty title="No requests yet" body="Tap the + button to start. Runway researches real offers for what you need." />
       )}
       {data && data.length > 0 && (
         <ul className="mb-4 space-y-3">
-          {data.map((r) => (
+          {data.filter((r) => !r.projectId).map((r) => (
             <li key={r.id}>
               <Link
                 href={`/requests/${r.id}`}
@@ -74,7 +75,14 @@ function EmployeeRequests() {
           ))}
         </ul>
       )}
-      <PendingActivity />
+      <ErrorNote error={projects.error} onRetry={projects.reload} />
+      {!!projects.data?.length && <section className="mb-4 space-y-3" aria-label="Grouped requests">
+        {projects.data.map((p) => <Link key={p.id} href={`/projects/${p.id}`} className="block rounded-2xl bg-paper p-4 shadow-sm">
+          <div className="flex justify-between gap-3"><h2 className="font-semibold">{p.title}</h2><span>{formatCents(p.budgetCents)}</span></div>
+          <p className="mt-1 text-[13px] text-muted">{p.lines} item types</p>
+        </Link>)}
+      </section>}
+      <PendingActivity hideAwaiting />
     </Page>
   );
 }

@@ -389,7 +389,7 @@ export const RequirementResolution = z.object({
   note: z
     .string()
     .transform((s) => s.replace(/\s+/g, " ").trim())
-    .pipe(z.string().min(3, "Explain how it was verified or why the exception is acceptable").max(500))
+    .pipe(z.string().min(12, "Describe the verification source or reason for the exception (at least 12 characters)").max(500))
     .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), "Note contains control characters"),
 });
 export type RequirementResolution = z.infer<typeof RequirementResolution>;
