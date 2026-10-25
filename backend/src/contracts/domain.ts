@@ -354,6 +354,7 @@ export const RunEventType = z.enum([
   "research_started",
   "agent_step",
   "tool_called",
+  "shortlist_failed",
   "search_started",
   "search_completed",
   "search_failed",

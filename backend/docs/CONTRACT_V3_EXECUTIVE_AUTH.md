@@ -255,3 +255,41 @@ Header `Idempotency-Key: <uuid>`. Create one key per decision attempt and reuse 
   - Each entry is `type` (`received` / `paid`), `amountCents`, `status`, `at`, `title`, `seller`, and `canPay`.
 - **Execution view** adds `kind`, `payee`, `payment`, and `externalReference.transferId`. `externalReference.purchaseId` stays the merchant purchase (the employee's payment for transfers).
 - **Purchase history** adds `transfers[]`, linked to Runway executions and the employee's payment.
+
+## 14. Evidence strength and the result shortlist (additive)
+
+All fields below are optional additions; older stored runs still parse and existing fields keep their meaning.
+
+**Evidence** (`candidates[].evidence[]`): `claim` — `"explicit" | "certification" | "keyword" | "marketing"` on feature evidence for features with explicit rules (café: commercial use). Keyword ("Commercial" in a seller title) and marketing ("commercial grade") claims never satisfy a requirement; explicit statements, certifications of stated scope (NSF, ETL Sanitation; generic ETL/UL marks are ignored) and structured Google product specs ("Commercial: Yes", "Rec. use: Commercial") do. Negations ("not for commercial use") contradict.
+
+**Requirement checks** (`candidates[].requirementChecks[]`): `deadlineRisk` on `delivery_by` — `none | estimate_only | on_deadline | late_estimate | no_date`. Google Shopping delivery dates are estimates; without `SHOPPING_LOCATION` they are `unknown`, never `supported` or `contradicted`.
+
+**Delivery** (`candidates[].delivery`): `basis: "google_estimate"`, `location` (null when unset), `timeZone` (relative days are read in `COMPANY_TIMEZONE`, default America/Chicago).
+
+**Shipping**: "Free delivery on $1,500+" is free only when the order subtotal clears the threshold (`costNotes` says which); membership-conditional free shipping stays unknown.
+
+**Shortlist** (`GET /requests/:id/candidates` → `data.shortlist`, null when results are for an older request version):
+
+```
+shortlist: {
+  source: "saved" | "computed",      // saved when the run ended; computed for runs before this change
+  headline: string | null,           // shown above the cards when no option meets every must-have
+  notEvaluated: string[],            // specs the backend cannot check (general search)
+  moreOfferIds: string[],            // everything else, ranking order, for "More options"
+  folded: { offerId, into }[],       // near-duplicates (same product, no meaningful difference)
+  entries: Array<{
+    offerId, rank,
+    role: "closest_match" | "lowest_cost" | "spec_advantage" | "fewer_packages" | "delivery_evidence"
+        | "stretch_budget" | "another_match" | "cheaper_compromise",
+    label: string,                   // 1–5 words, prominent
+    status: string,                  // factual secondary status ("Over budget by $35.00")
+    compliance: "meets_all" | "unconfirmed" | "over_budget" | "fails_must_have",
+    explanation: string, compromise: string, unverified: string[],
+    source: "deterministic" | "model",
+    facts: { knownCostCents, costBasis, budgetCents, overBudgetCents, costVsClosestCents, mustHaves[], advantages[], drawbacks[], title, seller }
+  }>
+}
+```
+
+Selection is deterministic (backend `domain/shortlist.ts`) from the request's own requirements; labels differ by sector (e.g. "More battery capacity", "Fewer containers"). At most four entries; fewer when nothing else differs meaningfully. `over_budget` and `fails_must_have` entries are compromises: their candidates stay `rejected` and cannot be proposed; the server's verification, exception and budget rules are unchanged. The research model may reword an entry through `prepareProposalDraft.shortlistNotes`; wording is accepted only if it uses existing offer ids and numbers already in `facts`, makes no quality, certification or confirmed-arrival claims, and calls an unconfirmed delivery date an estimate. Otherwise (or when the model fails) the deterministic wording is shown. The shortlist is saved on the run (`runs.shortlist`, migration 7) and never regenerated on page load.
+

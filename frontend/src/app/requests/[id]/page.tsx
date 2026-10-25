@@ -419,6 +419,14 @@ function Research({ runId, onDone }: { runId: string; onDone: () => void }) {
 
 const HIGHLIGHT_INK = { lowest_known_cost: "text-green-ink", best_deadline_fit: "text-orange-ink", best_overall_fit: "text-purple-ink" } as const;
 const HIGHLIGHT_ORDER = ["lowest_known_cost", "best_deadline_fit", "best_overall_fit"] as const;
+// Shortlist label and status colours by how the option relates to the must-haves.
+const LABEL_INK = { meets_all: "text-green-ink", unconfirmed: "text-accent", over_budget: "text-orange-ink", fails_must_have: "text-bad" } as const;
+const STATUS_CHIP = {
+  meets_all: "border-green-ink text-green-ink",
+  unconfirmed: "border-dashed border-orange-ink text-orange-ink",
+  over_budget: "border-orange-ink text-orange-ink",
+  fails_must_have: "border-bad text-bad",
+} as const;
 
 function priceLine(o: Offer): string {
   if (o.unitPriceCents === null) return "Price unknown";
@@ -548,6 +556,68 @@ function ItemOffers({
       </div>
     </li>
   );
+
+  const controls = (o: Offer) => (
+    <div className="mt-2 flex items-center gap-4">
+      <Link href={`/requests/${requestId}/offers/${o.id}`} className="text-[15px] font-medium text-accent">Details</Link>
+      {!locked && o.eligibility !== "rejected" && !o.stale && (
+        <button type="button" onClick={() => onChoose(o.id)} aria-pressed={selected === o.id}
+          className={`h-10 rounded-full px-5 text-[14px] font-semibold ${selected === o.id ? "bg-accent text-white" : "bg-accent-soft text-accent"}`}>
+          {selected === o.id ? "Selected ✓" : "Select"}
+        </button>
+      )}
+      {o.eligibility === "rejected" && <span className="text-[13px] text-muted">Can&apos;t be proposed as is</span>}
+      {o.stale && <span className="text-[13px] font-medium text-bad">Out of date</span>}
+    </div>
+  );
+
+  // Backend shortlist: a few labelled, meaningfully different options; the rest behind "More options".
+  const cards = offers.filter((o) => o.shortlist).sort((a, b) => a.shortlist!.position - b.shortlist!.position);
+  if (cards.length > 0 || offers.some((o) => o.shortlistHeadline)) {
+    const rest = offers.filter((o) => !o.shortlist);
+    const headline = offers.find((o) => o.shortlistHeadline)?.shortlistHeadline;
+    const notEvaluated = offers.find((o) => o.notEvaluated?.length)?.notEvaluated ?? [];
+    const card = (o: Offer) => {
+      const c = o.shortlist!;
+      return (
+        <li key={o.id} className="border-t border-rule py-4 first:border-t-0">
+          <p className={`text-[16px] font-bold ${LABEL_INK[c.compliance]}`}>{c.label}</p>
+          <h4 className="mt-0.5 text-[17px] font-semibold leading-snug">{o.title}</h4>
+          <p className="mt-0.5 text-[13px] text-muted">{o.seller}</p>
+          <p className="mt-2 text-[16px] tabular-nums">{priceLine(o)}</p>
+          <p className="mt-1 text-[14px]">{c.explanation}</p>
+          <p className="mt-1 text-[14px] text-muted">
+            <span className={`mr-1.5 inline-block rounded-full border px-2 py-px text-[12px] font-semibold ${STATUS_CHIP[c.compliance]}`}>{c.status}</span>
+            {c.compromise}
+          </p>
+          {o.delivery.status === "stated" && <p className="mt-1 text-[13px] text-muted">{deliveryLine(o)}</p>}
+          {controls(o)}
+        </li>
+      );
+    };
+    const restRow = (o: Offer) => (
+      <li key={o.id} className="border-t border-rule py-3 first:border-t-0">
+        <h4 className="text-[16px] font-semibold leading-snug">{o.title}</h4>
+        <p className="mt-0.5 text-[13px] text-muted">{o.seller} · <span className="tabular-nums">{priceLine(o)}</span></p>
+        <p className="mt-1 text-[14px] text-muted">{o.statusLine ?? o.rankNote}</p>
+        {controls(o)}
+      </li>
+    );
+    return (
+      <div className="mb-6">
+        {multi && <h3 className="mb-1 text-[17px] font-semibold">{itemLine(item)}</h3>}
+        {headline && <p className="mb-3 rounded-xl bg-orange-soft p-3 text-[14px]">{headline}</p>}
+        {notEvaluated.length > 0 && <p className="mb-3 text-[13px] text-muted">Not checked automatically: {notEvaluated.join("; ")}</p>}
+        {cards.length > 0 && <ul>{cards.map(card)}</ul>}
+        {rest.length > 0 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer text-[14px] font-medium text-accent">More options ({rest.length})</summary>
+            <ul>{rest.map(restRow)}</ul>
+          </details>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mb-6">

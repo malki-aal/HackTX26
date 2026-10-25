@@ -30,6 +30,7 @@ import type {
   RequestStatus,
   Run,
   SaveProposalInput,
+  ShortlistCard,
 } from "./types";
 
 // Live adapter for backend/docs/openapi.json. Every response is
@@ -338,6 +339,8 @@ interface BDelivery {
   excerpt: string | null;
   earliest: string | null;
   latest: string | null;
+  basis?: "google_estimate";
+  location?: string | null;
 }
 interface BCandidate {
   rank: number;
@@ -354,7 +357,7 @@ interface BCandidate {
   listedSubtotalCents: number | null;
   shippingCents: number | null;
   costNotes: string[];
-  requirementChecks: { requirementId: string; attribute: string; state: Offer["findings"][number]["status"]; evidenceIds: string[]; reason: string }[];
+  requirementChecks: { requirementId: string; attribute: string; state: Offer["findings"][number]["status"]; evidenceIds: string[]; reason: string; deadlineRisk?: string }[];
   evidence: { id: string; excerpt: string; source: string }[];
   unknowns: string[];
   recommendationReason: string;
@@ -364,6 +367,22 @@ interface BCandidate {
   expiresAt: string;
   stale: boolean;
   fromCache: boolean;
+}
+interface BShortlistEntry {
+  offerId: string;
+  role: string;
+  label: string;
+  status: string;
+  compliance: ShortlistCard["compliance"];
+  explanation: string;
+  compromise: string;
+  unverified: string[];
+  source: ShortlistCard["source"];
+}
+interface BShortlist {
+  headline: string | null;
+  notEvaluated: string[];
+  entries: BShortlistEntry[];
 }
 interface BRecommendation {
   offerId: string;
@@ -387,18 +406,31 @@ const KIND: Record<string, Offer["highlights"][number]> = {
   best_overall: "best_overall_fit",
 };
 
+/** Short factual status for an offer that is not on the shortlist. */
+function statusLine(c: BCandidate): string {
+  if (c.eligibility === "eligible") return "Meets checked requirements";
+  if (c.eligibility === "needs_review") return c.recommendationReason.replace(/^Needs review:\s*/, "");
+  return c.recommendationReason.replace(/^Mandatory mismatch:\s*/, "");
+}
+
 function mapCandidate(
   c: BCandidate,
   labels: Map<string, string>,
   req: BRequest,
   rec: BRecommendation | undefined,
   noncompliant: BNoncompliant | undefined,
+  shortlist?: BShortlist | null,
 ): Offer {
   const excerpts = new Map(c.evidence.map((e) => [e.id, e]));
   const d = c.delivery;
   const stated = !!d && d.status !== "unknown" && !!(d.excerpt || d.latest);
+  // The backend's delivery check decides the fit: a Google estimate without a delivery location is not an arrival date.
+  const deliveryCheck = c.requirementChecks.find((k) => k.attribute === "delivery_by");
   let fit: Offer["deadlineFit"] = "not_applicable";
-  if (req.deadline) fit = noncompliant ? "misses" : d?.latest ? (d.latest <= req.deadline ? "meets" : "misses") : "unknown";
+  if (req.deadline) fit = noncompliant || deliveryCheck?.state === "contradicted" ? "misses" : deliveryCheck?.state === "supported" ? "meets" : "unknown";
+  const estimate = d?.basis === "google_estimate" && deliveryCheck?.state !== "supported";
+  const entryIndex = shortlist?.entries.findIndex((e) => e.offerId === c.offerId) ?? -1;
+  const entry = entryIndex >= 0 ? shortlist!.entries[entryIndex] : undefined;
   const kinds = rec?.kinds ?? c.recommendationKinds ?? [];
   const reasons = [...(rec?.reasoning ?? []), ...(noncompliant ? [noncompliant.reason] : [])];
   return {
@@ -415,8 +447,15 @@ function mapCandidate(
     listedSubtotalCents: c.listedSubtotalCents,
     shippingCents: c.shippingCents,
     taxCents: null, // the backend never knows tax
-    delivery: stated ? { status: "stated", text: d?.excerpt ?? (d?.latest ? `Arrives by ${d.latest}` : undefined) } : { status: "unknown" },
+    delivery: stated
+      ? { status: "stated", text: d?.excerpt ? (estimate ? `Google estimate: ${d.excerpt}` : d.excerpt) : d?.latest ? `Arrives by ${d.latest}` : undefined, estimate }
+      : { status: "unknown" },
     deadlineFit: fit,
+    deliveryNote: deliveryCheck?.reason,
+    statusLine: entry?.status ?? statusLine(c),
+    shortlist: entry ? { position: entryIndex + 1, ...entry } : undefined,
+    shortlistHeadline: shortlist?.headline ?? null,
+    notEvaluated: shortlist?.notEvaluated ?? [],
     highlights: kinds.map((k) => KIND[k]).filter(Boolean),
     tradeoff: reasons.length ? reasons.join(" ") : undefined,
     eligibility: c.eligibility,
@@ -817,11 +856,12 @@ export const liveApi: RunwayApi = {
       candidates: BCandidate[];
       recommendations?: BRecommendation[];
       noncompliantAlternatives?: BNoncompliant[];
+      shortlist?: BShortlist | null;
     }>(`/requests/${requestId}/candidates?runId=${bReq.latestRunId}`);
     const labels = new Map(bReq.requirements.map((r) => [r.id, describeRequirement(r)]));
     const recs = new Map((data.recommendations ?? []).map((r) => [r.offerId, r]));
     const late = new Map((data.noncompliantAlternatives ?? []).map((r) => [r.offerId, r]));
-    return data.candidates.map((c) => mapCandidate(c, labels, bReq, recs.get(c.offerId), late.get(c.offerId)));
+    return data.candidates.map((c) => mapCandidate(c, labels, bReq, recs.get(c.offerId), late.get(c.offerId), data.shortlist));
   },
 
   async saveAndSubmitProposal(requestId, input: SaveProposalInput) {

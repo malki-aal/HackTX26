@@ -61,16 +61,16 @@ export class ScriptedAgentRunner implements AgentRunner {
     const seq: Array<[ToolName, unknown]> = [["getConfirmedRequirements", {}]];
     for (let i = 0; i < input.limits.maxSearchCalls; i++) seq.push(["searchProducts", {}]);
     seq.push(["readBudgetContext", {}], ["evaluateCandidates", {}]);
-    type Ranking = { candidates?: Array<{ offerId: string; class: string; productDetails?: string; unconfirmedMandatory?: string[] }>; detailCallsRemaining?: number };
+    type Ranking = { candidates?: Array<{ offerId: string; class: string; productDetails?: string; productPageCouldResolve?: string[] }>; detailCallsRemaining?: number };
     const results: { ranking: Ranking | null } = { ranking: null };
     for (const [tool, args] of seq) {
       const r = await step(tool, args);
       if (r.stop) return { runtime: this.kind, steps: steps - 1, finalMessage: null, stopReason: "step_limit" };
       if (tool === "evaluateCandidates") results.ranking = r.result as Ranking | null;
     }
-    // Fetch product details for the best needs_review candidates with unconfirmed mandatory specs, then re-evaluate.
+    // Fetch product details for the best needs_review candidates with gaps a product page can resolve, then re-evaluate.
     const remaining = results.ranking?.detailCallsRemaining ?? 0;
-    const targets = (results.ranking?.candidates ?? []).filter((c) => c.class === "needs_review" && c.productDetails === "not_fetched" && (c.unconfirmedMandatory?.length ?? 0) > 0).slice(0, remaining);
+    const targets = (results.ranking?.candidates ?? []).filter((c) => c.class === "needs_review" && c.productDetails === "not_fetched" && (c.productPageCouldResolve?.length ?? 0) > 0).slice(0, remaining);
     if (targets.length) {
       for (const t of targets) {
         const r = await step("getProductDetails", { offerId: t.offerId });

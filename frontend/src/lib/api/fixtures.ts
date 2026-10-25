@@ -247,7 +247,7 @@ function fixtureOffers(r: PurchaseRequest): Offer[] {
       add([...overall].sort((a, b) => score(b) - score(a))[0].d.id, "best_overall_fit");
     }
   }
-  return withFit.map(({ d, fit }) => {
+  const decorated: Offer[] = withFit.map(({ d, fit }) => {
     const { deliveryDays, ...rest } = d;
     void deliveryDays;
     const supported = d.findings.filter((f) => f.status === "supported").length;
@@ -259,6 +259,67 @@ function fixtureOffers(r: PurchaseRequest): Offer[] {
     const tradeoff = `${delivery}. ${supported} of ${d.findings.length} must-haves supported${unknown ? `, ${unknown} unconfirmed` : ""}. Covers all ${d.packagesRequired}. Missing: ${missing}. ${fitText}`.replace(/\s+/g, " ").trim();
     return { ...rest, deadlineFit: fit, highlights: highlights.get(d.id) ?? [], tradeoff };
   });
+  return withShortlist(decorated);
+}
+
+/** Sample-data stand-in for the backend shortlist: highlighted offers become labelled cards. */
+function withShortlist(offers: Offer[]): Offer[] {
+  const ROLES: Array<[OfferHighlight, string]> = [
+    ["best_overall_fit", "Closest match"],
+    ["lowest_known_cost", "Lowest-cost alternative"],
+    ["best_deadline_fit", "Stronger delivery evidence"],
+  ];
+  const status = (o: Offer) => {
+    const failed = o.findings.find((f) => f.status === "contradicted");
+    if (failed) return `${failed.requirement} not met`;
+    const open = o.findings.find((f) => f.status === "unknown");
+    return open ? `${open.requirement} unconfirmed` : "Meets checked requirements";
+  };
+  const cards = new Map<string, NonNullable<Offer["shortlist"]>>();
+  for (const itemId of new Set(offers.map((o) => o.itemId))) {
+    const mine = offers.filter((o) => o.itemId === itemId);
+    let n = 0;
+    for (const [h, label] of ROLES) {
+      const o = mine.find((x) => x.highlights.includes(h) && !cards.has(x.id));
+      if (!o) continue;
+      const open = o.findings.filter((f) => f.status === "unknown").map((f) => f.requirement);
+      cards.set(o.id, {
+        position: ++n,
+        role: h,
+        label,
+        status: status(o),
+        compliance: o.eligibility === "eligible" ? "meets_all" : o.eligibility === "needs_review" ? "unconfirmed" : "fails_must_have",
+        explanation: o.tradeoff ?? o.rankNote,
+        compromise: open.length ? `${open.join(", ")} not confirmed.` : o.shippingCents === null ? "Shipping and tax are unknown, so the final total is not known." : "Tax is unknown, so the final total is not known.",
+        unverified: o.unresolved,
+        source: "deterministic",
+      });
+    }
+    const compromise = mine
+      .filter((o) => o.eligibility === "rejected" && o.listedSubtotalCents !== null && !cards.has(o.id))
+      .sort((a, b) => a.listedSubtotalCents! - b.listedSubtotalCents!)[0];
+    if (compromise && n > 0) {
+      cards.set(compromise.id, {
+        position: ++n,
+        role: "cheaper_compromise",
+        label: "Cheaper, misses a must-have",
+        status: status(compromise),
+        compliance: "fails_must_have",
+        explanation: compromise.tradeoff ?? compromise.rankNote,
+        compromise: "It does not meet the request as written.",
+        unverified: compromise.unresolved,
+        source: "deterministic",
+      });
+    }
+  }
+  const anyMatch = offers.some((o) => o.eligibility === "eligible");
+  return offers.map((o) => ({
+    ...o,
+    shortlist: cards.get(o.id),
+    statusLine: cards.get(o.id)?.status ?? status(o),
+    shortlistHeadline: anyMatch ? null : "No option meets every must-have with confirmed evidence yet. Each option below names what still needs checking.",
+    notEvaluated: [],
+  }));
 }
 
 // ---------- runs ----------

@@ -190,6 +190,64 @@ describe("outside the four sectors", () => {
     expect(data.candidates.some((c: any) => c.eligibility === "eligible")).toBe(false);
     expect(data.recommendations).toEqual([]);
     expect((await h.call("GET", `/api/v1/runs/${start.body.data.runId}`)).body.data.outcome).toBe("no_confirmed_match");
+    // The shortlist says plainly which specifications the backend cannot check.
+    expect(data.shortlist.notEvaluated[0]).toMatch(/general search has no automatic checks/);
+    // Every fixture listing is a monitor, so nothing is shortlisted and the headline says so.
+    expect(data.shortlist.headline).toMatch(/^No option meets your must-haves/);
+    expect(data.shortlist.entries).toEqual([]);
+  });
+});
+
+describe("shortlist across the four sectors", () => {
+  const entries = (data: any) =>
+    data.shortlist.entries.map((e: any) => ({ label: e.label, status: e.status, compliance: e.compliance, title: data.candidates.find((c: any) => c.offerId === e.offerId).title }));
+
+  it("manufacturing glue: the full match plus a backup described by containers and price", async () => {
+    const { data } = await research(harness(), preset("manufacturing_wood_glue"));
+    expect(data.shortlist.source).toBe("saved");
+    expect(data.shortlist.headline).toBeNull();
+    const [first, second] = data.shortlist.entries;
+    expect(entries(data).map((e: any) => e.label)).toEqual(["Closest match", "Another full match"]);
+    expect(first.explanation).toMatch(/1 × 128 fl oz = 128 fl oz for 128 fl oz needed/);
+    expect(second.explanation).toMatch(/Costs \$4\.99 more than the closest match\. 2 containers instead of 1\./);
+    // Nothing is invented to fill the list: no cheaper or late option qualifies here.
+    expect(data.shortlist.entries).toHaveLength(2);
+  });
+
+  it("growing business monitors: quantity-aware costs, a stretch option and a labelled compromise", async () => {
+    const { data } = await research(harness(), preset("growing_business_monitors"));
+    expect(data.shortlist.headline).toMatch(/No option meets every must-have with confirmed evidence yet/);
+    expect(entries(data)).toEqual([
+      expect.objectContaining({ label: "Closest match so far", status: "Delivery unconfirmed", compliance: "unconfirmed" }),
+      expect.objectContaining({ label: "Lowest-cost alternative", status: "Resolution unconfirmed" }),
+      expect.objectContaining({ label: "Stretch-budget option", status: "Over budget by $119.96", compliance: "over_budget" }),
+      expect.objectContaining({ label: "Cheaper, misses a must-have", status: "Below required resolution", compliance: "fails_must_have" }),
+    ]);
+    const lowest = data.shortlist.entries[1];
+    expect(lowest.explanation).toMatch(/Costs \$108\.00 less than the closest match/); // 4 monitors, computed in code
+    expect(data.shortlist.entries[2].compromise).toMatch(/cannot be approved within this budget/);
+    // An over-budget or failing option stays unselectable: the candidate itself is still rejected.
+    for (const e of data.shortlist.entries.slice(2)) expect(data.candidates.find((c: any) => c.offerId === e.offerId).eligibility).toBe("rejected");
+  });
+
+  it("café blender: commercial-use evidence decides the match; the nearest capacity miss is the compromise", async () => {
+    const { data } = await research(harness(), preset("cafe_blender"));
+    expect(entries(data)).toEqual([
+      expect.objectContaining({ label: "Closest match", status: "Meets checked requirements" }),
+      expect.objectContaining({ label: "Lowest-cost alternative", status: "Commercial use unconfirmed" }),
+      expect.objectContaining({ label: "Cheaper, misses a must-have", status: "Below required capacity", title: expect.stringMatching(/48 oz/) }),
+    ]);
+    expect(data.shortlist.entries[2].explanation).toBe("Costs $30.00 less than the closest match, but states 48 fl oz, below 64 fl oz.");
+  });
+
+  it("nonprofit power: the advantage comes from the request's own numeric must-have (Wh)", async () => {
+    const { data } = await research(harness(), preset("nonprofit_power_station"));
+    const labels = entries(data).map((e: any) => e.label);
+    expect(labels).toEqual(["Closest match", "Lowest-cost alternative", "More battery capacity", "Cheaper, misses a must-have"]);
+    const more = data.shortlist.entries[2];
+    expect(more.explanation).toMatch(/States 1024 Wh against 518 Wh for the closest match\. Costs \$170\.00 more than the closest match/);
+    // Labels differ by sector because they come from each request's requirements.
+    expect(labels).not.toContain("Fewer containers");
   });
 });
 

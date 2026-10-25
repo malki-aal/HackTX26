@@ -994,7 +994,7 @@
                   "properties": {
                     "data": {
                       "type": "object",
-                      "description": "See docs/FRONTEND.md for the full field list"
+                      "description": "See docs/FRONTEND.md for the full field list, and CONTRACT_V3_EXECUTIVE_AUTH.md §14 for `shortlist`"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
