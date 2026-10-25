@@ -1,0 +1,4552 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Runway API",
+    "version": "1.0.0",
+    "description": "Runway purchasing backend. Demo identities only (demoIdentity=true); no authentication. All money is integer USD cents. Timestamps are ISO-8601 UTC."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000"
+    }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Server and storage liveness (no external calls)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/status": {
+      "get": {
+        "summary": "Per-service configuration and last verified state (no secrets, no paid calls)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IntegrationStatus"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-configs": {
+      "get": {
+        "summary": "List agent configurations (current versions)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a configuration",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentConfigBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentConfig"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-configs/{id}": {
+      "patch": {
+        "summary": "Create the next configuration version",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentConfigBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentConfig"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests": {
+      "post": {
+        "summary": "Create a draft request with initial requirements and clarification questions",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Paginated request list",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1-100",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "from meta.nextCursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "filter",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}": {
+      "get": {
+        "summary": "Full current request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Version-checked edit; creates a new version",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/clarify": {
+      "post": {
+        "summary": "Submit clarification answers (empty answers returns current questions)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClarifyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/confirm": {
+      "post": {
+        "summary": "Confirm an exact requirement version",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/research": {
+      "post": {
+        "summary": "Start bounded asynchronous research",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "runId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "const": "queued"
+                        },
+                        "requestVersion": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/candidates": {
+      "get": {
+        "summary": "Ranked candidate evaluations for a run (defaults to latest)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "query",
+            "required": false,
+            "description": "run id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/events": {
+      "get": {
+        "summary": "Cursor-based request activity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "description": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1-500",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/proposals": {
+      "post": {
+        "summary": "Save an immutable proposal revision (pass proposalId to revise)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProposalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{id}": {
+      "get": {
+        "summary": "Poll run state",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{id}/events": {
+      "get": {
+        "summary": "Cursor-based run events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "description": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1-500",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{id}/cancel": {
+      "post": {
+        "summary": "Cancel future work; completed evidence is preserved",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/budget": {
+      "get": {
+        "summary": "Account context with freshness and reservations",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "description": "true to read Nessie now",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FinancialContext"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proposals": {
+      "get": {
+        "summary": "Review/history list",
+        "parameters": [
+          {
+            "name": "decisionState",
+            "in": "query",
+            "required": false,
+            "description": "filter",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1-200",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proposals/{id}": {
+      "get": {
+        "summary": "Proposal with decision, execution and budget assessment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proposals/{id}/submit": {
+      "post": {
+        "summary": "Confirm technical review and exact amount; submit for review",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitProposalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proposals/{id}/decision": {
+      "post": {
+        "summary": "Executive decision (approve executes one Nessie sandbox purchase)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/executions/{id}": {
+      "get": {
+        "summary": "Execution status and external reference",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/executions/{id}/reconcile": {
+      "post": {
+        "summary": "Check Nessie for the outcome; never blindly resends",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Meta": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "live",
+              "fixtures"
+            ]
+          },
+          "demoIdentity": {
+            "type": "boolean",
+            "const": true
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "demoIdentity",
+          "requestId"
+        ]
+      },
+      "ApiError": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "NOT_FOUND",
+                  "VERSION_CONFLICT",
+                  "INVALID_STATE",
+                  "REQUIREMENTS_UNCONFIRMED",
+                  "RUN_ALREADY_ACTIVE",
+                  "INTEGRATION_NOT_CONFIGURED",
+                  "UPSTREAM_RATE_LIMITED",
+                  "UPSTREAM_TIMEOUT",
+                  "UPSTREAM_ERROR",
+                  "NO_CONFIRMED_MATCH",
+                  "OFFER_STALE",
+                  "CONFIRMATION_REQUIRED",
+                  "BUDGET_EXCEEDED",
+                  "BANK_CHECK_UNAVAILABLE",
+                  "IDEMPOTENCY_CONFLICT",
+                  "IDEMPOTENCY_KEY_REQUIRED",
+                  "EXECUTION_UNCERTAIN",
+                  "MODE_MISMATCH",
+                  "INTERNAL_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "requestId",
+              "details"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "IntegrationStatus": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "enum": [
+              "gemini",
+              "serpapi",
+              "nessie",
+              "agent_runtime"
+            ]
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "live",
+              "fixtures"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "ok",
+              "degraded",
+              "error",
+              "not_configured",
+              "fixture"
+            ]
+          },
+          "lastVerifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "service",
+          "configured",
+          "mode",
+          "state",
+          "lastVerifiedAt",
+          "lastError",
+          "detail"
+        ]
+      },
+      "CreateRequestBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "purpose": {
+            "default": "",
+            "type": "string",
+            "maxLength": 2000
+          },
+          "description": {
+            "default": "",
+            "type": "string",
+            "maxLength": 4000
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "monitors"
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "currency": {
+            "type": "string",
+            "const": "USD"
+          },
+          "budgetCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          },
+          "budgetBasis": {
+            "default": "total",
+            "type": "string",
+            "enum": [
+              "total",
+              "per_item"
+            ]
+          },
+          "allowedCondition": {
+            "default": "new",
+            "type": "string",
+            "enum": [
+              "new",
+              "refurbished",
+              "used",
+              "any"
+            ]
+          },
+          "deadline": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rankingPriority": {
+            "default": "lowest_known_total",
+            "type": "string",
+            "enum": [
+              "lowest_known_total",
+              "evidence_completeness"
+            ]
+          },
+          "agentConfigId": {
+            "default": "cfg_default",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "agentConfigVersion": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requirements": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "product_type"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "eq"
+                    },
+                    "value": {
+                      "type": "string",
+                      "const": "monitor"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "screen_size"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "between"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "min": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 100
+                        },
+                        "max": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "resolution"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "width": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "height": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "width",
+                        "height"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "px"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "port"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "includes"
+                    },
+                    "value": {
+                      "type": "string",
+                      "enum": [
+                        "hdmi",
+                        "displayport",
+                        "usb_c",
+                        "thunderbolt",
+                        "vga",
+                        "dvi"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "condition"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "in"
+                    },
+                    "value": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "new",
+                          "refurbished",
+                          "used"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "refresh_rate"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1000
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "hz"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "panel_type"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "in"
+                    },
+                    "value": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "ips",
+                          "va",
+                          "tn",
+                          "oled"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "brand"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "in"
+                    },
+                    "value": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "title",
+          "category",
+          "quantity",
+          "currency",
+          "budgetCents"
+        ]
+      },
+      "PatchRequestBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "purpose": {
+            "default": "",
+            "type": "string",
+            "maxLength": 2000
+          },
+          "description": {
+            "default": "",
+            "type": "string",
+            "maxLength": 4000
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "monitors"
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "currency": {
+            "type": "string",
+            "const": "USD"
+          },
+          "budgetCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          },
+          "budgetBasis": {
+            "default": "total",
+            "type": "string",
+            "enum": [
+              "total",
+              "per_item"
+            ]
+          },
+          "allowedCondition": {
+            "default": "new",
+            "type": "string",
+            "enum": [
+              "new",
+              "refurbished",
+              "used",
+              "any"
+            ]
+          },
+          "deadline": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rankingPriority": {
+            "default": "lowest_known_total",
+            "type": "string",
+            "enum": [
+              "lowest_known_total",
+              "evidence_completeness"
+            ]
+          },
+          "agentConfigId": {
+            "default": "cfg_default",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "agentConfigVersion": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requirements": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "product_type"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "eq"
+                    },
+                    "value": {
+                      "type": "string",
+                      "const": "monitor"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "screen_size"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "between"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "min": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 100
+                        },
+                        "max": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "resolution"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "width": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "height": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "width",
+                        "height"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "px"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "port"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "includes"
+                    },
+                    "value": {
+                      "type": "string",
+                      "enum": [
+                        "hdmi",
+                        "displayport",
+                        "usb_c",
+                        "thunderbolt",
+                        "vga",
+                        "dvi"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "condition"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "in"
+                    },
+                    "value": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "new",
+                          "refurbished",
+                          "used"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "refresh_rate"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1000
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "hz"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "panel_type"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "in"
+                    },
+                    "value": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "ips",
+                          "va",
+                          "tn",
+                          "oled"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "brand"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "in"
+                    },
+                    "value": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value"
+                  ]
+                }
+              ]
+            }
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "ClarifyBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "answers": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "questionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                }
+              },
+              "required": [
+                "questionId",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "ConfirmBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "ResearchBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "agentConfigId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "Requirement": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "product_type"
+              },
+              "operator": {
+                "type": "string",
+                "const": "eq"
+              },
+              "value": {
+                "type": "string",
+                "const": "monitor"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "screen_size"
+              },
+              "operator": {
+                "type": "string",
+                "const": "between"
+              },
+              "value": {
+                "type": "object",
+                "properties": {
+                  "min": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 100
+                  },
+                  "max": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "min",
+                  "max"
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "const": "in"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "resolution"
+              },
+              "operator": {
+                "type": "string",
+                "const": "gte"
+              },
+              "value": {
+                "type": "object",
+                "properties": {
+                  "width": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "height": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "width",
+                  "height"
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "const": "px"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "port"
+              },
+              "operator": {
+                "type": "string",
+                "const": "includes"
+              },
+              "value": {
+                "type": "string",
+                "enum": [
+                  "hdmi",
+                  "displayport",
+                  "usb_c",
+                  "thunderbolt",
+                  "vga",
+                  "dvi"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "condition"
+              },
+              "operator": {
+                "type": "string",
+                "const": "in"
+              },
+              "value": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "refurbished",
+                    "used"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "refresh_rate"
+              },
+              "operator": {
+                "type": "string",
+                "const": "gte"
+              },
+              "value": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 1000
+              },
+              "unit": {
+                "type": "string",
+                "const": "hz"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "panel_type"
+              },
+              "operator": {
+                "type": "string",
+                "const": "in"
+              },
+              "value": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "ips",
+                    "va",
+                    "tn",
+                    "oled"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "brand"
+              },
+              "operator": {
+                "type": "string",
+                "const": "in"
+              },
+              "value": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value"
+            ]
+          }
+        ]
+      },
+      "Offer": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "provider": {
+            "type": "string",
+            "const": "serpapi_google_shopping"
+          },
+          "queryId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "title": {
+            "type": "string"
+          },
+          "normalizedModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "brand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seller": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "fromCache": {
+            "type": "boolean"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "USD"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priceText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "listedPriceCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priceBasis": {
+            "type": "string",
+            "enum": [
+              "one_time",
+              "installment",
+              "from_price",
+              "unknown"
+            ]
+          },
+          "packageQuantity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "packageQuantityMethod": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "provider_field",
+                  "listing_text_pattern",
+                  "inferred_default",
+                  "user_confirmed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shipping": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "known",
+                  "unknown"
+                ]
+              },
+              "cents": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "cents",
+              "source"
+            ]
+          },
+          "tax": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "known",
+                  "unknown"
+                ]
+              },
+              "cents": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "cents",
+              "source"
+            ]
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "refurbished",
+                  "used"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "availability": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "in_stock",
+                  "unknown"
+                ]
+              },
+              "excerpt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "excerpt"
+            ]
+          },
+          "delivery": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "stated",
+                  "unknown"
+                ]
+              },
+              "excerpt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "excerpt"
+            ]
+          },
+          "rating": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reviews": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "attribute": {
+                  "type": "string"
+                },
+                "value": {},
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "serpapi_google_shopping",
+                    "serpapi_immersive_product",
+                    "user"
+                  ]
+                },
+                "sourceField": {
+                  "type": "string"
+                },
+                "excerpt": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "provider_field",
+                    "listing_text_pattern",
+                    "inferred_default",
+                    "user_confirmed"
+                  ]
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "listing_evidence",
+                    "weak_inference"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "attribute",
+                "value",
+                "source",
+                "sourceField",
+                "excerpt",
+                "method",
+                "confidence"
+              ]
+            }
+          },
+          "needsReviewReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "not_available",
+                  "not_fetched",
+                  "fetched",
+                  "failed"
+                ]
+              },
+              "fetchedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fromCache": {
+                "type": "boolean"
+              },
+              "matchedStore": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "fetchedAt",
+              "fromCache",
+              "matchedStore"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "runId",
+          "provider",
+          "queryId",
+          "title",
+          "normalizedModel",
+          "brand",
+          "seller",
+          "sourceUrl",
+          "imageUrl",
+          "observedAt",
+          "expiresAt",
+          "fromCache",
+          "currency",
+          "priceText",
+          "listedPriceCents",
+          "priceBasis",
+          "packageQuantity",
+          "packageQuantityMethod",
+          "shipping",
+          "tax",
+          "condition",
+          "availability",
+          "delivery",
+          "rating",
+          "reviews",
+          "evidence",
+          "needsReviewReasons",
+          "details"
+        ]
+      },
+      "CandidateEvaluation": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "rank": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "class": {
+            "type": "string",
+            "enum": [
+              "eligible",
+              "needs_review",
+              "rejected"
+            ]
+          },
+          "affordability": {
+            "type": "string",
+            "enum": [
+              "within_budget_provisional",
+              "over_budget",
+              "unknown"
+            ]
+          },
+          "requirementResults": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "requirementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "attribute": {
+                  "type": "string"
+                },
+                "mandatory": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "supported",
+                    "contradicted",
+                    "unknown"
+                  ]
+                },
+                "evidenceIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "requirementId",
+                "attribute",
+                "mandatory",
+                "state",
+                "evidenceIds",
+                "reason"
+              ]
+            }
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cost": {
+            "type": "object",
+            "properties": {
+              "requestedQuantity": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "packageQuantity": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "packagesRequired": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "unitPriceCents": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "listedSubtotalCents": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shippingCents": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "taxCents": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "knownComparableCostCents": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "totalStatus": {
+                "type": "string",
+                "enum": [
+                  "price_unknown",
+                  "listed_subtotal_only",
+                  "subtotal_plus_shipping_tax_unknown"
+                ]
+              },
+              "provisional": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "requestedQuantity",
+              "packageQuantity",
+              "packagesRequired",
+              "unitPriceCents",
+              "listedSubtotalCents",
+              "shippingCents",
+              "taxCents",
+              "knownComparableCostCents",
+              "totalStatus",
+              "provisional",
+              "notes"
+            ]
+          },
+          "recommendationReason": {
+            "type": "string"
+          },
+          "evidenceCompleteness": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "offerId",
+          "rank",
+          "class",
+          "affordability",
+          "requirementResults",
+          "unknowns",
+          "cost",
+          "recommendationReason",
+          "evidenceCompleteness"
+        ]
+      },
+      "FinancialContext": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "bank_check_unavailable",
+              "fixture"
+            ]
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "nessie_live",
+              "nessie_cached",
+              "fixture",
+              "none"
+            ]
+          },
+          "fetchedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reportedBalanceCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "obligations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "payee": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "included": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "payee",
+                "status",
+                "amountCents",
+                "included",
+                "reason"
+              ]
+            }
+          },
+          "obligationsCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "activeReservationsCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "unreflectedExpensesCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "availableBudgetCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reconciliationNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "accountId",
+          "source",
+          "fetchedAt",
+          "reportedBalanceCents",
+          "obligations",
+          "obligationsCents",
+          "activeReservationsCents",
+          "unreflectedExpensesCents",
+          "availableBudgetCents",
+          "reconciliationNotes"
+        ]
+      },
+      "BudgetAssessment": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "within_budget",
+              "within_budget_provisional",
+              "exceeds_request_budget",
+              "exceeds_available_funds",
+              "bank_check_unavailable",
+              "amount_unknown"
+            ]
+          },
+          "amountCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amountBasis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "listed_subtotal",
+                  "subtotal_plus_shipping",
+                  "user_confirmed_exact"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestBudgetCents": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "availableBudgetCents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "amountCents",
+          "amountBasis",
+          "requestBudgetCents",
+          "availableBudgetCents",
+          "notes"
+        ]
+      },
+      "AgentConfig": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "enabledTools": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "getConfirmedRequirements",
+                "searchProducts",
+                "getProductDetails",
+                "evaluateCandidates",
+                "readBudgetContext",
+                "prepareProposalDraft"
+              ]
+            }
+          },
+          "rankingPriority": {
+            "type": "string",
+            "enum": [
+              "lowest_known_total",
+              "evidence_completeness"
+            ]
+          },
+          "searchStrategy": {
+            "type": "string",
+            "enum": [
+              "exact_specs",
+              "broad_then_filter"
+            ]
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maxSearchCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6
+              },
+              "maxDetailCalls": {
+                "default": 3,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "maxSteps": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 24
+              },
+              "maxDurationMs": {
+                "type": "integer",
+                "minimum": 10000,
+                "maximum": 300000
+              }
+            },
+            "required": [
+              "maxSearchCalls",
+              "maxSteps",
+              "maxDurationMs"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "instructions",
+          "enabledTools",
+          "rankingPriority",
+          "searchStrategy",
+          "limits",
+          "id",
+          "version",
+          "createdAt"
+        ]
+      },
+      "CreateAgentConfigBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "enabledTools": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "getConfirmedRequirements",
+                "searchProducts",
+                "getProductDetails",
+                "evaluateCandidates",
+                "readBudgetContext",
+                "prepareProposalDraft"
+              ]
+            }
+          },
+          "rankingPriority": {
+            "type": "string",
+            "enum": [
+              "lowest_known_total",
+              "evidence_completeness"
+            ]
+          },
+          "searchStrategy": {
+            "type": "string",
+            "enum": [
+              "exact_specs",
+              "broad_then_filter"
+            ]
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maxSearchCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6
+              },
+              "maxDetailCalls": {
+                "default": 3,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "maxSteps": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 24
+              },
+              "maxDurationMs": {
+                "type": "integer",
+                "minimum": 10000,
+                "maximum": 300000
+              }
+            },
+            "required": [
+              "maxSearchCalls",
+              "maxSteps",
+              "maxDurationMs"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^cfg_[a-z0-9_]{2,40}$"
+          }
+        },
+        "required": [
+          "displayName",
+          "instructions",
+          "enabledTools",
+          "rankingPriority",
+          "searchStrategy",
+          "limits"
+        ]
+      },
+      "PatchAgentConfigBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "enabledTools": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "getConfirmedRequirements",
+                "searchProducts",
+                "getProductDetails",
+                "evaluateCandidates",
+                "readBudgetContext",
+                "prepareProposalDraft"
+              ]
+            }
+          },
+          "rankingPriority": {
+            "type": "string",
+            "enum": [
+              "lowest_known_total",
+              "evidence_completeness"
+            ]
+          },
+          "searchStrategy": {
+            "type": "string",
+            "enum": [
+              "exact_specs",
+              "broad_then_filter"
+            ]
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maxSearchCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6
+              },
+              "maxDetailCalls": {
+                "default": 3,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "maxSteps": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 24
+              },
+              "maxDurationMs": {
+                "type": "integer",
+                "minimum": 10000,
+                "maximum": 300000
+              }
+            },
+            "required": [
+              "maxSearchCalls",
+              "maxSteps",
+              "maxDurationMs"
+            ]
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "CreateProposalBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "offerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "justification": {
+            "default": "",
+            "type": "string",
+            "maxLength": 4000
+          },
+          "alternativeOfferIds": {
+            "default": [],
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "actor": {
+            "default": "employee-demo",
+            "type": "string",
+            "const": "employee-demo"
+          },
+          "proposalId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "offerId"
+        ]
+      },
+      "SubmitProposalBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "technicalReviewConfirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "exactAmountCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          },
+          "amountSource": {
+            "default": "user_confirmed",
+            "type": "string",
+            "enum": [
+              "user_confirmed"
+            ]
+          },
+          "actor": {
+            "default": "employee-demo",
+            "type": "string",
+            "const": "employee-demo"
+          }
+        },
+        "required": [
+          "version",
+          "technicalReviewConfirmed",
+          "exactAmountCents"
+        ]
+      },
+      "DecisionBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "request_changes",
+              "reject"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "const": "executive-demo"
+          },
+          "note": {
+            "default": "",
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "version",
+          "decision",
+          "actor"
+        ]
+      },
+      "ReconcileBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "default": "check",
+            "type": "string",
+            "enum": [
+              "check",
+              "submit_queued",
+              "mark_failed"
+            ]
+          },
+          "actor": {
+            "default": "executive-demo",
+            "type": "string",
+            "const": "executive-demo"
+          },
+          "note": {
+            "default": "",
+            "type": "string",
+            "maxLength": 1000
+          }
+        }
+      },
+      "RunEventType": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "clarification_required",
+          "requirements_confirmed",
+          "research_started",
+          "agent_step",
+          "tool_called",
+          "search_started",
+          "search_completed",
+          "search_failed",
+          "details_fetched",
+          "candidates_normalized",
+          "evaluation_completed",
+          "budget_checked",
+          "research_completed",
+          "research_failed",
+          "research_cancelled",
+          "proposal_saved",
+          "proposal_submitted",
+          "decision_recorded",
+          "execution_queued",
+          "execution_submitting",
+          "execution_recorded",
+          "execution_failed",
+          "execution_uncertain",
+          "reconciliation_completed"
+        ]
+      },
+      "ErrorCode": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "VALIDATION_ERROR",
+          "NOT_FOUND",
+          "VERSION_CONFLICT",
+          "INVALID_STATE",
+          "REQUIREMENTS_UNCONFIRMED",
+          "RUN_ALREADY_ACTIVE",
+          "INTEGRATION_NOT_CONFIGURED",
+          "UPSTREAM_RATE_LIMITED",
+          "UPSTREAM_TIMEOUT",
+          "UPSTREAM_ERROR",
+          "NO_CONFIRMED_MATCH",
+          "OFFER_STALE",
+          "CONFIRMATION_REQUIRED",
+          "BUDGET_EXCEEDED",
+          "BANK_CHECK_UNAVAILABLE",
+          "IDEMPOTENCY_CONFLICT",
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "EXECUTION_UNCERTAIN",
+          "MODE_MISMATCH",
+          "INTERNAL_ERROR"
+        ]
+      }
+    }
+  }
+}

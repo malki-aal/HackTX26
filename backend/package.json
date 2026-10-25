@@ -1,0 +1,36 @@
+{
+  "name": "runway-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "4.0.105",
+    "@fastify/cors": "11.3.1",
+    "ai": "7.0.153",
+    "eve": "0.83.2",
+    "fastify": "5.12.7",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  },
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch --ignore ./var --ignore ./.eve src/server.ts",
+    "start:fixtures": "INTEGRATION_MODE=fixtures DATABASE_PATH=./var/runway-fixtures.sqlite tsx src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "check:gemini": "tsx scripts/check-gemini.ts",
+    "check:serpapi": "tsx scripts/check-serpapi.ts",
+    "probe:nessie": "tsx scripts/probe-nessie.ts",
+    "seed:nessie": "tsx scripts/seed-nessie.ts",
+    "openapi": "tsx scripts/generate-openapi.ts",
+    "smoke": "tsx scripts/smoke.ts"
+  }
+}

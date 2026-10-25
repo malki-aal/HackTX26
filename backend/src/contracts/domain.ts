@@ -1,0 +1,360 @@
+// Shared domain contracts. These Zod schemas are the source of truth for the public API
+// and are exported for the frontend (see src/contracts/index.ts and docs/openapi.json).
+import { z } from "zod";
+
+export const MAX_QUANTITY = 500;
+export const MAX_BUDGET_CENTS = 100_000_000; // $1,000,000.00
+
+export const Id = z.string().min(1).max(100);
+export const Cents = z.number().int().min(0).max(MAX_BUDGET_CENTS);
+export const IsoTimestamp = z.string();
+
+export const Category = z.enum(["monitors"]);
+export const Condition = z.enum(["new", "refurbished", "used"]);
+export const AllowedCondition = z.enum(["new", "refurbished", "used", "any"]);
+export const RankingPriority = z.enum(["lowest_known_total", "evidence_completeness"]);
+export const EvidenceState = z.enum(["supported", "contradicted", "unknown"]);
+export const CandidateClass = z.enum(["eligible", "needs_review", "rejected"]);
+export const Port = z.enum(["hdmi", "displayport", "usb_c", "thunderbolt", "vga", "dvi"]);
+export const PanelType = z.enum(["ips", "va", "tn", "oled"]);
+
+export const RequestStatus = z.enum([
+  "draft",
+  "needs_clarification",
+  "ready_to_confirm",
+  "confirmed",
+  "researching",
+  "researched",
+  "proposal_draft",
+  "submitted",
+  "approved",
+  "changes_requested",
+  "rejected",
+]);
+
+// ---------- Requirements as structured predicates ----------
+
+const base = {
+  id: Id,
+  mandatory: z.boolean(),
+  sourceText: z.string().max(500),
+};
+
+export const Requirement = z.discriminatedUnion("attribute", [
+  z.object({ ...base, attribute: z.literal("product_type"), operator: z.literal("eq"), value: z.literal("monitor") }),
+  z.object({
+    ...base,
+    attribute: z.literal("screen_size"),
+    operator: z.literal("between"),
+    value: z.object({ min: z.number().positive().max(100), max: z.number().positive().max(100) }),
+    unit: z.literal("in"),
+  }),
+  z.object({
+    ...base,
+    attribute: z.literal("resolution"),
+    operator: z.literal("gte"),
+    value: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
+    unit: z.literal("px"),
+  }),
+  z.object({ ...base, attribute: z.literal("port"), operator: z.literal("includes"), value: Port }),
+  z.object({ ...base, attribute: z.literal("condition"), operator: z.literal("in"), value: z.array(Condition).min(1) }),
+  z.object({
+    ...base,
+    attribute: z.literal("refresh_rate"),
+    operator: z.literal("gte"),
+    value: z.number().int().positive().max(1000),
+    unit: z.literal("hz"),
+  }),
+  z.object({ ...base, attribute: z.literal("panel_type"), operator: z.literal("in"), value: z.array(PanelType).min(1) }),
+  z.object({ ...base, attribute: z.literal("brand"), operator: z.literal("in"), value: z.array(z.string().min(1).max(40)).min(1) }),
+]);
+export type Requirement = z.infer<typeof Requirement>;
+export type RequirementAttribute = Requirement["attribute"];
+
+/** User-editable request fields. */
+export const RequestFields = z.object({
+  title: z.string().trim().min(1).max(200),
+  purpose: z.string().max(2000).default(""),
+  description: z.string().max(4000).default(""),
+  category: Category,
+  quantity: z.number().int().min(1).max(MAX_QUANTITY),
+  currency: z.literal("USD"),
+  budgetCents: Cents.refine((v) => v > 0, "budgetCents must be positive"),
+  budgetBasis: z.enum(["total", "per_item"]).default("total"),
+  allowedCondition: AllowedCondition.default("new"),
+  deadline: z.string().date().nullable().default(null),
+  rankingPriority: RankingPriority.default("lowest_known_total"),
+  agentConfigId: Id.default("cfg_default"),
+  agentConfigVersion: z.number().int().positive().nullable().default(null),
+  requirements: z.array(Requirement).max(30).optional(),
+});
+export type RequestFields = z.infer<typeof RequestFields>;
+
+export const CreateRequestBody = RequestFields;
+export const PatchRequestBody = RequestFields.partial().extend({ expectedVersion: z.number().int().positive() });
+
+export const ClarificationQuestion = z.object({
+  id: Id,
+  text: z.string(),
+  kind: z.enum(["single_choice", "boolean", "number", "text"]),
+  options: z.array(z.object({ value: z.string(), label: z.string() })).default([]),
+  affects: z.string(),
+  answer: z.unknown().nullable(),
+  answeredAt: IsoTimestamp.nullable(),
+});
+export type ClarificationQuestion = z.infer<typeof ClarificationQuestion>;
+
+export const ClarifyBody = z.object({
+  expectedVersion: z.number().int().positive(),
+  answers: z.array(z.object({ questionId: Id, value: z.union([z.string(), z.number(), z.boolean()]) })).default([]),
+});
+
+export const ConfirmBody = z.object({ version: z.number().int().positive() });
+export const ResearchBody = z.object({
+  version: z.number().int().positive(),
+  agentConfigId: Id.optional(),
+});
+
+// ---------- Offers and evidence ----------
+
+export const ExtractionMethod = z.enum(["provider_field", "listing_text_pattern", "inferred_default", "user_confirmed"]);
+
+export const SpecEvidence = z.object({
+  id: Id,
+  attribute: z.string(),
+  value: z.unknown(),
+  source: z.enum(["serpapi_google_shopping", "serpapi_immersive_product", "user"]),
+  sourceField: z.string(),
+  excerpt: z.string().max(300),
+  method: ExtractionMethod,
+  confidence: z.enum(["listing_evidence", "weak_inference"]),
+});
+export type SpecEvidence = z.infer<typeof SpecEvidence>;
+
+export const PriceBasis = z.enum(["one_time", "installment", "from_price", "unknown"]);
+export const KnownAmount = z.object({
+  status: z.enum(["known", "unknown"]),
+  cents: z.number().int().nullable(),
+  source: z.string().nullable(),
+});
+
+export const Offer = z.object({
+  id: Id,
+  runId: Id,
+  provider: z.literal("serpapi_google_shopping"),
+  queryId: Id,
+  title: z.string(),
+  normalizedModel: z.string().nullable(),
+  brand: z.string().nullable(),
+  seller: z.string().nullable(),
+  sourceUrl: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+  observedAt: IsoTimestamp,
+  expiresAt: IsoTimestamp,
+  fromCache: z.boolean(),
+  currency: z.literal("USD").nullable(),
+  priceText: z.string().nullable(),
+  listedPriceCents: z.number().int().nullable(),
+  priceBasis: PriceBasis,
+  packageQuantity: z.number().int().positive().nullable(),
+  packageQuantityMethod: ExtractionMethod.nullable(),
+  shipping: KnownAmount,
+  tax: KnownAmount,
+  condition: Condition.nullable(),
+  availability: z.object({ status: z.enum(["in_stock", "unknown"]), excerpt: z.string().nullable() }),
+  delivery: z.object({ status: z.enum(["stated", "unknown"]), excerpt: z.string().nullable() }),
+  rating: z.number().nullable(),
+  reviews: z.number().int().nullable(),
+  evidence: z.array(SpecEvidence),
+  needsReviewReasons: z.array(z.string()),
+  /** Product-detail evidence lookup state (SerpApi immersive product page). */
+  details: z.object({
+    status: z.enum(["not_available", "not_fetched", "fetched", "failed"]),
+    fetchedAt: IsoTimestamp.nullable(),
+    fromCache: z.boolean(),
+    matchedStore: z.string().nullable(),
+  }),
+});
+export type Offer = z.infer<typeof Offer>;
+
+export const RequirementResult = z.object({
+  requirementId: Id,
+  attribute: z.string(),
+  mandatory: z.boolean(),
+  state: EvidenceState,
+  evidenceIds: z.array(Id),
+  reason: z.string(),
+});
+export type RequirementResult = z.infer<typeof RequirementResult>;
+
+export const TotalStatus = z.enum([
+  "price_unknown",
+  "listed_subtotal_only", // shipping and tax unknown
+  "subtotal_plus_shipping_tax_unknown",
+]);
+
+export const PurchaseCost = z.object({
+  requestedQuantity: z.number().int().positive(),
+  packageQuantity: z.number().int().positive().nullable(),
+  packagesRequired: z.number().int().positive().nullable(),
+  unitPriceCents: z.number().int().nullable(),
+  listedSubtotalCents: z.number().int().nullable(),
+  shippingCents: z.number().int().nullable(),
+  taxCents: z.number().int().nullable(),
+  knownComparableCostCents: z.number().int().nullable(),
+  totalStatus: TotalStatus,
+  provisional: z.boolean(),
+  notes: z.array(z.string()),
+});
+export type PurchaseCost = z.infer<typeof PurchaseCost>;
+
+export const Affordability = z.enum(["within_budget_provisional", "over_budget", "unknown"]);
+
+export const CandidateEvaluation = z.object({
+  offerId: Id,
+  rank: z.number().int().positive(),
+  class: CandidateClass,
+  affordability: Affordability,
+  requirementResults: z.array(RequirementResult),
+  unknowns: z.array(z.string()),
+  cost: PurchaseCost,
+  recommendationReason: z.string(),
+  evidenceCompleteness: z.number().int().min(0),
+});
+export type CandidateEvaluation = z.infer<typeof CandidateEvaluation>;
+
+// ---------- Agent configuration ----------
+
+export const AgentToolName = z.enum([
+  "getConfirmedRequirements",
+  "searchProducts",
+  "getProductDetails",
+  "evaluateCandidates",
+  "readBudgetContext",
+  "prepareProposalDraft",
+]);
+export type AgentToolName = z.infer<typeof AgentToolName>;
+
+/** Application-wide ceilings that no configuration can exceed. */
+export const CONFIG_CEILINGS = { maxSearchCalls: 6, maxDetailCalls: 5, maxSteps: 24, maxDurationMs: 300_000 } as const;
+
+export const AgentConfigFields = z.object({
+  displayName: z.string().trim().min(1).max(80),
+  instructions: z.string().max(4000),
+  enabledTools: z.array(AgentToolName).min(1),
+  rankingPriority: RankingPriority,
+  searchStrategy: z.enum(["exact_specs", "broad_then_filter"]),
+  limits: z.object({
+    maxSearchCalls: z.number().int().min(1).max(CONFIG_CEILINGS.maxSearchCalls),
+    /** Product-detail (evidence) lookups per run; each is one paid SerpApi call. */
+    maxDetailCalls: z.number().int().min(0).max(CONFIG_CEILINGS.maxDetailCalls).default(3),
+    maxSteps: z.number().int().min(2).max(CONFIG_CEILINGS.maxSteps),
+    maxDurationMs: z.number().int().min(10_000).max(CONFIG_CEILINGS.maxDurationMs),
+  }),
+});
+export type AgentConfigFields = z.infer<typeof AgentConfigFields>;
+export const AgentConfig = AgentConfigFields.extend({
+  id: Id,
+  version: z.number().int().positive(),
+  createdAt: IsoTimestamp,
+});
+export type AgentConfig = z.infer<typeof AgentConfig>;
+export const CreateAgentConfigBody = AgentConfigFields.extend({ id: z.string().regex(/^cfg_[a-z0-9_]{2,40}$/).optional() });
+export const PatchAgentConfigBody = AgentConfigFields.partial().extend({ expectedVersion: z.number().int().positive() });
+
+// ---------- Runs ----------
+
+export const RunStatus = z.enum(["queued", "running", "completed", "failed", "cancelled"]);
+export const RunOutcome = z.enum(["candidates_found", "no_confirmed_match", "no_results"]).nullable();
+export const RunEventType = z.enum([
+  "clarification_required",
+  "requirements_confirmed",
+  "research_started",
+  "agent_step",
+  "tool_called",
+  "search_started",
+  "search_completed",
+  "search_failed",
+  "details_fetched",
+  "candidates_normalized",
+  "evaluation_completed",
+  "budget_checked",
+  "research_completed",
+  "research_failed",
+  "research_cancelled",
+  "proposal_saved",
+  "proposal_submitted",
+  "decision_recorded",
+  "execution_queued",
+  "execution_submitting",
+  "execution_recorded",
+  "execution_failed",
+  "execution_uncertain",
+  "reconciliation_completed",
+]);
+export type RunEventType = z.infer<typeof RunEventType>;
+
+// ---------- Budget ----------
+
+export const FinancialContext = z.object({
+  status: z.enum(["verified", "bank_check_unavailable", "fixture"]),
+  accountId: z.string().nullable(),
+  source: z.enum(["nessie_live", "nessie_cached", "fixture", "none"]),
+  fetchedAt: IsoTimestamp.nullable(),
+  reportedBalanceCents: z.number().int().nullable(),
+  obligations: z.array(z.object({ id: z.string(), payee: z.string(), status: z.string(), amountCents: z.number().int(), included: z.boolean(), reason: z.string() })),
+  obligationsCents: z.number().int(),
+  activeReservationsCents: z.number().int(),
+  unreflectedExpensesCents: z.number().int(),
+  availableBudgetCents: z.number().int().nullable(),
+  reconciliationNotes: z.array(z.string()),
+});
+export type FinancialContext = z.infer<typeof FinancialContext>;
+
+export const BudgetAssessment = z.object({
+  status: z.enum(["within_budget", "within_budget_provisional", "exceeds_request_budget", "exceeds_available_funds", "bank_check_unavailable", "amount_unknown"]),
+  amountCents: z.number().int().nullable(),
+  amountBasis: z.enum(["listed_subtotal", "subtotal_plus_shipping", "user_confirmed_exact"]).nullable(),
+  requestBudgetCents: z.number().int(),
+  availableBudgetCents: z.number().int().nullable(),
+  notes: z.array(z.string()),
+});
+export type BudgetAssessment = z.infer<typeof BudgetAssessment>;
+
+// ---------- Proposals, decisions, executions ----------
+
+export const DemoActor = z.enum(["employee-demo", "executive-demo"]);
+
+export const CreateProposalBody = z.object({
+  runId: Id,
+  offerId: Id,
+  justification: z.string().max(4000).default(""),
+  alternativeOfferIds: z.array(Id).max(5).default([]),
+  actor: z.literal("employee-demo").default("employee-demo"),
+});
+
+export const SubmitProposalBody = z.object({
+  version: z.number().int().positive(),
+  technicalReviewConfirmed: z.literal(true),
+  exactAmountCents: Cents.refine((v) => v > 0, "exactAmountCents must be positive"),
+  amountSource: z.enum(["user_confirmed"]).default("user_confirmed"),
+  actor: z.literal("employee-demo").default("employee-demo"),
+});
+
+export const Decision = z.enum(["approve", "request_changes", "reject"]);
+export const DecisionBody = z.object({
+  version: z.number().int().positive(),
+  decision: Decision,
+  actor: z.literal("executive-demo"),
+  note: z.string().max(2000).default(""),
+});
+
+export const ProposalDecisionState = z.enum(["not_submitted", "awaiting_review", "approved", "changes_requested", "rejected"]);
+export const ExecutionStatus = z.enum(["not_started", "queued", "submitting", "recorded", "failed", "uncertain"]);
+export type ExecutionStatus = z.infer<typeof ExecutionStatus>;
+
+export const ReconcileBody = z.object({
+  action: z.enum(["check", "submit_queued", "mark_failed"]).default("check"),
+  actor: z.literal("executive-demo").default("executive-demo"),
+  note: z.string().max(1000).default(""),
+});
