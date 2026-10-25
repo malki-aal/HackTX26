@@ -2,42 +2,62 @@
 
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { PendingActivity } from "@/components/pending";
+import { summarizeItems } from "@/lib/format";
 import { statusLabel } from "@/lib/labels";
 import { formatCents } from "@/lib/money";
 import { Empty, ErrorNote, Loading, Page, PageHeader, formatWhen, useLoad } from "@/components/ui";
 
 export default function RequestsPage() {
   const { data, error, loading, reload } = useLoad(() => api.listRequests(), []);
+  // Cached read: opening the list never asks the bank again.
+  const budget = useLoad(() => api.getBudget({ fresh: false }).catch(() => null), []);
+  const activity = useLoad(() => api.listActivity().catch(() => []), []);
+  const acts = activity.data ?? [];
+  const awaiting = acts.filter((a) => a.decision === "awaiting_review").length;
+  const toRecord = acts.filter((a) => a.decision === "approved" && a.execution?.status !== "recorded").length;
 
   return (
     <Page>
-      <PageHeader title="Requests" />
+      <PageHeader
+        title="Requests"
+        amount={budget.loading ? undefined : (budget.data?.availableCents ?? null)}
+        amountLabel="Available budget"
+        stats={[
+          { label: "Requests", value: data ? data.length : "–" },
+          { label: "Awaiting approval", value: activity.data ? awaiting : "–" },
+          { label: "To record", value: activity.data ? toRecord : "–" },
+        ]}
+      />
       {loading && <Loading />}
       <ErrorNote error={error} onRetry={reload} />
       {data && data.length === 0 && (
-        <Empty title="No requests yet" body="Start with what you need and Runway will research real offers." />
+        <Empty title="No requests yet" body="Tap the + button to start. Runway researches real offers for what you need." />
       )}
       {data && data.length > 0 && (
-        <ul className="border-b border-rule">
+        <ul className="mb-4 space-y-3">
           {data.map((r) => (
-            <li key={r.id} className="border-t border-rule">
-              <Link href={`/requests/${r.id}`} className="block py-4 active:bg-raised">
+            <li key={r.id}>
+              <Link
+                href={`/requests/${r.id}`}
+                className="block rounded-2xl bg-paper p-4 shadow-[0_1px_2px_rgba(16,24,40,0.06),0_2px_8px_rgba(16,24,40,0.04)] active:bg-raised"
+              >
                 <div className="flex items-baseline justify-between gap-3">
                   <h2 className="text-[17px] font-semibold leading-snug">{r.title}</h2>
-                  <span className="shrink-0 text-[15px] tabular-nums">{formatCents(r.budgetTotalCents)}</span>
+                  <span className="shrink-0 text-[15px] font-semibold tabular-nums">{formatCents(r.budgetTotalCents)}</span>
                 </div>
                 <p className="mt-1 text-[13px] text-muted">
-                  {r.quantity} monitors · Updated {formatWhen(r.updatedAt)}
+                  {summarizeItems(r.items)} · Updated {formatWhen(r.updatedAt)}
                 </p>
-                <p className="mt-1 text-[14px] font-medium text-ink">{statusLabel[r.status]}</p>
+                <p className="mt-2 inline-block rounded-full bg-accent-soft px-2.5 py-0.5 text-[13px] font-medium text-accent">
+                  {statusLabel[r.status]}
+                </p>
               </Link>
             </li>
           ))}
         </ul>
       )}
-      <Link href="/new" className="mt-6 block h-12 rounded-lg bg-accent text-center text-[16px] font-semibold leading-[48px] text-white active:bg-accent-press">
-        New request
-      </Link>
+      <PendingActivity />
     </Page>
   );
 }

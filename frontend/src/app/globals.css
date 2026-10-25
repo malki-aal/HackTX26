@@ -2,6 +2,9 @@
 
 :root {
   --paper: #ffffff;
+  --canvas: #f2f4f9;
+  --hero: #0b3eb8;
+  --hero-tile: #1c55d4;
   --paper-raised: #f1f2f4;
   --surface-group: #e2e6ea;
   --ink: #1c1c1e;
@@ -17,6 +20,9 @@
 
 @theme inline {
   --color-paper: var(--paper);
+  --color-canvas: var(--canvas);
+  --color-hero: var(--hero);
+  --color-hero-tile: var(--hero-tile);
   --color-raised: var(--paper-raised);
   --color-group: var(--surface-group);
   --color-ink: var(--ink);
@@ -36,7 +42,7 @@
 html,
 body {
   height: 100%;
-  background: var(--paper);
+  background: var(--canvas);
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", var(--font-inter), "Segoe UI", sans-serif;
   font-size: 16px;
@@ -62,5 +68,22 @@ select {
   * {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .app-shell,
+  .app-main {
+    display: block !important;
+    height: auto !important;
+    max-width: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+  }
+  body {
+    background: #fff;
   }
 }

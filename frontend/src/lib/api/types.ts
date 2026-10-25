@@ -1,8 +1,12 @@
 // UI-facing types. The live adapter (live.ts) maps backend/docs/openapi.json responses
 // onto these; the fixture adapter produces them directly. All money is integer USD cents.
+//
+// Fields marked "PROPOSED" are not in the backend contract yet (see
+// docs/FRONTEND_CONTRACT_REQUESTS.md). Fixtures provide them; the live adapter fills them
+// with explicit "unknown" values and never invents data.
 
 export type Condition = "new" | "refurbished" | "used" | "any";
-export type RankingPriority = "lowest_known_total" | "evidence_completeness";
+export type DeadlineKind = "flexible" | "hard";
 
 export type RequestStatus =
   | "clarifying"
@@ -23,26 +27,35 @@ export interface Clarification {
   answer?: string;
 }
 
+/** One thing to buy. PROPOSED: the backend currently supports a single item (monitors) per request. */
+export interface RequestItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+}
+
 export interface PurchaseRequest {
   id: string;
   version: number;
   title: string;
   purpose: string;
-  category: "monitors";
-  quantity: number;
+  /** Free text in the UI; the backend currently accepts only "monitors". */
+  category: string;
+  items: RequestItem[];
   budgetTotalCents: number;
   mandatory: string[];
   preferences: string[];
   condition: Condition;
   deadline?: string;
+  /** PROPOSED: hard deadlines can exclude offers; flexible ones are only a target. */
+  deadlineKind: DeadlineKind;
   agentConfigId: string;
-  ranking: RankingPriority;
   status: RequestStatus;
   clarifications: Clarification[];
   confirmedVersion?: number;
   runId?: string;
   agentConfigVersion?: number | null;
-  selectedOfferId?: string;
   proposalId?: string;
   createdAt: string;
   updatedAt: string;
@@ -51,14 +64,15 @@ export interface PurchaseRequest {
 export interface NewRequestInput {
   title: string;
   purpose: string;
-  quantity: number;
+  category: string;
+  items: Omit<RequestItem, "id">[];
   budgetTotalCents: number;
   mandatory: string[];
   preferences: string[];
   condition: Condition;
   deadline?: string;
+  deadlineKind: DeadlineKind;
   agentConfigId: string;
-  ranking: RankingPriority;
 }
 
 export interface AgentConfig {
@@ -66,6 +80,31 @@ export interface AgentConfig {
   name: string;
   version: number;
   summary: string;
+}
+
+export type ToolName =
+  | "getConfirmedRequirements"
+  | "searchProducts"
+  | "getProductDetails"
+  | "evaluateCandidates"
+  | "readBudgetContext"
+  | "prepareProposalDraft";
+
+export interface AgentConfigDetail extends AgentConfig {
+  createdAt: string;
+  instructions: string;
+  enabledTools: ToolName[];
+  rankingPriority: "lowest_known_total" | "evidence_completeness";
+  searchStrategy: "exact_specs" | "broad_then_filter";
+  limits: { maxSearchCalls: number; maxDetailCalls: number; maxSteps: number; maxDurationMs: number };
+}
+
+export type AgentConfigInput = Pick<AgentConfigDetail, "name" | "instructions" | "enabledTools" | "rankingPriority" | "searchStrategy" | "limits">;
+
+export interface IntegrationStatus {
+  name: string;
+  state: "configured" | "verified" | "degraded" | "unavailable" | "fixture";
+  detail: string;
 }
 
 export interface RunEvent {
@@ -95,8 +134,19 @@ export interface Finding {
   evidence: string;
 }
 
+/** PROPOSED: backend-generated tradeoff labels. An offer may carry more than one. */
+export type OfferHighlight = "lowest_known_cost" | "best_deadline_fit" | "best_overall_fit";
+
+export interface DeliveryInfo {
+  status: "stated" | "unknown";
+  /** Text as the seller stated it. Never computed by the UI. */
+  text?: string;
+}
+
 export interface Offer {
   id: string;
+  /** Which requested item this offer covers. */
+  itemId: string;
   title: string;
   seller: string;
   url: string;
@@ -108,7 +158,12 @@ export interface Offer {
   listedSubtotalCents: number | null;
   shippingCents: number | null; // null = unknown
   taxCents: number | null; // null = unknown
-  delivery?: string;
+  delivery: DeliveryInfo;
+  /** PROPOSED: backend's verdict against the request deadline. */
+  deadlineFit: "meets" | "misses" | "unknown" | "not_applicable";
+  highlights: OfferHighlight[];
+  /** PROPOSED: backend-written plain-language tradeoff; falls back to rankNote. */
+  tradeoff?: string;
   eligibility: Eligibility;
   findings: Finding[];
   rankNote: string;
@@ -131,12 +186,6 @@ export interface Budget {
   notes: string;
 }
 
-export interface IntegrationStatus {
-  name: string;
-  state: "configured" | "verified" | "degraded" | "unavailable" | "fixture";
-  detail: string;
-}
-
 export type DecisionState = "not_submitted" | "awaiting_review" | "approved" | "changes_requested" | "rejected";
 export type ExecutionState =
   | "not_started"
@@ -146,8 +195,18 @@ export type ExecutionState =
   | "failed"
   | "uncertain";
 
+export interface MerchantInfo {
+  /** Seller found by research. */
+  researchedSeller: string | null;
+  /** Nessie sandbox merchant the purchase was booked against. Null means mapping is required. */
+  nessieMerchantId: string | null;
+  /** PROPOSED: sandbox merchant name from Nessie. */
+  nessieMerchantName?: string | null;
+}
+
 export interface ExecutionDetail {
   id: string;
+  proposalId: string;
   status: ExecutionState;
   providerStatus: string | null;
   /** Amount the executive approved (user-confirmed). */
@@ -157,15 +216,30 @@ export interface ExecutionDetail {
   amountDiscrepancyCents: number | null;
   amountNote: string | null;
   purchaseId: string | null;
+  merchant: MerchantInfo;
   lastError: string | null;
   disclaimer: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProposalLine {
+  itemId: string;
+  itemName: string;
+  offerId: string;
+  title: string;
+  seller: string | null;
+  sourceUrl: string | null;
+  listedSubtotalCents: number | null;
+  quantityText: string;
 }
 
 export interface Proposal {
   id: string;
   requestId: string;
+  requestTitle: string;
   revision: number;
-  offerId: string;
+  lines: ProposalLine[];
   justification: string;
   suitabilityConfirmed: boolean;
   researchSubtotalCents: number | null;
@@ -174,6 +248,9 @@ export interface Proposal {
   expenseSource: "user_confirmed";
   decision: DecisionState;
   decisionNote?: string;
+  /** Who requested it and who decided, as the backend records them (demo roles, not accounts). */
+  requester: string;
+  approval?: { actor: string; at: string; decision: string };
   execution: ExecutionState;
   executionDetail?: ExecutionDetail;
   unresolved: string[];
@@ -181,10 +258,21 @@ export interface Proposal {
 }
 
 export interface SaveProposalInput {
-  offerId: string;
+  selections: { itemId: string; offerId: string }[];
   justification: string;
   suitabilityConfirmed: boolean;
   expenseCents: number;
+}
+
+/** One row of purchasing activity: a submitted proposal and, once approved, its execution. */
+export interface ActivityItem {
+  proposalId: string;
+  requestId: string;
+  title: string;
+  decision: DecisionState;
+  exactAmountCents: number;
+  updatedAt: string;
+  execution?: ExecutionDetail;
 }
 
 export interface ApiError {

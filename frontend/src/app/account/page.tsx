@@ -1,21 +1,65 @@
 "use client";
 
+import Link from "next/link";
 import { api } from "@/lib/api";
+import { ExecutionStatusText } from "@/components/execution";
 import { formatCents } from "@/lib/money";
-import { ErrorNote, KeyValue, Loading, Page, PageHeader, Section, formatWhen, useLoad } from "@/components/ui";
+import { ErrorNote, KeyValue, Loading, Page, PageHeader, SandboxNote, Section, formatWhen, useLoad } from "@/components/ui";
 
 export default function AccountPage() {
   const budget = useLoad(() => api.getBudget(), []);
-  const integrations = useLoad(() => api.getIntegrations(), []);
-  const configs = useLoad(() => api.listAgentConfigs(), []);
+  const activity = useLoad(() => api.listActivity(), []);
+  const purchases = (activity.data ?? []).filter((a) => a.execution);
 
   return (
     <Page>
-      <PageHeader title="Account" />
-      <p className="mb-5 text-[14px] text-muted">
-        This device is set to the Employee demo view. It is a view selector for the demo, not a sign-in, and does not
-        protect anything.
-      </p>
+      <PageHeader
+        title="Account"
+        amount={budget.loading ? undefined : (budget.data?.availableCents ?? null)}
+        amountLabel="Available budget"
+        stats={[
+          { label: "Reported balance", value: budget.data ? formatCents(budget.data.reportedBalanceCents) : "–" },
+          { label: "Purchases", value: activity.data ? purchases.length : "–" },
+        ]}
+      />
+
+      <Section title="You">
+        <dl>
+          <KeyValue label="Demo role" value="Employee" />
+          <KeyValue label="Sign-in" value="Not set up" />
+        </dl>
+        <p className="mt-1 text-[13px] text-muted">
+          There are no accounts yet, so no name or email is available. The role is a label for the demo and protects nothing.
+        </p>
+        <Link href="/executive" className="mt-3 block text-[15px] font-medium text-accent">
+          Open the Executive approvals view
+        </Link>
+        <Link href="/settings" className="mt-3 block text-[15px] font-medium text-accent">
+          Agent settings and integration status
+        </Link>
+      </Section>
+
+      <Section title="Past purchases">
+        {activity.loading && <Loading />}
+        <ErrorNote error={activity.error} onRetry={activity.reload} />
+        {activity.data && purchases.length === 0 && <p className="text-[14px] text-muted">No purchases have been recorded yet.</p>}
+        <ul>
+          {purchases.map((a) => (
+            <li key={a.proposalId} className="border-t border-rule first:border-t-0">
+              <Link href={`/purchases/${a.execution!.id}`} className="block py-2.5 active:bg-raised">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[16px]">{a.title}</span>
+                  <span className="shrink-0 text-[15px] tabular-nums">{formatCents(a.execution!.amountCents)}</span>
+                </div>
+                <p className="text-[13px] text-muted">
+                  <ExecutionStatusText status={a.execution!.status} /> · {formatWhen(a.execution!.createdAt)}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        {purchases.length > 0 && <SandboxNote />}
+      </Section>
 
       <Section title="Company budget">
         {budget.loading && <Loading />}
@@ -34,34 +78,12 @@ export default function AccountPage() {
               </p>
             )}
             <p className="mt-2 text-[13px] text-muted">
-              {budget.data.source}
-              {budget.data.fetchedAt && ` · fetched ${formatWhen(budget.data.fetchedAt)}`}. {budget.data.notes}
+              {budget.data.fetchedAt ? `Last fetched ${formatWhen(budget.data.fetchedAt)}. ` : "Not fetched yet. "}
+              {budget.data.source}. {budget.data.notes}
             </p>
+            <SandboxNote />
           </>
         )}
-      </Section>
-
-      <Section title="Agent configurations">
-        {configs.data?.map((c) => (
-          <div key={c.id} className="py-1.5">
-            <p className="text-[15px]">
-              {c.name} <span className="text-muted">v{c.version}</span>
-            </p>
-            <p className="text-[13px] text-muted">{c.summary}</p>
-          </div>
-        ))}
-      </Section>
-
-      <Section title="Integrations">
-        {integrations.data?.map((i) => (
-          <div key={i.name} className="flex items-baseline justify-between gap-4 py-1.5">
-            <div>
-              <p className="text-[15px]">{i.name}</p>
-              <p className="text-[13px] text-muted">{i.detail}</p>
-            </div>
-            <span className="text-[14px] font-medium capitalize text-ink">{i.state}</span>
-          </div>
-        ))}
       </Section>
     </Page>
   );

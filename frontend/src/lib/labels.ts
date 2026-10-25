@@ -1,32 +1,60 @@
-import type { RequestStatus } from "./api";
+import type { DecisionState, ExecutionState, OfferHighlight, RequestStatus } from "./api";
 
 export const statusLabel: Record<RequestStatus, string> = {
-  clarifying: "Needs your answers",
-  awaiting_confirmation: "Confirm requirements",
+  clarifying: "Needs your review",
+  awaiting_confirmation: "Needs your review",
   confirmed: "Ready for research",
   researching: "Research running",
   results_ready: "Offers ready",
   proposal_drafted: "Proposal drafted",
-  submitted: "Awaiting executive review",
+  submitted: "Awaiting executive approval",
   approved: "Approved",
   changes_requested: "Changes requested",
   rejected: "Rejected",
 };
 
-export const stages = ["Clarify", "Confirm", "Research", "Offers", "Proposal"] as const;
+export const stages = ["Review", "Research", "Compare", "Proposal", "Approval", "Record"] as const;
 
 export function stageIndex(s: RequestStatus): number {
   switch (s) {
     case "clarifying":
-      return 0;
     case "awaiting_confirmation":
-      return 1;
+      return 0;
     case "confirmed":
     case "researching":
-      return 2;
+      return 1;
     case "results_ready":
+      return 2;
+    case "proposal_drafted":
       return 3;
-    default:
+    case "submitted":
+    case "changes_requested":
+    case "rejected":
       return 4;
+    case "approved":
+      return 5;
   }
 }
+
+export const DECISION_LABEL: Record<DecisionState, string> = {
+  not_submitted: "Not submitted",
+  awaiting_review: "Awaiting executive approval",
+  approved: "Approved",
+  changes_requested: "Changes requested",
+  rejected: "Rejected",
+};
+
+export const EXECUTION_LABEL: Record<ExecutionState, string> = {
+  not_started: "Purchase recording not started",
+  queued: "Purchase recording queued",
+  submitting: "Purchase recording in progress",
+  recorded: "Recorded in Nessie sandbox",
+  failed: "Purchase recording failed",
+  uncertain: "Uncertain: needs checking",
+};
+
+export const HIGHLIGHT_LABEL: Record<OfferHighlight, string> = {
+  lowest_known_cost: "Lowest known cost",
+  best_deadline_fit: "Best deadline fit",
+  best_overall_fit: "Best overall fit",
+};

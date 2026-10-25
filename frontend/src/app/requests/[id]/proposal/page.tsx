@@ -1,9 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { api, type ApiError, type DecisionState, type ExecutionDetail, type ExecutionState } from "@/lib/api";
-import { formatCents, parseDollarsToCents } from "@/lib/money";
+import { api, type ApiError, type Offer, type Proposal, type ProposalLine } from "@/lib/api";
+import { ExecutionAmounts, ExecutionStatusText, ExecutionWarnings } from "@/components/execution";
+import { DECISION_LABEL } from "@/lib/labels";
+import { formatCents, isSafeHttpUrl, parseDollarsToCents } from "@/lib/money";
+import { parseSelectionQuery, readSelection } from "@/lib/selection";
 import {
   Button,
   ErrorNote,
@@ -12,48 +16,14 @@ import {
   Loading,
   Page,
   PageHeader,
+  ProgressBar,
   Section,
+  SandboxNote,
   formatWhen,
   inputClass,
   normalizeError,
   useLoad,
 } from "@/components/ui";
-
-const DECISION_LABEL: Record<DecisionState, string> = {
-  not_submitted: "Not submitted",
-  awaiting_review: "Awaiting executive review",
-  approved: "Approved",
-  changes_requested: "Changes requested",
-  rejected: "Rejected",
-};
-
-const EXECUTION_LABEL: Record<ExecutionState, string> = {
-  not_started: "Not started",
-  queued: "Queued",
-  submitting: "Submitting",
-  recorded: "Recorded in Nessie sandbox",
-  failed: "Failed",
-  uncertain: "Uncertain, needs checking",
-};
-
-function ExecutionSection({ d }: { d: ExecutionDetail }) {
-  const differs = d.providerAmountCents !== null && d.providerAmountCents !== d.amountCents;
-  return (
-    <div className="mt-3">
-      <dl>
-        <KeyValue label="Approved amount" value={formatCents(d.amountCents)} />
-        {d.providerAmountCents !== null && (
-          <KeyValue label="Stored in Nessie" value={formatCents(d.providerAmountCents)}
-            note={differs ? (d.amountNote ?? "Nessie stores whole dollars, so the stored amount differs.") : undefined} />
-        )}
-        {d.providerStatus && <KeyValue label="Nessie status" value={d.providerStatus} />}
-        {d.purchaseId && <KeyValue label="Nessie reference" value={d.purchaseId} />}
-      </dl>
-      {d.lastError && <p role="alert" className="mt-2 text-[14px] text-bad">{d.lastError}</p>}
-      <p className="mt-2 text-[13px] text-muted">{d.disclaimer}</p>
-    </div>
-  );
-}
 
 export default function ProposalPage() {
   return (
@@ -63,10 +33,32 @@ export default function ProposalPage() {
   );
 }
 
+function Lines({ lines }: { lines: ProposalLine[] }) {
+  return (
+    <ul>
+      {lines.map((l) => (
+        <li key={l.itemId} className="border-t border-rule py-3 first:border-t-0 first:pt-0">
+          <p className="text-[13px] text-muted">{l.itemName} · {l.quantityText}</p>
+          <p className="text-[17px] font-semibold leading-snug">{l.title}</p>
+          <p className="text-[14px] text-muted">
+            {l.seller ?? "Unknown seller"}
+            {l.listedSubtotalCents !== null && ` · ${formatCents(l.listedSubtotalCents)} listed`}
+          </p>
+          {l.sourceUrl && isSafeHttpUrl(l.sourceUrl) && (
+            <a href={l.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[14px] font-medium text-accent">
+              Source listing
+            </a>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function ProposalInner() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const offerId = useSearchParams().get("offer");
+  const selParam = useSearchParams().get("sel");
   const req = useLoad(() => api.getRequest(id), [id]);
   const offers = useLoad(() => api.listCandidates(id), [id]);
   const existing = useLoad(
@@ -82,17 +74,42 @@ function ProposalInner() {
   const [pending, setPending] = useState(false);
 
   const loading = req.loading || offers.loading;
-  const submitted = existing.data && existing.data.decision !== "not_submitted" ? existing.data : null;
-  const offer = offers.data?.find((o) => o.id === (submitted?.offerId ?? offerId));
+  const submitted: Proposal | null = existing.data && existing.data.decision !== "not_submitted" ? existing.data : null;
+  const fromQuery = parseSelectionQuery(selParam);
+  const selection = Object.keys(fromQuery).length ? fromQuery : req.data ? readSelection(req.data.id) : {};
+
+  const chosen: { itemId: string; offer: Offer }[] = [];
+  for (const item of req.data?.items ?? []) {
+    const offer = offers.data?.find((o) => o.id === selection[item.id] && o.itemId === item.id);
+    if (offer) chosen.push({ itemId: item.id, offer });
+  }
+  const itemsReady = !!req.data && chosen.length === req.data.items.length;
+  const knownSubtotal = chosen.every((c) => c.offer.listedSubtotalCents !== null)
+    ? chosen.reduce((s, c) => s + (c.offer.listedSubtotalCents ?? 0), 0)
+    : null;
+  const lines: ProposalLine[] = chosen.map(({ itemId, offer }) => {
+    const item = req.data!.items.find((i) => i.id === itemId)!;
+    return {
+      itemId,
+      itemName: item.name,
+      offerId: offer.id,
+      title: offer.title,
+      seller: offer.seller,
+      sourceUrl: offer.url || null,
+      listedSubtotalCents: offer.listedSubtotalCents,
+      quantityText: `${item.quantity} ${item.unit}`,
+    };
+  });
+  const late = chosen.filter((c) => c.offer.deadlineFit === "misses" && req.data?.deadlineKind === "hard");
 
   async function submit() {
-    if (pending || !offer) return;
+    if (pending || !itemsReady) return;
     const next: Record<string, string> = {};
     const cents = parseDollarsToCents(expense);
-    if (!justification.trim()) next.justification = "Say why this offer is the right choice.";
-    if (cents === null || cents <= 0) next.expense = "Enter the exact amount you will pay, in dollars.";
-    else if (offer.listedSubtotalCents !== null && cents < offer.listedSubtotalCents)
-      next.expense = `This can't be less than the listed subtotal, ${formatCents(offer.listedSubtotalCents)}.`;
+    if (!justification.trim()) next.justification = "Say why these offers are the right choice.";
+    if (cents === null || cents <= 0) next.expense = "Enter the exact total you will pay, in dollars.";
+    else if (knownSubtotal !== null && cents < knownSubtotal)
+      next.expense = `This can't be less than the listed subtotal, ${formatCents(knownSubtotal)}.`;
     if (!suitable) next.suitable = "Confirm that you reviewed technical suitability.";
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -101,7 +118,7 @@ function ProposalInner() {
     setApiError(null);
     try {
       await api.saveAndSubmitProposal(id, {
-        offerId: offer.id,
+        selections: chosen.map((c) => ({ itemId: c.itemId, offerId: c.offer.id })),
         justification: justification.trim(),
         suitabilityConfirmed: true,
         expenseCents: cents as number,
@@ -115,90 +132,139 @@ function ProposalInner() {
     }
   }
 
+  const enteredCents = parseDollarsToCents(expense);
+
   return (
     <Page>
-      <PageHeader title={submitted ? "Proposal" : "Prepare proposal"}
-        back={{ href: `/requests/${id}`, label: "Request" }} />
+      <PageHeader
+        title={submitted ? "Proposal" : "Proposal review"}
+        back={{ href: `/requests/${id}`, label: "Request" }}
+        amount={submitted ? submitted.expenseCents : (enteredCents ?? 0)}
+        amountLabel={submitted ? "Simulated expense to record" : "Exact total to record"}
+        amountNote={!submitted && enteredCents === null ? (expense ? "That isn’t a valid amount" : "Enter it below") : undefined}
+      >
+        {req.data && (
+          <div className="mt-4">
+            <ProgressBar
+              value={submitted ? submitted.expenseCents : (enteredCents ?? 0)}
+              max={req.data.budgetTotalCents}
+              over={(submitted ? submitted.expenseCents : (enteredCents ?? 0)) > req.data.budgetTotalCents}
+            />
+            <p className="mt-1.5 text-[13px] text-white/85">of {formatCents(req.data.budgetTotalCents)} budget ceiling</p>
+          </div>
+        )}
+      </PageHeader>
       {loading && <Loading />}
       <ErrorNote error={req.error ?? offers.error} />
 
-      {req.data && !offer && !loading && (
-        <p className="text-[14px] text-muted">Choose an offer first from the request page.</p>
-      )}
-
-      {req.data && offer && (
+      {submitted && (
         <>
-          <Section title="Selected offer">
-            <p className="text-[17px] font-semibold leading-snug">{offer.title}</p>
-            <p className="text-[13px] text-muted">{offer.seller}</p>
+          <Section title="Selected items">
+            <Lines lines={submitted.lines} />
           </Section>
-
-          <Section title="Three different amounts">
+          <Section title="Amounts">
             <dl>
-              <KeyValue label="Research subtotal" value={formatCents(offer.listedSubtotalCents)}
-                note="Listed price only. Shipping and tax may be missing." />
-              <KeyValue label="Approved budget ceiling" value={formatCents(req.data.budgetTotalCents)}
-                note="The most this request may spend." />
-              <KeyValue label="Simulated expense to record"
-                value={submitted ? formatCents(submitted.expenseCents) : expense ? (parseDollarsToCents(expense) === null ? "Invalid" : formatCents(parseDollarsToCents(expense))) : "Not entered"}
-                note="Confirmed by you. Not verified at a merchant checkout." />
+              <KeyValue label="Research subtotal" value={formatCents(submitted.researchSubtotalCents)}
+                note="Listed prices only. Shipping and tax may be missing." />
+              <KeyValue label="Approved budget ceiling" value={formatCents(submitted.budgetCeilingCents)} note="The most this request may spend." />
+              <KeyValue label="Simulated expense to record" value={formatCents(submitted.expenseCents)}
+                note="Confirmed by the requester. Not verified at a merchant checkout." />
             </dl>
           </Section>
-
-          {submitted ? (
-            <Section title="Status">
-              <dl>
-                <KeyValue label="Review" value={DECISION_LABEL[submitted.decision]} />
-                <KeyValue label="Simulated purchase" value={EXECUTION_LABEL[submitted.execution]} />
-                <KeyValue label="Revision" value={submitted.revision} />
-                {submitted.submittedAt && <KeyValue label="Submitted" value={formatWhen(submitted.submittedAt)} />}
-              </dl>
-              {submitted.decisionNote && (
-                <p className="mt-2 text-[16px]">
-                  <span className="text-muted">Executive note: </span>
-                  {submitted.decisionNote}
-                </p>
-              )}
-              {submitted.executionDetail && <ExecutionSection d={submitted.executionDetail} />}
-              {!submitted.executionDetail && (
-                <p className="mt-3 text-[13px] text-muted">
-                  If approved, a simulated purchase is recorded in the Nessie sandbox. Nothing is ordered and no real money
-                  moves.
-                </p>
-              )}
-              {submitted.unresolved.length > 0 && (
-                <>
-                  <h3 className="mb-1 mt-3 text-[15px] font-semibold">Still unresolved</h3>
-                  <ul className="list-disc pl-5 text-[16px]">{submitted.unresolved.map((u) => <li key={u}>{u}</li>)}</ul>
-                </>
-              )}
-              <p className="mt-3 text-[16px]">{submitted.justification}</p>
-            </Section>
-          ) : (
-            <Section>
-              <Field label="Justification" htmlFor="justification" error={errors.justification}>
-                <textarea id="justification" rows={4} className={inputClass} value={justification}
-                  onChange={(e) => setJustification(e.target.value)} aria-invalid={!!errors.justification}
-                  aria-describedby={errors.justification ? "justification-error" : undefined} />
-              </Field>
-              <Field label="Expense to record (USD)" htmlFor="expense" error={errors.expense}
-                hint="Shipping and tax are unknown in the listing, so enter the exact total you confirmed.">
-                <input id="expense" inputMode="decimal" className={inputClass} value={expense}
-                  onChange={(e) => setExpense(e.target.value)} aria-invalid={!!errors.expense}
-                  aria-describedby={errors.expense ? "expense-error" : undefined} />
-              </Field>
-              <div className="mb-5">
-                <label className="flex items-start gap-3 text-[16px]">
-                  <input type="checkbox" className="mt-1 h-5 w-5 accent-[var(--accent)]" checked={suitable}
-                    onChange={(e) => setSuitable(e.target.checked)} />
-                  <span>I reviewed this offer and it is technically suitable for the purpose. This is my review, not an AI certification.</span>
-                </label>
-                {errors.suitable && <p role="alert" className="mt-1.5 text-[13px] text-bad">{errors.suitable}</p>}
+          <Section title="Status">
+            <dl>
+              <KeyValue label="Approval" value={DECISION_LABEL[submitted.decision]} />
+              <KeyValue label="Purchase record" value={submitted.executionDetail ? <ExecutionStatusText status={submitted.executionDetail.status} /> : submitted.decision === "approved" ? "Recording not started" : "Not started"} />
+              <KeyValue label="Revision" value={submitted.revision} />
+              {submitted.submittedAt && <KeyValue label="Submitted" value={formatWhen(submitted.submittedAt)} />}
+            </dl>
+            {submitted.decisionNote && (
+              <p className="mt-2 text-[16px]"><span className="text-muted">Executive note: </span>{submitted.decisionNote}</p>
+            )}
+            {submitted.decision === "changes_requested" && (
+              <p className="mt-2 text-[14px] text-muted">
+                The executive asked for changes. Editing a request after changes are requested isn&apos;t available in this version.
+              </p>
+            )}
+            {submitted.executionDetail && (
+              <div className="mt-3">
+                <ExecutionAmounts d={submitted.executionDetail} />
+                <ExecutionWarnings d={submitted.executionDetail} />
+                <Link href={`/purchases/${submitted.executionDetail.id}`} className="mt-3 block text-[15px] font-medium text-accent">
+                  View purchase record
+                </Link>
               </div>
-              <ErrorNote error={apiError} />
-              <Button disabled={pending} onClick={submit}>{pending ? "Submitting…" : "Submit for executive review"}</Button>
-            </Section>
-          )}
+            )}
+            {!submitted.executionDetail && submitted.decision === "awaiting_review" && (
+              <p className="mt-3 text-[13px] text-muted">
+                If approved, a simulated purchase is recorded in the Nessie sandbox. Nothing is ordered and no real money moves.
+              </p>
+            )}
+            <SandboxNote />
+            {submitted.unresolved.length > 0 && (
+              <>
+                <h3 className="mb-1 mt-3 text-[15px] font-semibold">Still unresolved</h3>
+                <ul className="list-disc pl-5 text-[16px]">{submitted.unresolved.map((u) => <li key={u}>{u}</li>)}</ul>
+              </>
+            )}
+            <p className="mt-3 text-[16px]">{submitted.justification}</p>
+          </Section>
+        </>
+      )}
+
+      {!submitted && req.data && !loading && !itemsReady && (
+        <p className="text-[14px] text-muted">Choose an offer for every item on the request page first.</p>
+      )}
+
+      {!submitted && req.data && itemsReady && (
+        <>
+          <Section title="Selected items">
+            <Lines lines={lines} />
+            {late.length > 0 && (
+              <p role="alert" className="mt-3 text-[14px] font-medium text-bad">
+                {late.map((c) => c.offer.title).join(", ")} arrives after your hard deadline and doesn&apos;t meet the request as written.
+              </p>
+            )}
+          </Section>
+          <Section title="Three different amounts">
+            <dl>
+              <KeyValue label="Research subtotal" value={formatCents(knownSubtotal)}
+                note="Listed prices only. Shipping and tax may be missing." />
+              <KeyValue label="Approved budget ceiling" value={formatCents(req.data.budgetTotalCents)} note="The most this request may spend." />
+              <KeyValue label="Simulated expense to record"
+                value={enteredCents === null ? (expense ? "Invalid" : "Not entered") : formatCents(enteredCents)}
+                note="Confirmed by you. Not verified at a merchant checkout." />
+            </dl>
+            {enteredCents !== null && enteredCents > req.data.budgetTotalCents && (
+              <p role="alert" className="mt-2 text-[14px] font-medium text-bad">
+                This is above the budget ceiling. The executive will see it, and approval can be refused.
+              </p>
+            )}
+            <SandboxNote />
+          </Section>
+          <Section>
+            <Field required label="Justification" htmlFor="justification" error={errors.justification}>
+              <textarea id="justification" rows={4} className={inputClass} value={justification}
+                onChange={(e) => setJustification(e.target.value)} aria-invalid={!!errors.justification}
+                aria-describedby={errors.justification ? "justification-error" : undefined} />
+            </Field>
+            <Field required label="Exact total to record (USD)" htmlFor="expense" error={errors.expense}
+              hint="Shipping and tax are unknown in the listings, so enter the exact total you confirmed.">
+              <input id="expense" inputMode="decimal" className={inputClass} value={expense}
+                onChange={(e) => setExpense(e.target.value)} aria-invalid={!!errors.expense}
+                aria-describedby={errors.expense ? "expense-error" : undefined} />
+            </Field>
+            <div className="mb-5">
+              <label className="flex items-start gap-3 text-[16px]">
+                <input type="checkbox" className="mt-1 h-5 w-5 accent-[var(--accent)]" checked={suitable}
+                  onChange={(e) => setSuitable(e.target.checked)} />
+                <span>I reviewed these offers and they are technically suitable for the purpose. This is my review, not an AI certification.</span>
+              </label>
+              {errors.suitable && <p role="alert" className="mt-1.5 text-[13px] text-bad">{errors.suitable}</p>}
+            </div>
+            <ErrorNote error={apiError} />
+            <Button disabled={pending} onClick={submit}>{pending ? "Submitting…" : "Submit for executive approval"}</Button>
+          </Section>
         </>
       )}
     </Page>

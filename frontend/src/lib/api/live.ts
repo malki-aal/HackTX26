@@ -1,6 +1,10 @@
 import type { RunwayApi } from "./client";
 import type {
+  ActivityItem,
   AgentConfig,
+  AgentConfigDetail,
+  AgentConfigInput,
+  IntegrationStatus,
   ApiError,
   BackendMode,
   Budget,
@@ -8,7 +12,6 @@ import type {
   DecisionState,
   ExecutionDetail,
   ExecutionState,
-  IntegrationStatus,
   NewRequestInput,
   Offer,
   Proposal,
@@ -21,8 +24,14 @@ import type {
 // Live adapter for backend/docs/openapi.json. Every response is
 // { data, meta }; every error is { error: { code, message, retryable, requestId } }.
 // Money is already integer cents on the wire.
+//
+// The backend currently supports one item type (monitors) per request, no deadline kinds and no
+// tradeoff alternatives. Anything the UI offers beyond that is refused here with an explicit
+// error rather than approximated. See docs/FRONTEND_CONTRACT_REQUESTS.md.
 
 const BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1").replace(/\/$/, "");
+
+const unsupported = (message: string): ApiError => ({ code: "UNSUPPORTED_BY_BACKEND", message });
 
 // ---------- transport ----------
 
@@ -85,7 +94,6 @@ interface BRequest {
   id: string;
   version: number;
   status: string;
-  confirmedVersion: number | null;
   isCurrentVersionConfirmed: boolean;
   title: string;
   purpose: string;
@@ -93,7 +101,7 @@ interface BRequest {
   totalBudgetCents: number;
   allowedCondition: PurchaseRequest["condition"];
   deadline: string | null;
-  rankingPriority: PurchaseRequest["ranking"];
+  rankingPriority: string;
   agentConfigId: string;
   agentConfigVersion: number | null;
   requirements: BRequirement[];
@@ -163,6 +171,8 @@ const REQUEST_STATUS: Record<string, RequestStatus> = {
   rejected: "rejected",
 };
 
+const MONITOR_ITEM = (quantity: number) => [{ id: "item_1", name: "Monitors", quantity, unit: "units" }];
+
 function mapRequest(b: BRequest): PurchaseRequest {
   // Product type and condition are shown separately, so they are not listed as specs.
   const specs = b.requirements.filter((r) => r.attribute !== "product_type" && r.attribute !== "condition");
@@ -173,15 +183,15 @@ function mapRequest(b: BRequest): PurchaseRequest {
     title: b.title,
     purpose: b.purpose,
     category: "monitors",
-    quantity: b.quantity,
+    items: MONITOR_ITEM(b.quantity),
     budgetTotalCents: b.totalBudgetCents,
     mandatory: specs.filter((r) => r.mandatory).map(describeRequirement),
     preferences: specs.filter((r) => !r.mandatory).map(describeRequirement),
     condition: b.allowedCondition,
     deadline: b.deadline ?? undefined,
+    deadlineKind: "flexible", // the backend stores a date but has no hard/flexible distinction
     agentConfigId: b.agentConfigId,
     agentConfigVersion: b.agentConfigVersion,
-    ranking: b.rankingPriority,
     status: REQUEST_STATUS[b.status] ?? "clarifying",
     clarifications: b.questions.map(
       (q): Clarification => ({
@@ -206,13 +216,13 @@ function mapSummary(b: BRequestSummary): PurchaseRequest {
     title: b.title,
     purpose: "",
     category: "monitors",
-    quantity: b.quantity,
+    items: MONITOR_ITEM(b.quantity),
     budgetTotalCents: b.totalBudgetCents,
     mandatory: [],
     preferences: [],
     condition: "any",
+    deadlineKind: "flexible",
     agentConfigId: "",
-    ranking: "lowest_known_total",
     status: REQUEST_STATUS[b.status] ?? "clarifying",
     clarifications: [],
     runId: b.latestRunId ?? undefined,
@@ -273,6 +283,7 @@ async function mapRun(b: BRun): Promise<Run> {
 }
 
 interface BCandidate {
+  rank: number;
   offerId: string;
   eligibility: Offer["eligibility"];
   affordability: Offer["affordability"];
@@ -303,10 +314,14 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 const sentence = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-function mapCandidate(c: BCandidate, labels: Map<string, string>, quantity: number): Offer {
+function mapCandidate(c: BCandidate, labels: Map<string, string>, req: BRequest): Offer {
   const excerpts = new Map(c.evidence.map((e) => [e.id, e]));
+  // The backend ranks by eligibility, then affordability, then lowest known cost. With its
+  // default ranking priority, the first eligible, priced candidate is the lowest known cost.
+  const lowest = c.rank === 1 && c.eligibility === "eligible" && c.listedSubtotalCents !== null && req.rankingPriority === "lowest_known_total";
   return {
     id: c.offerId,
+    itemId: "item_1",
     title: c.title,
     seller: c.seller ?? "Unknown seller",
     url: c.sourceUrl ?? "",
@@ -314,10 +329,13 @@ function mapCandidate(c: BCandidate, labels: Map<string, string>, quantity: numb
     observedAt: c.observedAt,
     unitPriceCents: c.unitPriceCents,
     packageQuantity: c.packageQuantity ?? 1,
-    packagesRequired: c.packagesRequired ?? quantity,
+    packagesRequired: c.packagesRequired ?? req.quantity,
     listedSubtotalCents: c.listedSubtotalCents,
     shippingCents: c.shippingCents,
     taxCents: null, // the backend never knows tax
+    delivery: { status: "unknown" }, // candidates carry no delivery data yet
+    deadlineFit: req.deadline ? "unknown" : "not_applicable",
+    highlights: lowest ? ["lowest_known_cost"] : [],
     eligibility: c.eligibility,
     findings: c.requirementChecks.map((k) => {
       const ev = k.evidenceIds.map((id) => excerpts.get(id)).find(Boolean);
@@ -339,20 +357,24 @@ function mapCandidate(c: BCandidate, labels: Map<string, string>, quantity: numb
 
 interface BExecution {
   id: string;
+  proposalId: string;
   status: ExecutionState;
   providerStatus: string | null;
-  externalReference: { purchaseId?: string | null } | null;
+  externalReference: { purchaseId?: string | null; merchantId?: string | null } | null;
   amountCents: number;
   providerAmountCents: number | null;
   amountDiscrepancyCents: number | null;
   amountNote: string | null;
   lastError: unknown;
   disclaimer: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-function mapExecution(e: BExecution): ExecutionDetail {
+function mapExecution(e: BExecution, seller: string | null): ExecutionDetail {
   return {
     id: e.id,
+    proposalId: e.proposalId,
     status: e.status,
     providerStatus: e.providerStatus,
     amountCents: e.amountCents,
@@ -360,8 +382,15 @@ function mapExecution(e: BExecution): ExecutionDetail {
     amountDiscrepancyCents: e.amountDiscrepancyCents,
     amountNote: e.amountNote,
     purchaseId: e.externalReference?.purchaseId ?? null,
+    merchant: {
+      researchedSeller: seller,
+      nessieMerchantId: e.externalReference?.merchantId ?? null,
+      // The backend does not return the sandbox merchant's name yet.
+    },
     lastError: e.lastError == null ? null : typeof e.lastError === "string" ? e.lastError : JSON.stringify(e.lastError),
     disclaimer: e.disclaimer,
+    createdAt: e.createdAt,
+    updatedAt: e.updatedAt,
   };
 }
 
@@ -370,7 +399,8 @@ interface BProposal {
   requestId: string;
   version: number;
   decisionState: DecisionState;
-  offer: { id: string };
+  quantity: number;
+  offer: { id: string; title: string; seller: string | null; sourceUrl: string | null };
   justification: string;
   technicalReviewConfirmed: boolean;
   unresolved: string[];
@@ -379,19 +409,32 @@ interface BProposal {
     requestBudgetCeilingCents: number;
     exactAmountCents: number | null;
   };
-  decisions: { decision: string; note: string }[];
+  decisions: { decision: string; note: string; actor: string; createdAt: string }[];
   execution: BExecution | null;
   versions: { version: number; submittedAt?: string | null }[];
 }
 
-function mapProposal(p: BProposal): Proposal {
+async function mapProposal(p: BProposal): Promise<Proposal> {
+  const req = await call<BRequest>(`/requests/${p.requestId}`);
   const last = p.decisions[p.decisions.length - 1];
   const v = p.versions.find((x) => x.version === p.version);
   return {
     id: p.id,
     requestId: p.requestId,
+    requestTitle: req.title,
     revision: p.version,
-    offerId: p.offer.id,
+    lines: [
+      {
+        itemId: "item_1",
+        itemName: "Monitors",
+        offerId: p.offer.id,
+        title: p.offer.title,
+        seller: p.offer.seller,
+        sourceUrl: p.offer.sourceUrl,
+        listedSubtotalCents: p.amounts.researchListedSubtotalCents,
+        quantityText: `${p.quantity} units`,
+      },
+    ],
     justification: p.justification,
     suitabilityConfirmed: p.technicalReviewConfirmed,
     researchSubtotalCents: p.amounts.researchListedSubtotalCents,
@@ -400,10 +443,39 @@ function mapProposal(p: BProposal): Proposal {
     expenseSource: "user_confirmed",
     decision: p.decisionState,
     decisionNote: last?.note || undefined,
+    requester: "employee-demo",
+    approval: last ? { actor: last.actor, at: last.createdAt, decision: last.decision } : undefined,
     execution: p.execution?.status ?? "not_started",
-    executionDetail: p.execution ? mapExecution(p.execution) : undefined,
+    executionDetail: p.execution ? mapExecution(p.execution, p.offer.seller) : undefined,
     unresolved: p.unresolved,
     submittedAt: v?.submittedAt ?? undefined,
+  };
+}
+
+interface BAgentConfig {
+  id: string;
+  version: number;
+  createdAt: string;
+  displayName: string;
+  instructions: string;
+  enabledTools: AgentConfigDetail["enabledTools"];
+  rankingPriority: AgentConfigDetail["rankingPriority"];
+  searchStrategy: AgentConfigDetail["searchStrategy"];
+  limits: AgentConfigDetail["limits"];
+}
+
+function mapConfig(c: BAgentConfig): AgentConfigDetail {
+  return {
+    id: c.id,
+    name: c.displayName,
+    version: c.version,
+    createdAt: c.createdAt,
+    instructions: c.instructions,
+    enabledTools: c.enabledTools,
+    rankingPriority: c.rankingPriority,
+    searchStrategy: c.searchStrategy,
+    limits: c.limits,
+    summary: `${c.searchStrategy === "exact_specs" ? "Exact-spec search" : "Broad search, then filter"}, up to ${c.limits.maxSearchCalls} searches and ${c.limits.maxDetailCalls} product lookups.`,
   };
 }
 
@@ -434,6 +506,15 @@ export const liveApi: RunwayApi = {
   getRequest: fetchRequest,
 
   async createRequest(input: NewRequestInput) {
+    if (input.category !== "monitors") {
+      throw unsupported("The backend can only research monitors right now. Other categories need a backend contract change.");
+    }
+    if (input.items.length !== 1) {
+      throw unsupported("The backend supports one item type per request. Split this into one request per item, or wait for multi-item support.");
+    }
+    if (input.deadline && input.deadlineKind === "hard") {
+      throw unsupported("The backend can't enforce hard deadlines yet. Choose a flexible target date.");
+    }
     const b = await call<BRequest>("/requests", {
       method: "POST",
       body: {
@@ -441,13 +522,12 @@ export const liveApi: RunwayApi = {
         purpose: input.purpose,
         description: buildDescription(input),
         category: "monitors",
-        quantity: input.quantity,
+        quantity: input.items[0].quantity,
         currency: "USD",
         budgetCents: input.budgetTotalCents,
         budgetBasis: "total",
         allowedCondition: input.condition,
         deadline: input.deadline ?? null,
-        rankingPriority: input.ranking,
         agentConfigId: input.agentConfigId,
       },
     });
@@ -491,14 +571,16 @@ export const liveApi: RunwayApi = {
   },
 
   async listCandidates(requestId) {
-    const [bReq, runId] = await call<BRequest>(`/requests/${requestId}`).then((r) => [r, r.latestRunId] as const);
-    if (!runId) return [];
-    const data = await call<{ candidates: BCandidate[] }>(`/requests/${requestId}/candidates?runId=${runId}`);
+    const bReq = await call<BRequest>(`/requests/${requestId}`);
+    if (!bReq.latestRunId) return [];
+    const data = await call<{ candidates: BCandidate[] }>(`/requests/${requestId}/candidates?runId=${bReq.latestRunId}`);
     const labels = new Map(bReq.requirements.map((r) => [r.id, describeRequirement(r)]));
-    return data.candidates.map((c) => mapCandidate(c, labels, bReq.quantity));
+    return data.candidates.map((c) => mapCandidate(c, labels, bReq));
   },
 
   async saveAndSubmitProposal(requestId, input: SaveProposalInput) {
+    if (input.selections.length !== 1) throw unsupported("The backend can propose one offer per request.");
+    const offerId = input.selections[0].offerId;
     const bReq = await call<BRequest>(`/requests/${requestId}`);
     if (!bReq.latestRunId) throw { code: "INVALID_STATE", message: "Run research before proposing an offer." } satisfies ApiError;
     // Reuse an unsubmitted draft (or add a revision after changes were requested) so a
@@ -508,7 +590,7 @@ export const liveApi: RunwayApi = {
       method: "POST",
       body: {
         runId: bReq.latestRunId,
-        offerId: input.offerId,
+        offerId,
         justification: input.justification,
         ...(reusable ? { proposalId: reusable.id } : {}),
       },
@@ -524,7 +606,66 @@ export const liveApi: RunwayApi = {
     return mapProposal(await call<BProposal>(`/proposals/${id}`));
   },
 
-  async getBudget(): Promise<Budget> {
+  async listActivity(): Promise<ActivityItem[]> {
+    const [rows, requests] = await Promise.all([
+      call<
+        {
+          id: string;
+          requestId: string;
+          decisionState: DecisionState;
+          seller: string | null;
+          exactAmountCents: number | null;
+          executionId: string | null;
+          updatedAt: string;
+        }[]
+      >("/proposals?limit=50"),
+      call<BRequestSummary[]>("/requests?limit=50"),
+    ]);
+    const titles = new Map(requests.map((r) => [r.id, r.title]));
+    const submitted = rows.filter((r) => r.decisionState !== "not_submitted");
+    return Promise.all(
+      submitted.map(async (r): Promise<ActivityItem> => {
+        const ex = r.executionId ? await call<BExecution>(`/executions/${r.executionId}`) : null;
+        return {
+          proposalId: r.id,
+          requestId: r.requestId,
+          title: titles.get(r.requestId) ?? "Request",
+          decision: r.decisionState,
+          exactAmountCents: r.exactAmountCents ?? 0,
+          updatedAt: r.updatedAt,
+          execution: ex ? mapExecution(ex, r.seller) : undefined,
+        };
+      }),
+    );
+  },
+
+  async getExecution(id) {
+    const ex = await call<BExecution>(`/executions/${id}`);
+    const proposal = await call<BProposal>(`/proposals/${ex.proposalId}`);
+    return mapExecution(ex, proposal.offer.seller);
+  },
+
+  /** Reuse `idempotencyKey` when retrying the same logical decision; create a new one for a new decision. */
+  async decide(args) {
+    return mapProposal(
+      await call<BProposal>(`/proposals/${args.proposalId}/decision`, {
+        method: "POST",
+        headers: { "Idempotency-Key": args.idempotencyKey },
+        body: { version: args.version, decision: args.decision, actor: "executive-demo", note: args.note ?? "" },
+      }),
+    );
+  },
+
+  async reconcile(id, action) {
+    const ex = await call<BExecution>(`/executions/${id}/reconcile`, {
+      method: "POST",
+      body: { action, actor: "executive-demo", note: "" },
+    });
+    const proposal = await call<BProposal>(`/proposals/${ex.proposalId}`);
+    return mapExecution(ex, proposal.offer.seller);
+  },
+
+  async getBudget(opts): Promise<Budget> {
     const b = await call<{
       status: Budget["status"];
       source: string;
@@ -535,7 +676,7 @@ export const liveApi: RunwayApi = {
       unreflectedExpensesCents: number;
       availableBudgetCents: number | null;
       reconciliationNotes: string[];
-    }>("/budget?refresh=true");
+    }>(opts?.fresh === false ? "/budget" : "/budget?refresh=true");
     const source =
       b.source === "nessie_live" ? "Nessie sandbox, just fetched" : b.source === "nessie_cached" ? "Nessie sandbox, cached" : b.source === "fixture" ? "Fixture sample, not Nessie" : "No bank data";
     return {
@@ -550,6 +691,39 @@ export const liveApi: RunwayApi = {
     };
   },
 
+  async listAgentConfigDetails(): Promise<AgentConfigDetail[]> {
+    const rows = await call<BAgentConfig[]>("/agent-configs");
+    return rows.map(mapConfig).sort((a, b) => (a.id === "cfg_default" ? -1 : b.id === "cfg_default" ? 1 : a.name.localeCompare(b.name)));
+  },
+
+  async saveAgentConfig(input: AgentConfigInput, existing) {
+    const body = {
+      displayName: input.name,
+      instructions: input.instructions,
+      enabledTools: input.enabledTools,
+      rankingPriority: input.rankingPriority,
+      searchStrategy: input.searchStrategy,
+      limits: input.limits,
+    };
+    const saved = existing
+      ? await call<BAgentConfig>(`/agent-configs/${existing.id}`, { method: "PATCH", body: { ...body, expectedVersion: existing.version } })
+      : await call<BAgentConfig>("/agent-configs", { method: "POST", body });
+    return mapConfig(saved);
+  },
+
+  async getIntegrations(): Promise<IntegrationStatus[]> {
+    const rows = await call<{ service: string; configured: boolean; mode: string; state: string; lastError: string | null }[]>("/integrations/status");
+    const names: Record<string, string> = { gemini: "Gemini", serpapi: "SerpApi", nessie: "Nessie", agent_runtime: "Agent runtime" };
+    return rows.map((r) => {
+      const state: IntegrationStatus["state"] =
+        r.state === "ok" ? "verified" : r.state === "fixture" ? "fixture" : r.state === "degraded" ? "degraded" : r.state === "unverified" ? "configured" : "unavailable";
+      const detail =
+        r.lastError ??
+        (r.state === "not_configured" ? "Not configured on the backend." : r.state === "unverified" ? "Configured, not yet verified." : r.state === "fixture" ? "Sample data, no live calls." : "");
+      return { name: names[r.service] ?? r.service, state, detail };
+    });
+  },
+
   async listAgentConfigs(): Promise<AgentConfig[]> {
     const rows = await call<
       { id: string; version: number; displayName: string; searchStrategy: string; limits: { maxSearchCalls: number; maxDetailCalls: number } }[]
@@ -562,61 +736,5 @@ export const liveApi: RunwayApi = {
         summary: `${c.searchStrategy === "exact_specs" ? "Exact-spec search" : "Broad search, then filter"}, up to ${c.limits.maxSearchCalls} searches and ${c.limits.maxDetailCalls} product lookups.`,
       }))
       .sort((a, b) => (a.id === "cfg_default" ? -1 : b.id === "cfg_default" ? 1 : a.name.localeCompare(b.name)));
-  },
-
-  async getIntegrations(): Promise<IntegrationStatus[]> {
-    const rows = await call<
-      { service: string; configured: boolean; mode: string; state: string; lastError: string | null }[]
-    >("/integrations/status");
-    const names: Record<string, string> = { gemini: "Gemini", serpapi: "SerpApi", nessie: "Nessie", agent_runtime: "Agent runtime" };
-    return rows.map((r) => {
-      const state: IntegrationStatus["state"] =
-        r.state === "ok" ? "verified" : r.state === "fixture" ? "fixture" : r.state === "degraded" ? "degraded" : r.state === "unverified" ? "configured" : "unavailable";
-      const detail =
-        r.lastError ??
-        (r.state === "not_configured" ? "Not configured on the backend." : r.state === "unverified" ? "Configured, not yet verified." : r.state === "fixture" ? "Sample data, no live calls." : "");
-      return { name: names[r.service] ?? r.service, state, detail };
-    });
-  },
-};
-
-// ---------- executive demo role (adapter only; no screen uses these yet) ----------
-
-export const executiveApi = {
-  async listAwaitingReview(): Promise<{ id: string; requestId: string; title: string; seller: string | null; exactAmountCents: number }[]> {
-    return call(`/proposals?decisionState=awaiting_review`);
-  },
-
-  getProposal: liveApi.getProposal,
-
-  /** Reuse `idempotencyKey` when retrying the same logical decision; create a new one for a new decision. */
-  async decide(args: {
-    proposalId: string;
-    version: number;
-    decision: "approve" | "request_changes" | "reject";
-    note?: string;
-    idempotencyKey: string;
-  }): Promise<Proposal> {
-    return mapProposal(
-      await call<BProposal>(`/proposals/${args.proposalId}/decision`, {
-        method: "POST",
-        headers: { "Idempotency-Key": args.idempotencyKey },
-        body: { version: args.version, decision: args.decision, actor: "executive-demo", note: args.note ?? "" },
-      }),
-    );
-  },
-
-  async getExecution(id: string): Promise<ExecutionDetail> {
-    return mapExecution(await call<BExecution>(`/executions/${id}`));
-  },
-
-  /** `check` asks the backend to look up the outcome; it never resends the purchase. */
-  async reconcile(id: string, action: "check" | "mark_failed", note = ""): Promise<ExecutionDetail> {
-    return mapExecution(
-      await call<BExecution>(`/executions/${id}/reconcile`, {
-        method: "POST",
-        body: { action, actor: "executive-demo", note },
-      }),
-    );
   },
 };

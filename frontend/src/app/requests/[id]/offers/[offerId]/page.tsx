@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api } from "@/lib/api";
 import { formatCents, isSafeHttpUrl } from "@/lib/money";
+import { readSelection, selectionQuery, writeSelection } from "@/lib/selection";
 import {
+  Button,
   EligibilityMark,
   ErrorNote,
   FindingMark,
@@ -35,18 +36,35 @@ export default function OfferDetailPage() {
 function OfferDetail() {
   const { id, offerId } = useParams<{ id: string; offerId: string }>();
   const { data, error, loading, reload } = useLoad(() => api.listCandidates(id), [id]);
+  const request = useLoad(() => api.getRequest(id), [id]);
+  const router = useRouter();
   const [imgFailed, setImgFailed] = useState(false);
   const offer = data?.find((o) => o.id === offerId);
+  const lateHard = !!offer && offer.deadlineFit === "misses" && request.data?.deadlineKind === "hard";
+
+  function choose() {
+    if (!offer || !request.data) return;
+    const next = { ...readSelection(id), [offer.itemId]: offer.id };
+    writeSelection(id, next);
+    // One item: go straight to the proposal. Several: return to pick the rest.
+    router.push(request.data.items.length === 1 ? `/requests/${id}/proposal?sel=${encodeURIComponent(selectionQuery(next))}` : `/requests/${id}`);
+  }
 
   return (
     <Page>
-      <PageHeader title={offer?.title ?? "Offer"} back={{ href: `/requests/${id}`, label: "Offers" }} />
+      <PageHeader
+        title={offer?.title ?? "Offer"}
+        back={{ href: `/requests/${id}`, label: "Offers" }}
+        amount={offer ? offer.listedSubtotalCents : undefined}
+        amountLabel="Listed subtotal"
+        amountNote={offer ? `${offer.seller} · shipping and tax not included` : undefined}
+      />
       {loading && <Loading />}
       <ErrorNote error={error} onRetry={reload} />
       {data && !offer && <p className="text-[14px] text-muted">This offer is no longer in the results.</p>}
       {offer && (
         <>
-          <p className="-mt-3 mb-4 text-[14px] text-muted">
+          <p className="mb-4 flex items-center gap-2 text-[14px] text-muted">
             {offer.seller} · <EligibilityMark value={offer.eligibility} />
           </p>
 
@@ -67,6 +85,8 @@ function OfferDetail() {
               <KeyValue label="Shipping" value={offer.shippingCents === null ? "Unknown" : formatCents(offer.shippingCents)} />
               <KeyValue label="Tax" value={offer.taxCents === null ? "Unknown" : formatCents(offer.taxCents)} />
               <KeyValue label="Against your budget" value={AFFORDABILITY[offer.affordability]} />
+              <KeyValue label="Delivery" value={offer.delivery.status === "stated" ? (offer.delivery.text ?? "Stated") : "Unknown"}
+                note={offer.deadlineFit === "meets" ? "Arrives by your date" : offer.deadlineFit === "misses" ? "Arrives after your date" : offer.deadlineFit === "unknown" ? "Can't be checked against your date" : undefined} />
             </dl>
             {offer.costNotes.length > 0 && (
               <ul className="mt-2 list-disc pl-5 text-[13px] text-muted">
@@ -81,7 +101,6 @@ function OfferDetail() {
             <p className="mt-2 text-[13px] text-muted">
               A complete total is shown only when shipping and tax are known. Observed {formatWhen(offer.observedAt)}; prices
               may have changed since.{offer.fromCache && " This result was reused from an earlier search."}
-              {offer.delivery && ` ${offer.delivery}.`}
             </p>
           </Section>
 
@@ -100,8 +119,8 @@ function OfferDetail() {
             <p className="mt-2 text-[13px] text-muted">Evidence comes from the listing, not from the manufacturer.</p>
           </Section>
 
-          <Section title="Why it ranks here">
-            <p className="text-[16px]">{offer.rankNote}</p>
+          <Section title="How it compares">
+            <p className="text-[16px]">{offer.tradeoff ?? offer.rankNote}</p>
             {offer.unresolved.length > 0 && (
               <ul className="mt-2 list-disc pl-5 text-[16px]">
                 {offer.unresolved.map((u) => <li key={u}>{u}</li>)}
@@ -116,11 +135,15 @@ function OfferDetail() {
                 View listing at {offer.seller}
               </a>
             )}
+            {lateHard && (
+              <p role="alert" className="text-[14px] font-medium text-bad">
+                This arrives after your hard deadline, so it doesn&apos;t meet the request as written.
+              </p>
+            )}
             {offer.eligibility !== "rejected" && !offer.stale ? (
-              <Link href={`/requests/${id}/proposal?offer=${offer.id}`}
-                className="block h-12 rounded-lg bg-accent text-center text-[16px] font-semibold leading-[48px] text-white active:bg-accent-press">
-                Use this offer
-              </Link>
+              <Button onClick={choose} disabled={!request.data}>
+                {lateHard ? "Choose anyway" : "Select this offer"}
+              </Button>
             ) : (
               <p className="text-center text-[13px] text-muted">{offer.stale ? "Out-of-date offers cannot be proposed." : "Rejected offers cannot be proposed."}</p>
             )}
