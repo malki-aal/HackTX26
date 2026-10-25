@@ -1,4 +1,5 @@
 import type { RunwayApi } from "./client";
+import type { ScenarioSet } from "../scenarios";
 import { UNAUTHORIZED_EVENT, getAuthToken } from "../auth/token";
 import { authMode } from "../auth/config";
 import { EMPTY_COUNTS, mapPreview, mapQueueItem, personOf, type BActorInfo, type BQueueItem } from "./mappers";
@@ -643,6 +644,10 @@ async function fetchRequest(id: string): Promise<PurchaseRequest> {
 export const liveApi: RunwayApi = {
   mode: "live",
 
+  async getScenarios() {
+    return call<ScenarioSet>("/demo/scenarios");
+  },
+
   async getBackendMode(): Promise<BackendMode> {
     try {
       const res = await fetch(`${BASE}/health`, { cache: "no-store" });
@@ -726,6 +731,7 @@ export const liveApi: RunwayApi = {
         deadline: input.deadline ?? null,
         deadlineType: input.deadline && input.deadlineKind === "hard" ? "hard" : "target",
         agentConfigId: input.agentConfigId,
+        ...(input.presetId ? { presetId: input.presetId } : {}),
       },
     });
     return mapRequest(b);

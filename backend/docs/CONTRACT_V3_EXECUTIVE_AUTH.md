@@ -186,3 +186,56 @@ Header `Idempotency-Key: <uuid>`. Create one key per decision attempt and reuse 
   - `getProductDetails` returns `{ skipped: true }` for them without spending a lookup.
 - New run event `model_quota_wait`, payload `{ waitMs }`. It records a real pause by the agent's Gemini pacing (`GEMINI_MAX_RPM`) and is reported over the loopback-only `/internal/agent-progress`.
 - `GET /runs/:id/events` accepts `limit` up to 500.
+
+## 12. Four demo scenarios (additive)
+
+### Supported item types
+- **New requests can use:** `monitors`, `wood_glue`, `countertop_blender` and `portable_power_station`, plus `general`.
+- **Older types** (`office_chairs`, `cork_sheets`, `wood_screws`):
+  - still resolve, so existing records keep their details;
+  - still detected in request text, so a contradicting hint is a conflict;
+  - never chosen from text or offered in questions;
+  - an explicit API `category` hint naming one still works for older clients.
+- `GET /categories` now includes `selectable` on each type.
+
+### Item-type question
+- When text names no supported item type, `q_category` offers the four item types plus `general` ("Something else (general search, every result needs review)").
+- When text names only an older type, the question says it isn't supported in this version.
+- Nothing is forced into another category.
+- **`general` category:**
+  - searches with the request's own title;
+  - has no category or spec checks, so `product_type` stays `unknown`;
+  - every result is `needs_review` and nothing is recommended.
+
+### New requirement types
+- **`capacity_wh`:** `gte`, unit `wh`, read only from "Wh", "kWh" or "watt-hours". Watts (output power) never count.
+- **`ac_outlets`:** `gte`, unit `outlets`.
+- **New features:**
+  - `commercial_use` (blender): only an explicit "commercial" counts; "professional" and wattage don't;
+  - `interior_hardwood` (wood glue);
+  - `height_adjustable` (monitors).
+- **Screen size:** "At least 27 inches" now means a minimum of 27 in (`max: 100`). A bare "27 inch" still means the 27-inch class.
+
+### Volumes
+- Only explicit fluid units count: `fl oz`, `fluid ounces`, `ml`, `L`, `gal`, `qt`, `pt`.
+- A bare `oz` (which may be weight, e.g. "Net Wt 18 oz") is never read as a volume. The exception is blender pitcher capacity, which can't be a weight.
+
+### Total-volume quantities (wood glue)
+- A request whose `unit` is a fluid unit, such as `quantity: 128, unit: "US fluid ounces"`, orders a total volume, not containers.
+- The quantity isn't turned into a per-container volume requirement.
+- **Cost:**
+  - `packagesRequired = ceil(required / (container volume × pack count))`, with a 0.2% tolerance for ml rounding;
+  - `cost.volume = { requiredMl, perPackageMl, purchasedMl, excessMl }`;
+  - a cost note reads e.g. "4 × 32 fl oz = 128 fl oz for 128 fl oz needed".
+- A listing that doesn't state its volume in fluid units has unknown package volume. Its cost for the order is unknown and it is `needs_review`.
+
+### Other notes
+- **Stock:** a multi-unit order adds the unknown "stock for N units not confirmed by the seller". It doesn't block.
+- **Best overall:** for volume orders, fewer containers breaks ties before cost.
+
+### Example presets
+- `GET /demo/scenarios` is public and read-only. It serves `backend/demo/scenarios.json` (versioned, America/Chicago dates).
+- **Each preset:** `id`, `sector`, `menuLabel`, `title`, `purpose`, `item`, `categoryId`, `quantity`, `unit`, `budgetCents`, `condition`, `deadlineDays`, `deadlineType`, `eventDays`, `mandatory[]`, `preferences[]`.
+- Presets contain no products, prices, merchants, stock or delivery claims.
+- `frontend/src/lib/scenarios/scenarios.json` is an identical copy for sample-data mode, and a backend test fails if they differ.
+- `POST /requests` accepts an optional `presetId` as debugging metadata. The server still parses the edited text.

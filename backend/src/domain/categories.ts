@@ -2,7 +2,7 @@
 // for it are recognized, what is an accessory or part rather than the item, which specs apply
 // and how to search for it) lives here. Adding a category or sector means adding a profile.
 
-export type SpecKind = "screen_size" | "resolution" | "port" | "refresh_rate" | "panel_type" | "brand" | "volume" | "dimensions" | "thickness" | "screw_size";
+export type SpecKind = "screen_size" | "resolution" | "port" | "refresh_rate" | "panel_type" | "brand" | "volume" | "dimensions" | "thickness" | "screw_size" | "capacity_wh" | "ac_outlets";
 
 export interface FeatureDef {
   label: string;
@@ -16,7 +16,14 @@ export interface CategoryProfile {
   id: string;
   label: string;
   plural: string;
-  sector: "office_equipment" | "furniture_manufacturing";
+  sector: "office_equipment" | "furniture_manufacturing" | "food_service" | "nonprofit_events" | "general";
+  /**
+   * Offered for new requests. The four demo sectors are selectable; older categories stay resolvable
+   * so existing records keep their details, but new requests cannot pick them.
+   */
+  selectable: boolean;
+  /** Requests may state their quantity as a total liquid volume (e.g. 128 US fl oz) instead of containers. */
+  volumeQuantity?: boolean;
   /** Default unit for request quantities and listing pack counts. */
   unit: string;
   /** Words that identify a listing (and a request) as this item. */
@@ -30,8 +37,10 @@ export interface CategoryProfile {
   /** Spec kinds parsed from the request text and checked against listings. */
   specs: SpecKind[];
   features: Record<string, FeatureDef>;
-  /** Treat bare "oz" as fluid ounces (liquids only). */
+  /** Liquid product: volumes are read only from explicit fluid units (fl oz, ml, L, gal, qt, pt). */
   liquid?: boolean;
+  /** A bare "oz" is a container capacity here (a pitcher), never a weight. */
+  bareOzIsFluid?: boolean;
 }
 
 const MONITOR_FEATURE_PHRASES = [
@@ -53,7 +62,10 @@ export const CATEGORIES: CategoryProfile[] = [
     featurePhrases: MONITOR_FEATURE_PHRASES,
     searchTerm: "monitor",
     specs: ["screen_size", "resolution", "port", "refresh_rate", "panel_type", "brand"],
-    features: {},
+    selectable: true,
+    features: {
+      height_adjustable: { label: "Height-adjustable stand", pattern: /\bheight[\s-]?adjust(?:able|ment)?\b/i },
+    },
   },
   {
     id: "office_chairs",
@@ -67,6 +79,7 @@ export const CATEGORIES: CategoryProfile[] = [
     featurePhrases: [/\b(?:with|w\/|includes?|including|adjustable|padded|built[\s-]?in)\s+(?:[\w-]+\s+){0,3}(?:cushion|headrest|footrest|wheels|casters|armrests?|arms)\b/gi],
     searchTerm: "office chair",
     specs: ["brand"],
+    selectable: false,
     features: {
       armrests: { label: "Armrests", pattern: /\b(?:arm\s?rests?|with arms|padded arms|flip[\s-]?up arms)\b/i, absent: /\b(?:armless|without arms|no arms|no armrests)\b/i },
       lumbar_support: { label: "Lumbar support", pattern: /\blumbar\b/i },
@@ -87,7 +100,10 @@ export const CATEGORIES: CategoryProfile[] = [
     searchTerm: "wood glue",
     specs: ["volume", "brand"],
     liquid: true,
+    selectable: true,
+    volumeQuantity: true,
     features: {
+      interior_hardwood: { label: "Suitable for interior wood assembly", pattern: /\b(?:interior|indoor)\b/i },
       water_resistant: { label: "Water resistant", pattern: /\b(?:water[\s-]?(?:resistant|proof)|ii\b|iii\b|type ii)\b/i },
       dries_clear: { label: "Dries clear", pattern: /\bdries\s+clear\b/i },
     },
@@ -103,6 +119,7 @@ export const CATEGORIES: CategoryProfile[] = [
     featurePhrases: [],
     searchTerm: "cork sheet",
     specs: ["dimensions", "thickness", "brand"],
+    selectable: false,
     features: {
       self_adhesive: { label: "Self-adhesive backing", pattern: /\b(?:self[\s-]?adhesive|adhesive[\s-]?back(?:ed|ing)?|peel\s*(?:and|&|n)\s*stick|sticky back)\b/i, absent: /\b(?:non[\s-]?adhesive|no adhesive|without adhesive)\b/i },
     },
@@ -118,6 +135,7 @@ export const CATEGORIES: CategoryProfile[] = [
     featurePhrases: [],
     searchTerm: "wood screws",
     specs: ["screw_size", "brand"],
+    selectable: false,
     features: {
       flat_head: { label: "Flat (countersunk) head", pattern: /\b(?:flat[\s-]?head|countersunk|csk)\b/i, absent: /\b(?:pan[\s-]?head|round[\s-]?head|hex[\s-]?head|truss[\s-]?head)\b/i },
       stainless_steel: { label: "Stainless steel", pattern: /\bstainless\b/i },
@@ -125,7 +143,66 @@ export const CATEGORIES: CategoryProfile[] = [
       phillips: { label: "Phillips drive", pattern: /\bphillips\b/i },
     },
   },
+  {
+    id: "countertop_blender",
+    label: "countertop blender",
+    plural: "countertop blenders",
+    sector: "food_service",
+    unit: "blender",
+    identify: /\bblenders?\b/i,
+    // Parts and adjacent products are not a complete blender. Immersion/stick blenders are a different item.
+    exclude:
+      /\b(?:replacement|(?:pitcher|jar|container|carafe)s?\s+only|spare (?:pitcher|jar|container)|lids?\s+only|blades?(?:\s+assembly)?\s+only|blade assembly|gaskets?|seals?|personal (?:blender )?cups?|to[\s-]?go cups?|travel cups?|tamper only|immersion blenders?|hand blenders?|stick blenders?|bottles? only|cookbook|covers?\s+only|dust cover|parts?|accessor(?:y|ies)(?: kit)?)\b/i,
+    featurePhrases: [/\b(?:with|w\/|includes?|including|comes with|\+)\s+(?:[\w-]+\s+){0,3}(?:tamper|lids?|pitchers?|jars?|containers?|cups?|blades?)\b/gi],
+    searchTerm: "commercial countertop blender",
+    specs: ["volume", "brand"],
+    liquid: true,
+    bareOzIsFluid: true,
+    selectable: true,
+    features: {
+      // Only an explicit "commercial" designation counts. "Professional" or high wattage does not.
+      commercial_use: { label: "Explicitly designated for commercial use", pattern: /\bcommercial\b/i },
+    },
+  },
+  {
+    id: "portable_power_station",
+    label: "portable power station",
+    plural: "portable power stations",
+    sector: "nonprofit_events",
+    unit: "power station",
+    identify: /\b(?:portable\s+power\s+stations?|power\s+stations?|solar\s+generators?|portable\s+(?:battery|power)\s+(?:generators?|stations?|supply))\b/i,
+    // Phone power banks, standalone panels, fuel generators and empty cases are not power stations.
+    exclude:
+      /\b(?:power\s?banks?|phone chargers?|solar panels?|(?:gas|gasoline|propane|fuel|dual[\s-]?fuel|diesel)\s+(?:powered\s+)?generators?|inverter generators?|battery cases?|empty cases?|carrying (?:cases?|bags?)|storage (?:cases?|bags?)|protective cases?|dust covers?|cables?\s+only|charging cables?|adapters?\s+only|replacement|expansion batter(?:y|ies)|extra batter(?:y|ies)|extension cords?)\b/i,
+    featurePhrases: [/\b(?:with|w\/|includes?|including|and|\+|compatible with)\s+(?:[\w-]+\s+){0,4}(?:solar panels?|carrying (?:case|bag)|cables?|adapters?)\b/gi],
+    searchTerm: "portable power station",
+    specs: ["capacity_wh", "ac_outlets", "brand"],
+    selectable: true,
+    features: {},
+  },
 ];
+
+/**
+ * "Something else": research with no category-specific checks. Every result stays needs-review because
+ * Runway cannot verify that a listing is the requested item or meets its specifications.
+ */
+export const GENERAL_CATEGORY: CategoryProfile = {
+  id: "general",
+  label: "item",
+  plural: "items",
+  sector: "general",
+  unit: "item",
+  identify: /(?!)/, // never matches: listing type is always unverified
+  exclude: /(?!)/,
+  featurePhrases: [],
+  searchTerm: "",
+  specs: ["brand"],
+  selectable: true,
+  features: {},
+};
+
+/** Categories a new request may use, in menu order (general search last). */
+export const SELECTABLE_CATEGORIES = (): CategoryProfile[] => CATEGORIES.filter((c) => c.selectable);
 
 const ALIASES: Record<string, string> = {
   monitor: "monitors",
@@ -137,6 +214,10 @@ const ALIASES: Record<string, string> = {
   cork: "cork_sheets",
   cork_backing: "cork_sheets",
   screws: "wood_screws",
+  blender: "countertop_blender",
+  blenders: "countertop_blender",
+  power_station: "portable_power_station",
+  something_else: "general",
 };
 
 /** "a monitor", "an office chair". */
@@ -147,6 +228,7 @@ export function withArticle(label: string): string {
 export function getCategory(id: string | null | undefined): CategoryProfile | null {
   if (!id) return null;
   const key = id.trim().toLowerCase();
+  if (key === GENERAL_CATEGORY.id || ALIASES[key] === GENERAL_CATEGORY.id) return GENERAL_CATEGORY;
   return CATEGORIES.find((c) => c.id === key) ?? CATEGORIES.find((c) => c.id === ALIASES[key]) ?? null;
 }
 
@@ -161,7 +243,11 @@ export interface CategoryDetection {
   best: string | null;
 }
 
-/** Detect the item category from request text. The title counts double. Never defaults. */
+/**
+ * Detect the item category from request text. The title counts double. Never defaults. All known
+ * categories are detected (so a hint that the text contradicts is still caught); callers decide which
+ * of them a new request may use.
+ */
 export function detectCategory(title: string, description: string): CategoryDetection {
   const scores = CATEGORIES.map((c) => {
     const inTitle = c.identify.test(title) ? 2 : 0;

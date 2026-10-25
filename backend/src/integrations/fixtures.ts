@@ -60,6 +60,10 @@ export function fixtureCatalog(category: string, now: Date): RawShoppingItem[] {
         { position: 3, title: "[FIXTURE] Hot Glue Gun with 30 Glue Sticks", product_id: "gl3", source: "Fixture Crafts", price: "$11.99", extracted_price: 11.99, product_link: link("gl3") },
         { position: 4, title: "[FIXTURE] Wood Glue 4 oz", product_id: "gl4", source: "Fixture Hardware", price: "$2.98", extracted_price: 2.98, delivery: "Free delivery tomorrow", product_link: link("gl4") },
         { position: 5, title: "[FIXTURE] Carpenter's Wood Glue 8 oz", product_id: "gl5", source: "Fixture Discount", price: "$3.49", extracted_price: 3.49, delivery: inDays(20), product_link: link("gl5") },
+        { position: 6, title: "[FIXTURE] Interior Wood Glue, 1 Gallon, for indoor hardwood assembly", product_id: "gl6", source: "Fixture Lumber", price: "$27.99", extracted_price: 27.99, delivery: inDays(3), product_link: link("gl6") },
+        { position: 7, title: "[FIXTURE] Interior Wood Glue 64 fl oz", product_id: "gl7", source: "Fixture Hardware", price: "$16.49", extracted_price: 16.49, delivery: inDays(4), product_link: link("gl7") },
+        { position: 8, title: "[FIXTURE] Wood Glue 32 fl oz, interior use", product_id: "gl8", source: "Fixture Discount", price: "$9.49", extracted_price: 9.49, delivery: inDays(5), product_link: link("gl8") },
+        { position: 9, title: "[FIXTURE] Interior Wood Glue, Net Wt 18 oz", product_id: "gl9", source: "Fixture Discount", price: "$6.49", extracted_price: 6.49, delivery: inDays(2), product_link: link("gl9") },
       ];
     case "cork_sheets":
       return [
@@ -76,6 +80,27 @@ export function fixtureCatalog(category: string, now: Date): RawShoppingItem[] {
         { position: 3, title: "[FIXTURE] #8 x 1 inch Wood Screws, 100 Pack", product_id: "sc3", source: "Fixture Hardware", price: "$5.49", extracted_price: 5.49, product_link: link("sc3") },
         { position: 4, title: "[FIXTURE] Stainless #6 x 5/8\" Flat Head Wood Screws, 50 pcs", product_id: "sc4", source: "Fixture Discount", price: "$4.29", extracted_price: 4.29, delivery: inDays(20), product_link: link("sc4") },
         { position: 5, title: "[FIXTURE] Precision Screwdriver Set, 6 pc", product_id: "sc5", source: "Fixture Tools", price: "$8.99", extracted_price: 8.99, product_link: link("sc5") },
+      ];
+    case "countertop_blender":
+      return [
+        { position: 1, title: "[FIXTURE] Commercial Countertop Blender, 64 fl oz Container, 1500W", product_id: "bl1", source: "Fixture Restaurant Supply", price: "$189.00", extracted_price: 189, delivery: "Free delivery " + inDays(2).replace("Delivery ", ""), product_link: link("bl1") },
+        { position: 2, title: "[FIXTURE] Professional 72 oz Countertop Blender, 1400 Watt", product_id: "bl2", source: "Fixture Kitchen", price: "$129.00", extracted_price: 129, delivery: inDays(2), product_link: link("bl2") },
+        { position: 3, title: "[FIXTURE] Replacement 64 oz Pitcher with Lid for Commercial Blender", product_id: "bl3", source: "Fixture Parts", price: "$39.99", extracted_price: 39.99, delivery: inDays(2), product_link: link("bl3") },
+        { position: 4, title: "[FIXTURE] Personal Blender with 2 To-Go Cups, 20 oz", product_id: "bl4", source: "Fixture Home", price: "$34.99", extracted_price: 34.99, delivery: inDays(1), product_link: link("bl4") },
+        { position: 5, title: "[FIXTURE] Commercial Blender 48 oz, Stainless Base", product_id: "bl5", source: "Fixture Restaurant Supply", price: "$159.00", extracted_price: 159, delivery: inDays(2), product_link: link("bl5") },
+        { position: 6, title: "[FIXTURE] Acme View 27\" QHD 2560x1440 IPS Monitor, HDMI", product_id: "bl6", source: "Fixture Electronics", price: "$219.99", extracted_price: 219.99, product_link: link("bl6") },
+        { position: 7, title: "[FIXTURE] Commercial Blender, 64 oz Jar", product_id: "bl7", source: "Fixture Discount", price: "$149.00", extracted_price: 149, delivery: inDays(9), product_link: link("bl7") },
+      ];
+    case "portable_power_station":
+      return [
+        { position: 1, title: "[FIXTURE] Portable Power Station 518Wh, 2 AC Outlets (110V), 13.1 lb", product_id: "ps1", source: "Fixture Outdoor", price: "$279.00", extracted_price: 279, delivery: inDays(4), product_link: link("ps1") },
+        { position: 2, title: "[FIXTURE] Portable Power Station 300W, 288Wh, AC outlets x 2", product_id: "ps2", source: "Fixture Outdoor", price: "$189.00", extracted_price: 189, delivery: inDays(3), product_link: link("ps2") },
+        { position: 3, title: "[FIXTURE] Portable Power Station 600W Output, 4 AC Outlets", product_id: "ps3", source: "Fixture Electronics", price: "$219.00", extracted_price: 219, delivery: inDays(3), product_link: link("ps3") },
+        { position: 4, title: "[FIXTURE] 26800mAh Power Bank for Phones and Tablets", product_id: "ps4", source: "Fixture Mobile", price: "$39.99", extracted_price: 39.99, product_link: link("ps4") },
+        { position: 5, title: "[FIXTURE] 100W Solar Panel for Portable Power Station", product_id: "ps5", source: "Fixture Outdoor", price: "$99.00", extracted_price: 99, product_link: link("ps5") },
+        { position: 6, title: "[FIXTURE] 3500W Dual Fuel Gas Generator", product_id: "ps6", source: "Fixture Tools", price: "$399.00", extracted_price: 399, product_link: link("ps6") },
+        { position: 7, title: "[FIXTURE] Portable Power Station 1024Wh, 4 AC Outlets, 23 lb", product_id: "ps7", source: "Fixture Electronics", price: "$449.00", extracted_price: 449, delivery: inDays(3), product_link: link("ps7") },
+        { position: 8, title: "[FIXTURE] Portable Power Station 512Wh, 2 AC outlets", product_id: "ps8", source: "Fixture Discount", price: "$239.00", extracted_price: 239, delivery: inDays(12), product_link: link("ps8") },
       ];
     default:
       return [];

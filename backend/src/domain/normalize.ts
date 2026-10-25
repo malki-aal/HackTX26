@@ -18,6 +18,8 @@ import {
   extractScrewSize,
   extractThickness,
   extractVolume,
+  extractCapacityWh,
+  extractAcOutlets,
 } from "./extract.js";
 import { checkListingCategory, type CategoryProfile } from "./categories.js";
 
@@ -92,7 +94,9 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
     else if (kind === "resolution") spec("resolution", extractResolution);
     else if (kind === "refresh_rate") spec("refresh_rate", extractRefreshRate);
     else if (kind === "panel_type") spec("panel_type", extractPanelType);
-    else if (kind === "volume") spec("volume", extractVolume);
+    else if (kind === "volume") spec("volume", (t) => extractVolume(t, { bareOzIsFluid: profile.bareOzIsFluid }));
+    else if (kind === "capacity_wh") spec("capacity_wh", extractCapacityWh);
+    else if (kind === "ac_outlets") spec("ac_outlets", extractAcOutlets);
     else if (kind === "dimensions") spec("dimensions", extractDimensions);
     else if (kind === "thickness") spec("thickness", extractThickness);
     else if (kind === "screw_size") spec("screw_size", extractScrewSize);
@@ -288,8 +292,14 @@ export function applyProductDetails(offer: Offer, details: ProductDetails, fetch
     } else if (/panel type/.test(t)) {
       const p = extractPanelType(v);
       if (p) add("panel_type", p.value, f.title, v);
-    } else if (profile.specs.includes("volume") && /volume|capacity|net content|size/.test(t)) {
-      const m = extractVolume(v);
+    } else if (profile.specs.includes("capacity_wh") && /capacity|battery|energy/.test(t)) {
+      const m = extractCapacityWh(v);
+      if (m) add("capacity_wh", m.value, f.title, v);
+    } else if (profile.specs.includes("ac_outlets") && /outlet|ac output|output port/.test(t)) {
+      const m = extractAcOutlets(/\bac\b|outlet/i.test(v) ? v : `${v} AC outlets`);
+      if (m) add("ac_outlets", m.value, f.title, v);
+    } else if (profile.specs.includes("volume") && /volume|capacity|net content|size|jar|pitcher|container/.test(t)) {
+      const m = extractVolume(v, { bareOzIsFluid: profile.bareOzIsFluid });
       if (m) add("volume", m.value, f.title, v);
     } else if (profile.specs.includes("dimensions") && /dimension|size|length|width/.test(t)) {
       const m = extractDimensions(v);

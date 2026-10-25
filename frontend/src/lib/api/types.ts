@@ -63,6 +63,8 @@ export interface PurchaseRequest {
 }
 
 export interface NewRequestInput {
+  /** Optional debugging metadata: the example preset the form started from. */
+  presetId?: string;
   title: string;
   purpose: string;
   category?: string;

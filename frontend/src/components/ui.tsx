@@ -196,6 +196,47 @@ export const inputClass =
   "block w-full rounded-xl border border-rule bg-raised px-3.5 py-3 text-[16px] text-ink placeholder:text-muted/70 focus:border-accent focus:bg-paper aria-[invalid=true]:border-bad";
 
 /** Pill track with a white thumb on the chosen option. */
+/**
+ * Stacked single-choice list for questions with many or long options. Unlike `Segmented`, labels wrap,
+ * so nothing runs off a phone screen.
+ */
+export function ChoiceList<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-col gap-2">
+      {options.map((o) => {
+        const on = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            className={`min-h-11 w-full rounded-xl px-4 py-2.5 text-left text-[15px] leading-snug break-words ${
+              on ? "bg-accent font-semibold text-white" : "bg-raised font-medium text-ink active:bg-accent-soft"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Many or long options do not fit a pill row on a phone. */
+export const needsChoiceList = (options: { label: string }[]) => options.length > 3 || options.some((o) => o.label.length > 18);
+
 export function Segmented<T extends string>({
   label,
   value,

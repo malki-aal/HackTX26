@@ -14,8 +14,11 @@ import {
   extractScrewSize,
   extractThickness,
   extractVolume,
+  statesMinimum,
+  extractCapacityWh,
+  extractAcOutlets,
 } from "./extract.js";
-import { CATEGORIES, detectCategory, getCategory, withArticle, type CategoryProfile } from "./categories.js";
+import { CATEGORIES, GENERAL_CATEGORY, SELECTABLE_CATEGORIES, detectCategory, getCategory, withArticle, type CategoryProfile } from "./categories.js";
 
 export interface ValidationIssue {
   requirementId: string | null;
@@ -78,27 +81,45 @@ const preferred = (excerpt: string) => PREFERENCE.test(excerpt);
 
 export interface CategoryResolution {
   category: string | null;
-  /** Why the category is unresolved: none found, several found, or the hint conflicts with the text. */
-  problem: "none" | "ambiguous" | "conflict" | null;
+  /** Why the category is unresolved: none found, several found, the hint conflicts, or only unsupported items found. */
+  problem: "none" | "ambiguous" | "conflict" | "unsupported" | null;
   candidates: string[];
+  /** Recognised item types this version does not offer (for the question text). */
+  unsupported?: string[];
 }
+
+const NEW_REQUEST_OPTIONS = () => [...SELECTABLE_CATEGORIES().map((c) => c.id), GENERAL_CATEGORY.id];
 
 /**
  * Resolve the item category from an explicit hint plus the request text. A hint that the text
  * contradicts (e.g. category "monitors" on a request titled "Chairs") is a conflict, never a default.
+ * Only selectable categories (plus general search) are chosen from text; an explicit API hint may still
+ * name an older category so existing clients keep working.
  */
 export function resolveCategory(hint: string | null, title: string, description: string): CategoryResolution {
   const det = detectCategory(title, description);
   const hinted = getCategory(hint);
+  const selectable = new Set(NEW_REQUEST_OPTIONS());
   if (hinted) {
     const hintedInText = det.matches.some((m) => m.id === hinted.id);
     const otherInText = det.matches.filter((m) => m.id !== hinted.id);
-    if (!hintedInText && otherInText.length) return { category: null, problem: "conflict", candidates: [...new Set([...otherInText.map((m) => m.id), hinted.id])] };
+    if (!hintedInText && otherInText.length) {
+      const opts = [...new Set([...otherInText.map((m) => m.id), hinted.id])].filter((id) => selectable.has(id));
+      return { category: null, problem: "conflict", candidates: opts.length ? [...opts, GENERAL_CATEGORY.id] : NEW_REQUEST_OPTIONS() };
+    }
     return { category: hinted.id, problem: null, candidates: [hinted.id] };
   }
-  if (det.best) return { category: det.best, problem: null, candidates: [det.best] };
-  if (det.matches.length) return { category: null, problem: "ambiguous", candidates: det.matches.map((m) => m.id) };
-  return { category: null, problem: "none", candidates: CATEGORIES.map((c) => c.id) };
+  const usable = det.matches.filter((m) => selectable.has(m.id));
+  const legacy = det.matches.filter((m) => !selectable.has(m.id)).map((m) => getCategory(m.id)!.plural);
+  if (usable.length === 1) return { category: usable[0]!.id, problem: null, candidates: [usable[0]!.id] };
+  if (usable.length > 1) {
+    if (det.best && selectable.has(det.best)) return { category: det.best, problem: null, candidates: [det.best] };
+    return { category: null, problem: "ambiguous", candidates: [...usable.map((m) => m.id), GENERAL_CATEGORY.id] };
+  }
+  // Nothing supported recognised: offer the supported item types plus an explicit general search. Never force a fit.
+  return legacy.length
+    ? { category: null, problem: "unsupported", candidates: NEW_REQUEST_OPTIONS(), unsupported: legacy }
+    : { category: null, problem: "none", candidates: NEW_REQUEST_OPTIONS() };
 }
 
 /**
@@ -106,13 +127,15 @@ export function resolveCategory(hint: string | null, title: string, description:
  * Statements are mandatory unless phrased as a preference. Without a resolved category only the
  * condition (and deadline) are derived; the request cannot be confirmed until the category is set.
  */
-export function deriveRequirements(fields: Pick<RequestFields, "title" | "description" | "allowedCondition" | "category" | "deadline" | "deadlineType">): Requirement[] {
+export function deriveRequirements(fields: Pick<RequestFields, "title" | "description" | "allowedCondition" | "category" | "deadline" | "deadlineType"> & Partial<Pick<RequestFields, "unit" | "quantity">>): Requirement[] {
   const text = `${fields.title}. ${fields.description}`;
   const profile = getCategory(fields.category);
   const reqs: Requirement[] = [];
   if (profile) {
     reqs.push({ id: "req_category", attribute: "product_type", operator: "eq", value: profile.id, mandatory: true, sourceText: `category: ${profile.plural}` });
-    reqs.push(...deriveSpecs(text, profile));
+    // A total ordered volume (128 US fl oz of glue) is a quantity, not a per-container size requirement.
+    const skip = requestedVolumeMl(fields) !== null ? new Set(["volume"]) : new Set<string>();
+    reqs.push(...deriveSpecs(text, profile).filter((r) => !skip.has(r.attribute)));
   }
   reqs.push({ id: "req_condition", attribute: "condition", operator: "in", value: conditionValues(fields.allowedCondition), mandatory: true, sourceText: `allowed condition: ${fields.allowedCondition}` });
   if (fields.deadline) {
@@ -129,13 +152,26 @@ export function deriveRequirements(fields: Pick<RequestFields, "title" | "descri
   return reqs;
 }
 
+const FLUID_UNIT = /^(?:us\s+)?(?:fl\.?\s*oz\.?|fluid\s+ounces?|ml|milliliters?|millilitres?|l|liters?|litres?|gal(?:lons?)?|qt|quarts?|pt|pints?)$/i;
+
+/**
+ * Total liquid volume the request orders, in ml, when its quantity is stated as a volume
+ * ("128" + "US fluid ounces") for a category that supports it. Null when the quantity counts containers.
+ */
+export function requestedVolumeMl(fields: Partial<Pick<RequestFields, "category" | "unit" | "quantity">>): number | null {
+  const profile = getCategory(fields.category ?? null);
+  if (!profile?.volumeQuantity || !fields.unit || !fields.quantity || !FLUID_UNIT.test(fields.unit.trim())) return null;
+  return extractVolume(`${fields.quantity} ${fields.unit.trim()}`)?.value ?? null;
+}
+
 function deriveSpecs(text: string, profile: CategoryProfile): Requirement[] {
   const reqs: Requirement[] = [];
   for (const kind of profile.specs) {
     switch (kind) {
       case "screen_size": {
         const m = extractScreenSize(text);
-        if (m) reqs.push({ id: "req_screen_size", attribute: "screen_size", operator: "between", value: { min: Math.floor(m.value), max: Math.floor(m.value) + 0.9 }, unit: "in", mandatory: !preferred(m.excerpt), sourceText: m.excerpt });
+        // "At least 27 inches" is a minimum; a bare "27 inch" means the 27-inch class.
+        if (m) reqs.push({ id: "req_screen_size", attribute: "screen_size", operator: "between", value: { min: Math.floor(m.value), max: statesMinimum(m.excerpt) ? 100 : Math.floor(m.value) + 0.9 }, unit: "in", mandatory: !preferred(m.excerpt), sourceText: m.excerpt });
         break;
       }
       case "resolution": {
@@ -162,7 +198,7 @@ function deriveSpecs(text: string, profile: CategoryProfile): Requirement[] {
         break;
       }
       case "volume": {
-        const m = extractVolume(text);
+        const m = extractVolume(text, { bareOzIsFluid: profile.bareOzIsFluid });
         if (m) reqs.push({ id: "req_volume", attribute: "volume", operator: "gte", value: m.value, unit: "ml", mandatory: !preferred(m.excerpt), sourceText: m.excerpt });
         break;
       }
@@ -180,6 +216,16 @@ function deriveSpecs(text: string, profile: CategoryProfile): Requirement[] {
       case "screw_size": {
         const m = extractScrewSize(text);
         if (m) reqs.push({ id: "req_screw_size", attribute: "screw_size", operator: "eq", value: m.value, unit: "in", mandatory: !preferred(m.excerpt), sourceText: m.excerpt });
+        break;
+      }
+      case "capacity_wh": {
+        const m = extractCapacityWh(text);
+        if (m) reqs.push({ id: "req_capacity_wh", attribute: "capacity_wh", operator: "gte", value: m.value, unit: "wh", mandatory: !preferred(m.excerpt), sourceText: m.excerpt });
+        break;
+      }
+      case "ac_outlets": {
+        const m = extractAcOutlets(text);
+        if (m) reqs.push({ id: "req_ac_outlets", attribute: "ac_outlets", operator: "gte", value: m.value, unit: "outlets", mandatory: !preferred(m.excerpt), sourceText: m.excerpt });
         break;
       }
     }
@@ -250,12 +296,17 @@ export function buildClarificationQuestions({ fields, explicitFields, requiremen
         ? "The request text and the selected category disagree."
         : categoryResolution.problem === "ambiguous"
           ? "The request mentions more than one kind of item."
-          : "The item type could not be determined from the request.";
+          : categoryResolution.problem === "unsupported"
+            ? `${(categoryResolution.unsupported ?? ["This item"]).join(", ").replace(/^./, (c) => c.toUpperCase())} ${(categoryResolution.unsupported?.length ?? 1) > 1 ? "aren't" : "isn't"} a supported item type in this version.`
+            : "The item type isn't one Runway has checks for.";
     qs.push({
       id: "q_category",
       text: `${why} What item is this request for?`,
       kind: "single_choice",
-      options: opts.map((c) => ({ value: c.id, label: c.plural.charAt(0).toUpperCase() + c.plural.slice(1) })),
+      options: opts.map((c) => ({
+        value: c.id,
+        label: c.id === GENERAL_CATEGORY.id ? "Something else (general search, every result needs review)" : c.plural.charAt(0).toUpperCase() + c.plural.slice(1),
+      })),
       affects: "category",
     });
   }
@@ -362,7 +413,7 @@ export function describeRequirement(r: Requirement): string {
       return c ? `Is ${withArticle(c.label)}` : `Category: ${r.value}`;
     }
     case "screen_size":
-      return `${Math.floor(r.value.min)} inch screen`;
+      return r.value.max >= 100 ? `At least ${Math.floor(r.value.min)} inch screen` : `${Math.floor(r.value.min)} inch screen`;
     case "resolution":
       return `At least ${r.value.width} × ${r.value.height}`;
     case "port":
@@ -376,7 +427,11 @@ export function describeRequirement(r: Requirement): string {
     case "brand":
       return `Brand: ${r.value.join(" or ")}`;
     case "volume":
-      return `At least ${r.value} ml (${Math.round((r.value / 29.5735) * 10) / 10} fl oz)`;
+      return `At least ${Math.round((r.value / 29.5735) * 10) / 10} US fl oz (${r.value} ml)`;
+    case "capacity_wh":
+      return `At least ${r.value} Wh battery capacity`;
+    case "ac_outlets":
+      return `At least ${r.value} AC outlet${r.value === 1 ? "" : "s"}`;
     case "dimensions":
       return `At least ${r.value.length} × ${r.value.width} in`;
     case "thickness":

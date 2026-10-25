@@ -16,6 +16,11 @@ function excerptAround(text: string, index: number, length: number): string {
   return (start > 0 ? "…" : "") + text.slice(start, end).trim() + (end < text.length ? "…" : "");
 }
 
+/** True when the excerpt states a minimum ("at least 27 in", "27 in or larger"). */
+export function statesMinimum(excerpt: string): boolean {
+  return /\b(?:at\s+least|minimum|min\.?|or\s+(?:larger|bigger|more|above)|and\s+up|\+)\b|\d\s*\+/i.test(excerpt);
+}
+
 export function extractScreenSize(text: string): Match<number> | null {
   // 27", 27'', 27″, 27-inch, 27 inch, 27in, 27-in, 27 in.
   const re = /(?<![\d.])(\d{2}(?:\.\d)?)\s*(?:"|''|″|”|-?\s*inch(?:es)?\b|-?\s*in\b\.?)/gi;
@@ -174,7 +179,7 @@ export function parseMixedNumber(s: string): number | null {
 }
 
 const VOLUME_TO_ML: Array<[RegExp, number]> = [
-  [/^(?:fl\.?\s*oz|fluid\s+ounces?|oz|ounces?)$/i, 29.5735],
+  [/^(?:(?:us\s+)?fl\.?\s*oz\.?|(?:us\s+)?fluid\s+ounces?)$/i, 29.5735],
   [/^(?:ml|milliliters?|millilitres?)$/i, 1],
   [/^(?:l|liters?|litres?)$/i, 1000],
   [/^(?:gal|gallons?)$/i, 3785.41],
@@ -182,11 +187,17 @@ const VOLUME_TO_ML: Array<[RegExp, number]> = [
   [/^(?:pt|pints?)$/i, 473.176],
 ];
 
-/** Liquid volume in millilitres ("8 fl oz", "16 oz", "500 ml", "1 gallon"). Rounded to whole ml. */
-export function extractVolume(text: string): Match<number> | null {
-  const re = /(?<![\d.])(\d+(?:\.\d+)?)\s*-?\s*(fl\.?\s*oz|fluid\s+ounces?|oz|ounces?|ml|milliliters?|millilitres?|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?)\b/gi;
+/**
+ * Liquid volume in millilitres ("8 fl oz", "64 US fluid ounces", "500 ml", "1 gallon"). Rounded to whole ml.
+ * A bare "oz" is not a volume: it can be weight (net wt), so it never counts as fluid ounces.
+ */
+export function extractVolume(text: string, opts: { bareOzIsFluid?: boolean } = {}): Match<number> | null {
+  const units = `(?:us\\s+)?fl\\.?\\s*oz\\.?|(?:us\\s+)?fluid\\s+ounces?|ml|milliliters?|millilitres?|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?${opts.bareOzIsFluid ? "|oz|ounces?" : ""}`;
+  const re = new RegExp(`(?<![\\d.])(\\d+(?:\\.\\d+)?)\\s*-?\\s*(${units})(?![a-z])`, "gi");
   for (const m of text.matchAll(re)) {
-    const factor = VOLUME_TO_ML.find(([u]) => u.test(m[2]!.replace(/\s+/g, " ")))?.[1];
+    const unit = m[2]!.replace(/\s+/g, " ");
+    // Container capacity (a blender pitcher) cannot be a weight, so "64 oz" there means fluid ounces.
+    const factor = opts.bareOzIsFluid && /^(?:oz|ounces?)$/i.test(unit) ? 29.5735 : VOLUME_TO_ML.find(([u]) => u.test(unit))?.[1];
     if (!factor) continue;
     const ml = Math.round(Number(m[1]) * factor);
     if (ml > 0 && ml < 100_000) return { value: ml, excerpt: excerptAround(text, m.index, m[0].length) };
@@ -287,6 +298,39 @@ export function extractDeliveryDate(text: string, observedAt: Date): Match<{ lat
       d = new Date(obs.getTime() + delta * 86_400_000);
     } else d = monthDay(by[1]!, obs);
     if (d) return { value: { earliest: isoDate(d), latest: isoDate(d) }, excerpt: excerptAround(text, by.index, by[0].length) };
+  }
+  return null;
+}
+
+/**
+ * Battery capacity in watt-hours ("518 Wh", "1.0 kWh", "500 watt-hours"). Output power in watts ("500W")
+ * is a different quantity and never counts as capacity.
+ */
+export function extractCapacityWh(text: string): Match<number> | null {
+  const re = /(?<![\d.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*-?\s*(kwh|wh|watt[\s-]?hours?|kilowatt[\s-]?hours?)(?![a-z])/gi;
+  for (const m of text.matchAll(re)) {
+    const n = Number(m[1]!.replace(/,/g, ""));
+    const wh = /^k/i.test(m[2]!) ? n * 1000 : n;
+    if (wh >= 20 && wh <= 50_000) return { value: Math.round(wh), excerpt: excerptAround(text, m.index, m[0].length) };
+  }
+  return null;
+}
+
+const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8 };
+
+/** Number of AC outlets ("2 AC outlets", "two 120V AC outlets", "AC outlets x 3", "4x AC"). */
+export function extractAcOutlets(text: string): Match<number> | null {
+  const num = "(\\d|one|two|three|four|five|six|seven|eight)";
+  const res = [
+    new RegExp(`\\b${num}\\s*(?:x\\s*)?(?:\\(?\\d{3}\\s*v\\)?\\s*|pure\\s+sine\\s+wave\\s+|standard\\s+)?(?:ac\\s*(?:outlets?|sockets?|ports?|receptacles?))`, "i"),
+    new RegExp(`\\bac\\s*(?:outlets?|sockets?|ports?)\\s*(?:x|×|:)\\s*${num}\\b`, "i"),
+  ];
+  for (const re of res) {
+    const m = re.exec(text);
+    if (!m) continue;
+    const raw = m[1]!.toLowerCase();
+    const n = /^\d$/.test(raw) ? Number(raw) : COUNT_WORDS[raw];
+    if (n && n >= 1 && n <= 12) return { value: n, excerpt: excerptAround(text, m.index, m[0].length) };
   }
   return null;
 }

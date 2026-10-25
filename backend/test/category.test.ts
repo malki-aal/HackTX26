@@ -9,91 +9,74 @@ import { normalizeOffer } from "../src/domain/normalize.js";
 import { evaluateCandidates, evaluateRequirement, recommend } from "../src/domain/evaluate.js";
 import { RequestFields } from "../src/contracts/domain.js";
 
-/** Drive a request the way the current frontend does: it always sends category "monitors". */
-async function chairsRequest(h: ReturnType<typeof harness>) {
-  const created = await h.call("POST", "/api/v1/requests", {
-    title: "Chairs",
-    description: "Twelve chairs for the new meeting room.",
+/** A stale client hint: category "monitors" on a request that is plainly for a blender. */
+async function blenderRequest(h: ReturnType<typeof harness>) {
+  return h.call("POST", "/api/v1/requests", {
+    title: "Blender",
+    description: "One new countertop blender for the café.",
     category: "monitors",
-    quantity: 12,
+    quantity: 1,
     currency: "USD",
-    budgetCents: 200000,
+    budgetCents: 30000,
     budgetBasis: "total",
     allowedCondition: "new",
-    rankingPriority: "lowest_known_total",
   });
-  return created;
 }
 
-describe("category bug regression: a chair request never yields eligible monitors", () => {
-  it("a frontend-style 'monitors' hint on a 'Chairs' request is a conflict, not a default", async () => {
+describe("category isolation: a blender request never yields eligible monitors", () => {
+  it("a 'monitors' hint on a blender request is a conflict, not a default", async () => {
     const h = harness();
-    const created = await chairsRequest(h);
+    const created = await blenderRequest(h);
     expect(created.status).toBe(201);
     const req = created.body.data;
     expect(req.category).toBeNull();
     expect(req.item).toMatchObject({ resolved: false, category: null });
     const q = req.questions.find((x: any) => x.id === "q_category");
-    expect(q.options.map((o: any) => o.value).sort()).toEqual(["monitors", "office_chairs"]);
+    expect(q.options.map((o: any) => o.value).sort()).toEqual(["countertop_blender", "general", "monitors"]);
     // Cannot confirm (or research) while the item type is unresolved.
     const conf = await h.call("POST", `/api/v1/requests/${req.id}/confirm`, { version: req.version });
     expect(conf.status).toBe(409);
     expect(h.shopping.calls.length).toBe(0);
   });
 
-  it("after choosing chairs, monitor listings (even if a provider returns them) are rejected, queries name chairs, and the label is accurate", async () => {
+  it("after choosing blender, monitor listings (even if a provider returns them) are rejected and queries name blenders", async () => {
     // The provider returns only monitors: the worst case of reused or wrong-category results.
     const h = harness({ shopping: new FixtureShopping(FIXTURE_MONITOR_ITEMS) });
-    const created = await chairsRequest(h);
+    const created = await blenderRequest(h);
     const id = created.body.data.id;
-    const clar = await h.call("POST", `/api/v1/requests/${id}/clarify`, { expectedVersion: created.body.data.version, answers: [{ questionId: "q_category", value: "office_chairs" }] });
-    expect(clar.body.data.item).toMatchObject({ resolved: true, category: "office_chairs", plural: "office chairs", unit: "chair" });
-    expect(clar.body.data.requirements.find((r: any) => r.attribute === "product_type")).toMatchObject({ value: "office_chairs", mandatory: true, display: "Is an office chair" });
+    const clar = await h.call("POST", `/api/v1/requests/${id}/clarify`, { expectedVersion: created.body.data.version, answers: [{ questionId: "q_category", value: "countertop_blender" }] });
+    expect(clar.body.data.item).toMatchObject({ resolved: true, category: "countertop_blender", plural: "countertop blenders", unit: "blender" });
+    expect(clar.body.data.requirements.find((r: any) => r.attribute === "product_type")).toMatchObject({ value: "countertop_blender", mandatory: true, display: "Is a countertop blender" });
     const conf = await h.call("POST", `/api/v1/requests/${id}/confirm`, { version: clar.body.data.version });
     expect(conf.status).toBe(200);
     const start = await h.call("POST", `/api/v1/requests/${id}/research`, { version: conf.body.data.version });
     await awaitRun(start.body.data.runId);
     expect(h.shopping.calls.length).toBeGreaterThan(0);
     for (const c of h.shopping.calls) {
-      expect(c.q).toMatch(/office chair/);
+      expect(c.q).toMatch(/blender/);
       expect(c.q).not.toMatch(/monitor/i);
     }
-    const cands = await h.call("GET", `/api/v1/requests/${id}/candidates`);
-    const data = cands.body.data;
-    expect(data.item.plural).toBe("office chairs");
+    const data = (await h.call("GET", `/api/v1/requests/${id}/candidates`)).body.data;
     expect(data.candidates.length).toBeGreaterThan(0);
     expect(data.candidates.filter((c: any) => c.eligibility === "eligible")).toEqual([]);
     expect(data.recommendations).toEqual([]);
     for (const c of data.candidates.filter((x: any) => /monitor/i.test(x.title) && !/arm|mount/i.test(x.title))) {
       expect(c.eligibility).toBe("rejected");
-      expect(c.requirementChecks.find((r: any) => r.attribute === "product_type")).toMatchObject({ state: "contradicted", reason: "Listing is a monitor, not an office chair" });
+      expect(c.requirementChecks.find((r: any) => r.attribute === "product_type")).toMatchObject({ state: "contradicted", reason: "Listing is a monitor, not a countertop blender" });
     }
-    const run = await h.call("GET", `/api/v1/runs/${start.body.data.runId}`);
-    expect(run.body.data.outcome).toBe("no_confirmed_match");
+    expect((await h.call("GET", `/api/v1/runs/${start.body.data.runId}`)).body.data.outcome).toBe("no_confirmed_match");
   });
 
-  it("with category-appropriate results, a real chair can qualify and a monitor in the same results cannot", async () => {
-    const h = harness();
-    const created = await chairsRequest(h);
-    const id = created.body.data.id;
-    const clar = await h.call("POST", `/api/v1/requests/${id}/clarify`, { expectedVersion: 1, answers: [{ questionId: "q_category", value: "office_chairs" }] });
-    await h.call("POST", `/api/v1/requests/${id}/confirm`, { version: clar.body.data.version });
-    const start = await h.call("POST", `/api/v1/requests/${id}/research`, { version: clar.body.data.version });
-    await awaitRun(start.body.data.runId);
-    const data = (await h.call("GET", `/api/v1/requests/${id}/candidates`)).body.data;
-    const eligible = data.candidates.filter((c: any) => c.eligibility === "eligible");
-    expect(eligible.length).toBeGreaterThan(0);
-    for (const c of eligible) expect(c.title).toMatch(/chair/i);
-    expect(data.candidates.find((c: any) => /Monitor/.test(c.title)).eligibility).toBe("rejected");
-    expect(data.candidates.find((c: any) => /Cushion/.test(c.title)).eligibility).toBe("rejected");
-    expect(data.candidates.find((c: any) => /Chair Mat/.test(c.title)).eligibility).toBe("rejected");
-  });
-
-  it("an unrecognized item type asks instead of defaulting", () => {
+  it("an older or unrecognized item type asks instead of defaulting, offering the supported types and general search", () => {
+    const offered = ["monitors", "wood_glue", "countertop_blender", "portable_power_station", "general"];
     expect(resolveCategory(null, "Sandpaper", "120 grit")).toMatchObject({ category: null, problem: "none" });
-    expect(resolveCategory(null, "Chairs", "")).toMatchObject({ category: "office_chairs", problem: null });
+    expect(resolveCategory(null, "Sandpaper", "").candidates).toEqual(offered);
+    // Office chairs exist only for older records: recognised, but not offered for new requests.
+    expect(resolveCategory(null, "Chairs", "")).toMatchObject({ category: null, problem: "unsupported", unsupported: ["office chairs"], candidates: offered });
     expect(resolveCategory("monitors", "Chairs", "")).toMatchObject({ category: null, problem: "conflict" });
     expect(resolveCategory("monitors", "27 inch monitors", "")).toMatchObject({ category: "monitors" });
+    expect(resolveCategory(null, "Urgent replacement café blender", "")).toMatchObject({ category: "countertop_blender" });
+    expect(resolveCategory(null, "Portable power for community outreach", "portable power station")).toMatchObject({ category: "portable_power_station" });
     expect(deriveRequirements({ title: "Sandpaper", description: "", allowedCondition: "new", category: null, deadline: null, deadlineType: "target" }).some((r) => r.attribute === "product_type")).toBe(false);
   });
 
@@ -124,8 +107,10 @@ describe("category bug regression: a chair request never yields eligible monitor
 
 describe("category registry and listing checks", () => {
   const chairs = getCategory("office_chairs")!;
-  it("detects categories and never defaults", () => {
+  it("detects categories (older ones too, so conflicts are caught) and never defaults", () => {
     expect(detectCategory("Chairs", "").best).toBe("office_chairs");
+    expect(detectCategory("Commercial blender", "").best).toBe("countertop_blender");
+    expect(detectCategory("Portable power station", "").best).toBe("portable_power_station");
     expect(detectCategory("Self-adhesive cork sheets", "").best).toBe("cork_sheets");
     expect(detectCategory("Wood screws", "#6 x 5/8 inch").best).toBe("wood_screws");
     expect(detectCategory("Supplies", "").best).toBeNull();
@@ -150,7 +135,13 @@ describe("category registry and listing checks", () => {
 describe("material extraction and quantities", () => {
   it("parses volumes, dimensions, thickness, screw sizes and piece counts", () => {
     expect(extractVolume("Wood Glue, 8 fl oz")?.value).toBe(237);
-    expect(extractVolume("16 oz bottle")?.value).toBe(473);
+    // A bare "oz" can be weight, so it is not a volume; explicit fluid units are.
+    expect(extractVolume("16 oz bottle")).toBeNull();
+    expect(extractVolume("Net Wt 18 oz")).toBeNull();
+    expect(extractVolume("16 fl oz bottle")?.value).toBe(473);
+    expect(extractVolume("1 Gallon")?.value).toBe(3785);
+    // ...except for a pitcher's capacity, which cannot be a weight.
+    expect(extractVolume("64 oz pitcher", { bareOzIsFluid: true })?.value).toBe(1893);
     expect(extractVolume("500 ml")?.value).toBe(500);
     expect(extractDimensions('Cork Sheets 12" x 12"')?.value).toEqual({ length: 12, width: 12 });
     expect(extractDimensions("Cork Roll 12 in x 4 ft")?.value).toEqual({ length: 48, width: 12 });
@@ -167,7 +158,7 @@ describe("material extraction and quantities", () => {
 
   it("computes packs needed for the requested unit quantity", async () => {
     const h = harness();
-    const created = await h.call("POST", "/api/v1/requests", { title: "Wood screws", description: "40 new #6 x 5/8 inch wood screws", quantity: 40, unit: "screw", currency: "USD", budgetCents: 2500, budgetBasis: "total", allowedCondition: "new" });
+    const created = await h.call("POST", "/api/v1/requests", { title: "Wood screws", description: "40 new #6 x 5/8 inch wood screws", category: "wood_screws", quantity: 40, unit: "screw", currency: "USD", budgetCents: 2500, budgetBasis: "total", allowedCondition: "new" });
     expect(created.body.data.item).toMatchObject({ category: "wood_screws", unit: "screw", quantity: 40 });
     await h.call("POST", `/api/v1/requests/${created.body.data.id}/confirm`, { version: created.body.data.version });
     const s = await h.call("POST", `/api/v1/requests/${created.body.data.id}/research`, { version: created.body.data.version });
@@ -190,8 +181,8 @@ describe("deadlines and multivariable recommendations", () => {
   const offersFor = () =>
     [
       { title: "Premium Wood Glue, 8 fl oz", source: "A", price: "$5.97", delivery: `Free delivery by ${new Date(now.getTime() + 2 * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}` },
-      { title: "Wood Glue 8 oz", source: "B", price: "$3.49", delivery: `Delivery ${new Date(now.getTime() + 20 * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}` },
-      { title: "Wood Glue 16 oz", source: "C", price: "$4.10" },
+      { title: "Wood Glue 8 fl oz", source: "B", price: "$3.49", delivery: `Delivery ${new Date(now.getTime() + 20 * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}` },
+      { title: "Wood Glue 16 fl oz", source: "C", price: "$4.10" },
     ].map((it, i) => {
       // Each listing states its condition; condition inference is covered in domain.test.ts.
       const r = normalizeOffer({ ...it, extensions: ["Condition: New"] }, { runId: "r", queryId: `q${i}`, observedAt: now, offerMaxAgeMinutes: 30, fromCache: false, category: glue });
@@ -212,13 +203,13 @@ describe("deadlines and multivariable recommendations", () => {
     const offers = offersFor();
     const evals = evaluateCandidates(offers, reqs, 1, 2000);
     const byTitle = (t: string) => evals.find((e) => offers.find((o) => o.id === e.offerId)!.title === t)!;
-    expect(byTitle("Wood Glue 8 oz").class).toBe("rejected");
-    expect(byTitle("Wood Glue 16 oz").class).toBe("needs_review"); // no stated delivery: unknown, not assumed
+    expect(byTitle("Wood Glue 8 fl oz").class).toBe("rejected");
+    expect(byTitle("Wood Glue 16 fl oz").class).toBe("needs_review"); // no stated delivery: unknown, not assumed
     expect(byTitle("Premium Wood Glue, 8 fl oz").class).toBe("eligible");
     const recs = recommend(evals, offers, reqs);
     const recIds = recs.recommendations.map((r) => r.offerId);
-    expect(recIds).not.toContain(byTitle("Wood Glue 8 oz").offerId);
-    expect(recs.noncompliantAlternatives.map((a) => a.offerId)).toEqual([byTitle("Wood Glue 8 oz").offerId]);
+    expect(recIds).not.toContain(byTitle("Wood Glue 8 fl oz").offerId);
+    expect(recs.noncompliantAlternatives.map((a) => a.offerId)).toEqual([byTitle("Wood Glue 8 fl oz").offerId]);
     expect(recs.noncompliantAlternatives[0]!.reason).toMatch(/after the hard deadline/);
     // One compliant winner takes every role: merged, not duplicated.
     expect(recs.recommendations).toHaveLength(1);
@@ -230,12 +221,12 @@ describe("deadlines and multivariable recommendations", () => {
     const reqs = deriveRequirements(f);
     const offers = offersFor();
     const evals = evaluateCandidates(offers, reqs, 1, 2000);
-    const late = evals.find((e) => offers.find((o) => o.id === e.offerId)!.title === "Wood Glue 8 oz")!;
+    const late = evals.find((e) => offers.find((o) => o.id === e.offerId)!.title === "Wood Glue 8 fl oz")!;
     expect(late.class).toBe("eligible");
     expect(late.requirementResults.find((r) => r.attribute === "delivery_by")!.state).toBe("contradicted");
     const recs = recommend(evals, offers, reqs);
     const kinds = Object.fromEntries(recs.recommendations.flatMap((r) => r.kinds.map((k) => [k, offers.find((o) => o.id === r.offerId)!.title])));
-    expect(kinds.lowest_cost).toBe("Wood Glue 8 oz");
+    expect(kinds.lowest_cost).toBe("Wood Glue 8 fl oz");
     expect(kinds.deadline_fit).toBe("Premium Wood Glue, 8 fl oz");
     expect(recs.noncompliantAlternatives).toEqual([]);
   });
@@ -244,11 +235,11 @@ describe("deadlines and multivariable recommendations", () => {
     const f = fields("target");
     const offers = offersFor();
     const evals = evaluateCandidates(offers, deriveRequirements(f), 1, 2000);
-    const c16 = evals.find((e) => offers.find((o) => o.id === e.offerId)!.title === "Wood Glue 16 oz")!;
+    const c16 = evals.find((e) => offers.find((o) => o.id === e.offerId)!.title === "Wood Glue 16 fl oz")!;
     expect(c16.cost.shippingCents).toBeNull();
     expect(c16.cost.taxCents).toBeNull();
     expect(c16.unknowns).toEqual(expect.arrayContaining(["shipping cost", "sales tax", "availability"]));
-    expect(evaluateRequirement(deriveRequirements(f).find((r) => r.attribute === "delivery_by")!, offers.find((o) => o.title === "Wood Glue 16 oz")!).state).toBe("unknown");
+    expect(evaluateRequirement(deriveRequirements(f).find((r) => r.attribute === "delivery_by")!, offers.find((o) => o.title === "Wood Glue 16 fl oz")!).state).toBe("unknown");
   });
 });
 

@@ -96,6 +96,9 @@ export const Requirement = z.discriminatedUnion("attribute", [
   z.object({ ...base, attribute: z.literal("feature"), operator: z.literal("includes"), value: z.string().min(1).max(40), label: z.string().max(80) }),
   // Delivery by a date. mandatory=true is a hard deadline; false is a flexible target date.
   z.object({ ...base, attribute: z.literal("delivery_by"), operator: z.literal("lte"), value: z.string().date(), unit: z.literal("date") }),
+  // Battery capacity in watt-hours. Output power (W) is a different quantity and never satisfies this.
+  z.object({ ...base, attribute: z.literal("capacity_wh"), operator: z.literal("gte"), value: z.number().positive().max(50_000), unit: z.literal("wh") }),
+  z.object({ ...base, attribute: z.literal("ac_outlets"), operator: z.literal("gte"), value: z.number().int().positive().max(12), unit: z.literal("outlets") }),
 ]);
 export type Requirement = z.infer<typeof Requirement>;
 export type RequirementAttribute = Requirement["attribute"];
@@ -122,6 +125,8 @@ export const RequestFields = z.object({
   agentConfigId: Id.default("cfg_default"),
   agentConfigVersion: z.number().int().positive().nullable().default(null),
   requirements: z.array(Requirement).max(30).optional(),
+  /** Optional debugging metadata: the example preset the form started from. Never replaces parsing the request. */
+  presetId: z.string().trim().regex(/^[a-z0-9_]{2,60}$/).nullable().default(null),
 });
 export type RequestFields = z.infer<typeof RequestFields>;
 
@@ -247,6 +252,16 @@ export const PurchaseCost = z.object({
   totalStatus: TotalStatus,
   provisional: z.boolean(),
   notes: z.array(z.string()),
+  /** Set when the request orders a total liquid volume: how many packages cover it, and the excess. */
+  volume: z
+    .object({
+      requiredMl: z.number().int().positive(),
+      perPackageMl: z.number().int().positive().nullable(),
+      purchasedMl: z.number().int().positive().nullable(),
+      excessMl: z.number().int().nonnegative().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export type PurchaseCost = z.infer<typeof PurchaseCost>;
 
@@ -502,3 +517,31 @@ export const CreateProjectBody = z
     if (sum > p.budgetCents) ctx.addIssue({ code: "custom", message: `Line budgets (${sum} cents) exceed the project budget (${p.budgetCents} cents)`, path: ["lines"] });
   });
 export type CreateProjectBody = z.infer<typeof CreateProjectBody>;
+
+/** Demo request presets (backend/demo/scenarios.json). Form inputs only: no products, prices or claims. */
+export const ScenarioPreset = z.object({
+  id: z.string().regex(/^[a-z0-9_]{2,60}$/),
+  sector: z.string().min(1).max(40),
+  menuLabel: z.string().min(1).max(40),
+  title: z.string().min(1).max(200),
+  purpose: z.string().min(1).max(2000),
+  item: z.string().min(1).max(80),
+  categoryId: CategoryId,
+  quantity: z.number().int().min(1).max(MAX_QUANTITY),
+  unit: z.string().min(1).max(30),
+  budgetCents: Cents.refine((v) => v > 0),
+  condition: AllowedCondition,
+  /** Calendar days after the example is loaded; the form shows the concrete date and saves it. */
+  deadlineDays: z.number().int().min(1).max(365),
+  deadlineType: DeadlineType,
+  /** Informational: when the event happens (power-station example). */
+  eventDays: z.number().int().min(1).max(365).nullable(),
+  mandatory: z.array(z.string().min(1).max(200)).max(10),
+  preferences: z.array(z.string().min(1).max(200)).max(10),
+});
+export const ScenarioPresets = z.object({
+  version: z.number().int().positive(),
+  timezone: z.string().min(1),
+  note: z.string(),
+  scenarios: z.array(ScenarioPreset).min(1).max(10),
+});

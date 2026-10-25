@@ -59,7 +59,8 @@ const doc = {
     "/api/v1/proposals/{id}/decision": { post: op({ summary: "Executive decision (approve executes one Nessie sandbox purchase)", body: "DecisionBody", params: ["id"], headers: ["Idempotency-Key"] }) },
     "/api/v1/executions/{id}": { get: op({ summary: "Execution status and external reference", params: ["id"] }) },
     "/api/v1/executions/{id}/reconcile": { post: op({ summary: "Check Nessie for the outcome; never blindly resends", body: "ReconcileBody", params: ["id"] }) },
-    "/api/v1/categories": { get: op({ summary: "Supported item categories (id, labels, unit, specs, features)" }) },
+    "/api/v1/categories": { get: op({ summary: "Item categories (id, labels, unit, specs, features; `selectable` = offered for new requests)" }) },
+    "/api/v1/demo/scenarios": { get: op({ summary: "Example presets for the New Request form (four sectors). Read-only; creates and researches nothing" }) },
     "/api/v1/demo/manufacturing": { get: op({ summary: "Validated manufacturing demo input (creates nothing); POST it to /projects" }) },
     "/api/v1/projects": { post: op({ summary: "Create a project: single-category request lines under one hard budget", body: "CreateProjectBody", status: 201 }), get: op({ summary: "List projects" }) },
     "/api/v1/projects/{id}": { get: op({ summary: "Project with per-line research rollup, totals and supplied inventory", params: ["id"] }) },
@@ -74,7 +75,7 @@ const doc = {
   security: [{ clerkSession: [] }],
   components: {
     securitySchemes: {
-      clerkSession: { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "Clerk session token from the frontend (getToken()). Public routes: /health, /categories, /demo/manufacturing. In fixtures demo mode, X-Demo-Actor: employee-demo|executive-demo instead." },
+      clerkSession: { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "Clerk session token from the frontend (getToken()). Public routes: /health, /categories, /demo/manufacturing, /demo/scenarios. In fixtures demo mode, X-Demo-Actor: employee-demo|executive-demo instead." },
     },
     schemas: {
       Meta: schema(C.Meta),

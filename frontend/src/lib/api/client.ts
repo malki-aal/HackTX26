@@ -21,8 +21,12 @@ import type {
 
 // Single boundary between UI and data. Components import only `api` and never
 // know whether data is fixture or live.
+import type { ScenarioSet } from "../scenarios";
+
 export interface RunwayApi {
   mode: "fixture" | "live";
+  /** Example presets for the New Request form (read-only; creates nothing). */
+  getScenarios(): Promise<ScenarioSet>;
   /** Mode the backend reports (fixtures means the backend itself serves sample data). */
   getBackendMode(): Promise<BackendMode>;
   /** Contract v3 `GET /me`. Works while access is pending; rejects on 401 (UNAUTHENTICATED) and network errors. */

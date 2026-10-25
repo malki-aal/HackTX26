@@ -15,12 +15,13 @@ import { createProposal, decideProposal, financialPreview, getProposalView, list
 import { getExecutionView, reconcileExecution } from "../services/executions.js";
 import { integrationStatuses } from "../services/status.js";
 import { sessionToolHosts } from "../agent/eveRunner.js";
-import { CATEGORIES } from "../domain/categories.js";
-import { CreateProjectBody } from "../contracts/domain.js";
+import { CATEGORIES, getCategory } from "../domain/categories.js";
+import { CreateProjectBody, ScenarioPresets } from "../contracts/domain.js";
 import { confirmProjectLines, createProject, getProjectView, listProjects, researchProject } from "../services/projects.js";
 import { createMapping, getMerchantDetails, listMappings, purchaseHistory } from "../services/merchants.js";
 import { activity, confirmationRecord } from "../services/activity.js";
 import DEMO_MANUFACTURING from "../../demo/manufacturing-desk-organizers.json" with { type: "json" };
+import DEMO_SCENARIOS from "../../demo/scenarios.json" with { type: "json" };
 import { currentUserView, patchMe, requireExecutive, requireMember, resolvePrincipal, type Principal } from "../auth/access.js";
 import { accountAccess, executionAccess, projectAccess, proposalAccess, requestAccess, runAccess } from "../auth/scope.js";
 
@@ -105,9 +106,15 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
     ok(
       req,
       reply,
-      CATEGORIES.map((c) => ({ id: c.id, label: c.label, plural: c.plural, sector: c.sector, unit: c.unit, specs: c.specs, features: Object.entries(c.features).map(([id, f]) => ({ id, label: f.label })) })),
+      CATEGORIES.map((c) => ({ id: c.id, label: c.label, plural: c.plural, sector: c.sector, selectable: c.selectable, unit: c.unit, specs: c.specs, features: Object.entries(c.features).map(([id, f]) => ({ id, label: f.label })) })),
     ),
   );
+  // Example presets for the New Request form. Public, read-only, and they never create or research anything.
+  const scenarios = ScenarioPresets.parse(DEMO_SCENARIOS);
+  for (const sc of scenarios.scenarios) {
+    if (!getCategory(sc.categoryId)?.selectable) throw new Error(`Scenario ${sc.id} uses a category that new requests cannot use`);
+  }
+  app.get("/api/v1/demo/scenarios", async (req, reply) => ok(req, reply, scenarios));
   app.get("/api/v1/demo/manufacturing", async (req, reply) => ok(req, reply, { input: CreateProjectBody.parse(DEMO_MANUFACTURING), note: "Validated demo input. POST it to /api/v1/projects to create the project; nothing is created by this GET." }));
 
   // ---- Current user (signed in; works before access is granted) ----
