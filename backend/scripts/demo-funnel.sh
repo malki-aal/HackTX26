@@ -37,8 +37,11 @@ start_backend() {
   done
   return 1
 }
-cleanup() { echo; echo "Stopping backend (Funnel config is kept)..."; kill "$API_PID" 2>/dev/null || true; wait 2>/dev/null || true; }
-trap cleanup EXIT INT TERM
+STOPPING=0
+cleanup() { echo; echo "Stopping backend (Funnel config is kept)..."; kill "$API_PID" 2>/dev/null || true; wait "$API_PID" 2>/dev/null || true; }
+# Ctrl-C / kill must end the launcher too; otherwise the keep-alive loop below would restart the backend.
+trap 'STOPPING=1; cleanup; exit 0' INT TERM
+trap cleanup EXIT
 
 echo "Starting backend on 127.0.0.1:$PORT (log: backend/$API_LOG)..."
 start_backend || { echo "Backend failed to start; see backend/$API_LOG"; exit 1; }
@@ -71,8 +74,9 @@ cat <<EOF
 EOF
 
 # Keep-alive: restart the backend if it exits (the public URL does not change).
-while true; do
+while [ "$STOPPING" = 0 ]; do
   wait "$API_PID" || true
+  [ "$STOPPING" = 0 ] || break
   echo "$(date '+%F %T') backend exited; restarting..." | tee -a "$API_LOG"
   sleep 2
   start_backend || echo "$(date '+%F %T') restart failed; retrying" | tee -a "$API_LOG"
