@@ -10,6 +10,17 @@ export interface FeatureDef {
   pattern: RegExp;
   /** Listing text that states the feature is absent (e.g. "armless"); contradicts the feature. */
   absent?: RegExp;
+  /**
+   * When set, `pattern` alone is only a keyword: the feature is confirmed by an explicit statement,
+   * a certification of stated scope, or a structured product spec, never by the bare word.
+   */
+  explicit?: RegExp;
+  /** Promotional wording that resembles the feature but does not establish it ("commercial grade"). */
+  marketing?: RegExp;
+  /** Named certifications that bear on the feature, each with the scope the claim actually covers. */
+  certifications?: Array<{ pattern: RegExp; scope: string }>;
+  /** Structured product-spec fields: a spec whose title matches is read as yes or no by its value. */
+  spec?: { title: RegExp; yes: RegExp; no: RegExp };
 }
 
 export interface CategoryProfile {
@@ -160,8 +171,26 @@ export const CATEGORIES: CategoryProfile[] = [
     bareOzIsFluid: true,
     selectable: true,
     features: {
-      // Only an explicit "commercial" designation counts. "Professional" or high wattage does not.
-      commercial_use: { label: "Explicitly designated for commercial use", pattern: /\bcommercial\b/i },
+      // Only an explicit commercial-use designation counts. "Professional", high wattage, "commercial grade"
+      // marketing or the bare word in a marketplace title do not. Generic electrical-safety marks (ETL/UL
+      // listed) say nothing about commercial use, so they are not recognized at all.
+      commercial_use: {
+        label: "Explicitly designated for commercial use",
+        pattern: /\bcommercial\b/i,
+        absent: /\b(?:not\s+(?:intended\s+|suitable\s+|rated\s+|designed\s+|approved\s+|meant\s+|recommended\s+)?for\s+commercial(?:\s+use)?|non[\s-]?commercial|(?:household|home|residential|personal|domestic)\s+use\s+only|for\s+(?:household|home|residential)\s+use\s+only)\b/i,
+        explicit:
+          /\b(?:(?:for|suitable\s+for|rated\s+for|designed\s+for|approved\s+for|intended\s+for|built\s+for)\s+commercial\s+(?:use|kitchens?|food\s?service|restaurants?|bars?)|commercial[\s-]use\b|for\s+(?:restaurant|food\s?service)\s+use)\b/i,
+        marketing: /\bcommercial[\s-](?:grade|quality|style|strength|power(?:ed)?|level|performance)\b/i,
+        certifications: [
+          { pattern: /\bNSF(?:[\s/-]*ANSI)?(?:[\s-]*(?:certified|listed|approved|\d+))?\b/i, scope: "NSF food-equipment sanitation certification" },
+          { pattern: /\bETL[\s-]*sanitation\b|\bETL[\s-]+listed\s+to\s+NSF\b/i, scope: "ETL Sanitation listing (food-equipment sanitation to NSF/ANSI standards)" },
+        ],
+        spec: {
+          title: /^(?:commercial|commercial use|rec(?:ommended)?\.?\s*use|intended use|use|application)$/i,
+          yes: /\b(?:yes|commercial|restaurants?|food\s?service)\b/i,
+          no: /\b(?:no|household|home|residential|personal|domestic)\b/i,
+        },
+      },
     },
   },
   {

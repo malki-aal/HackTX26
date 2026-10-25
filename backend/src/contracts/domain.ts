@@ -168,6 +168,13 @@ export const SpecEvidence = z.object({
   excerpt: z.string().max(300),
   method: ExtractionMethod,
   confidence: z.enum(["listing_evidence", "weak_inference"]),
+  /**
+   * How strong a feature claim is. "explicit": a direct statement ("for commercial use");
+   * "certification": a named certification, whose scope the excerpt states; "keyword": the bare word
+   * in listing text; "marketing": promotional wording ("commercial grade"). Keyword and marketing
+   * claims never satisfy a requirement on their own.
+   */
+  claim: z.enum(["explicit", "certification", "keyword", "marketing"]).optional(),
 });
 export type SpecEvidence = z.infer<typeof SpecEvidence>;
 
@@ -176,6 +183,8 @@ export const KnownAmount = z.object({
   status: z.enum(["known", "unknown"]),
   cents: z.number().int().nullable(),
   source: z.string().nullable(),
+  /** Shipping is free only for orders at or above this subtotal ("Free delivery on $1,500+"). */
+  freeOverCents: z.number().int().positive().optional(),
 });
 
 export const Offer = z.object({
@@ -209,17 +218,27 @@ export const Offer = z.object({
     earliest: z.string().nullable(),
     latest: z.string().nullable(),
     source: z.enum(["listing", "product_page_store"]).nullable(),
+    /** Google Shopping's delivery text is Google's estimate, not a seller commitment to this customer. */
+    basis: z.enum(["google_estimate"]).optional(),
+    /** Delivery location the estimate was made for; null when the search set none. */
+    location: z.string().nullable().optional(),
+    /** Time zone relative dates ("by Wed") were read in. */
+    timeZone: z.string().optional(),
   }),
   rating: z.number().nullable(),
   reviews: z.number().int().nullable(),
   evidence: z.array(SpecEvidence),
   needsReviewReasons: z.array(z.string()),
+  /** Product identity shared across sellers: Google catalog id, or the exact normalized title. */
+  productKey: z.string().optional(),
   /** Product-detail evidence lookup state (SerpApi immersive product page). */
   details: z.object({
     status: z.enum(["not_available", "not_fetched", "fetched", "failed"]),
     fetchedAt: IsoTimestamp.nullable(),
     fromCache: z.boolean(),
     matchedStore: z.string().nullable(),
+    /** Set when the product specs came from a lookup made for another seller's listing of the same product. */
+    sharedFromOfferId: z.string().optional(),
   }),
 });
 export type Offer = z.infer<typeof Offer>;
@@ -231,6 +250,12 @@ export const RequirementResult = z.object({
   state: EvidenceState,
   evidenceIds: z.array(Id),
   reason: z.string(),
+  /**
+   * Delivery-deadline risk, set on delivery_by checks. "estimate_only": a Google estimate before the
+   * date for an unset location; "on_deadline": the estimate lands on the deadline day; "late_estimate":
+   * the estimate is after it; "no_date": no date in retained evidence.
+   */
+  deadlineRisk: z.enum(["none", "estimate_only", "on_deadline", "late_estimate", "no_date"]).optional(),
 });
 export type RequirementResult = z.infer<typeof RequirementResult>;
 
@@ -329,6 +354,7 @@ export const RunEventType = z.enum([
   "research_started",
   "agent_step",
   "tool_called",
+  "shortlist_failed",
   "search_started",
   "search_completed",
   "search_failed",

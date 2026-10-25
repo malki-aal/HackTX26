@@ -86,7 +86,7 @@ function OfferDetail() {
               <KeyValue label="Tax" value={offer.taxCents === null ? "Unknown" : formatCents(offer.taxCents)} />
               <KeyValue label="Against your budget" value={AFFORDABILITY[offer.affordability]} />
               <KeyValue label="Delivery" value={offer.delivery.status === "stated" ? (offer.delivery.text ?? "Stated") : "Unknown"}
-                note={offer.deadlineFit === "meets" ? "Arrives by your date" : offer.deadlineFit === "misses" ? "Arrives after your date" : offer.deadlineFit === "unknown" ? "Can't be checked against your date" : undefined} />
+                note={offer.deliveryNote ?? (offer.deadlineFit === "meets" ? (offer.delivery.estimate ? "Estimated to arrive by your date" : "Arrives by your date") : offer.deadlineFit === "misses" ? "Arrives after your date" : offer.deadlineFit === "unknown" ? "Can't be checked against your date" : undefined)} />
             </dl>
             {offer.costNotes.length > 0 && (
               <ul className="mt-2 list-disc pl-5 text-[13px] text-muted">
@@ -105,22 +105,45 @@ function OfferDetail() {
           </Section>
 
           <Section title="Requirements">
-            <ul className="divide-y divide-rule">
-              {offer.findings.map((f) => (
-                <li key={f.requirement} className="py-2.5">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-[16px]">{f.requirement}</span>
-                    <FindingMark status={f.status} />
-                  </div>
-                  <p className="mt-0.5 text-[13px] text-muted">{f.evidence}</p>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-[13px] text-muted">Evidence comes from the listing, not from the manufacturer.</p>
+            {/* Confirmed failures, then facts still unknown, then what the evidence supports. */}
+            {([
+              ["contradicted", "Doesn't meet"],
+              ["unknown", "Not yet confirmed"],
+              ["supported", "Confirmed"],
+            ] as const).map(([status, heading]) => {
+              const group = offer.findings.filter((f) => f.status === status);
+              if (!group.length) return null;
+              return (
+                <div key={status} className="mb-2">
+                  <h4 className="mt-2 text-[14px] font-semibold text-muted">{heading}</h4>
+                  <ul className="divide-y divide-rule">
+                    {group.map((f) => (
+                      <li key={f.requirement} className="py-2.5">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-[16px]">{f.requirement}</span>
+                          <FindingMark status={f.status} />
+                        </div>
+                        <p className="mt-0.5 text-[13px] text-muted">{f.evidence}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+            <p className="mt-2 text-[13px] text-muted">
+              Evidence comes from Google Shopping listing text and Google product specs, not from the manufacturer. Delivery dates are Google estimates unless confirmed.
+            </p>
           </Section>
 
           <Section title="How it compares">
-            <p className="text-[16px]">{offer.tradeoff ?? offer.rankNote}</p>
+            {offer.shortlist && (
+              <>
+                <p className="text-[16px] font-semibold">{offer.shortlist.label}</p>
+                <p className="mt-1 text-[16px]">{offer.shortlist.explanation}</p>
+                <p className="mt-1 text-[14px] text-muted">{offer.shortlist.status} · {offer.shortlist.compromise}</p>
+              </>
+            )}
+            <p className={offer.shortlist ? "mt-2 text-[14px] text-muted" : "text-[16px]"}>{offer.tradeoff ?? offer.rankNote}</p>
             {offer.unresolved.length > 0 && (
               <ul className="mt-2 list-disc pl-5 text-[16px]">
                 {offer.unresolved.map((u) => <li key={u}>{u}</li>)}

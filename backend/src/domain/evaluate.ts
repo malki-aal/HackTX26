@@ -19,8 +19,35 @@ export function evaluateRequirement(req: Requirement, offer: Offer): Requirement
     return { requirementId: req.id, attribute: req.attribute, mandatory: req.mandatory, state: "unknown", evidenceIds: ev.map((e) => e.id), reason: `Conflicting evidence: ${sup[0]!.r.reason} vs ${con[0]!.r.reason}` };
   }
   const chosen = sup.length ? sup : con.length ? con : verdicts;
+  if (req.attribute === "volume") return volumeClaims(chosen, ev);
   return { ...chosen[0]!.r, evidenceIds: chosen.map((v) => v.e.id) };
 }
+
+const ozOf = (ml: number) => Math.round((ml / 29.5735) * 10) / 10;
+
+/**
+ * Several stated capacities that all agree with the requirement: the lowest is used, and the
+ * others are named. Claims more than 10% apart are flagged as conflicting rather than silently
+ * picking one ("2L/70 oz" is one size stated two ways; "64 oz / 80 oz" is not).
+ */
+function volumeClaims(chosen: Array<{ e: Offer["evidence"][number]; r: RequirementResult }>, ev: Offer["evidence"]): RequirementResult {
+  const byValue = [...chosen].sort((a, b) => (a.e.value as number) - (b.e.value as number));
+  const lowest = byValue[0]!;
+  const values = [...new Set(ev.map((e) => e.value as number))].sort((a, b) => a - b);
+  if (values.length < 2) return { ...lowest.r, evidenceIds: chosen.map((v) => v.e.id) };
+  const min = values[0]!;
+  const max = values[values.length - 1]!;
+  const sizes = values.map((v) => `${ozOf(v)} fl oz`).join(" vs ");
+  const material = (max - min) / min > 0.1;
+  const reason = material
+    ? `${lowest.r.reason}. Capacity claims conflict (${sizes}); the lower figure is used, confirm the pitcher size`
+    : `${lowest.r.reason} (also stated as ${values.filter((v) => v !== (lowest.e.value as number)).map((v) => `${ozOf(v)} fl oz`).join(", ")}; the lower figure is used)`;
+  return { ...lowest.r, reason, evidenceIds: byValue.map((v) => v.e.id) };
+}
+
+const DAY = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+/** "Wed, Oct 28" for a YYYY-MM-DD date. */
+const day = (iso: string) => DAY.format(new Date(`${iso}T00:00:00Z`));
 
 function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): RequirementResult | never {
   const base = { requirementId: req.id, attribute: req.attribute, mandatory: req.mandatory };
@@ -136,20 +163,46 @@ function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): Re
     }
     case "feature": {
       const absent = ev.find((x) => x.value === `!${req.value}`);
-      if (absent) return result("contradicted", [absent.id], `Listing states it lacks: ${req.label} ("${absent.excerpt.slice(0, 60)}")`);
-      const e = ev.find((x) => x.value === req.value);
-      if (e) return result("supported", [e.id], e.source === "serpapi_immersive_product" ? `Product specs mention: ${req.label}` : `Listing mentions: ${req.label}`);
+      if (absent) {
+        return result("contradicted", [absent.id], absent.source === "serpapi_immersive_product" ? `Google product specs contradict: ${req.label} (${absent.excerpt.replace(/^Google product specs: /, "")})` : `Listing states it lacks: ${req.label} ("${absent.excerpt.slice(0, 60)}")`);
+      }
+      const yes = ev.filter((x) => x.value === req.value);
+      const where = (x: Offer["evidence"][number]) => (x.source === "serpapi_immersive_product" ? "Google product specs" : "listing text");
+      // Legacy features carry no claim strength: any mention counts, as before.
+      const strong = yes.find((x) => x.claim === undefined || x.claim === "explicit") ?? yes.find((x) => x.claim === "certification");
+      if (strong) {
+        if (strong.claim === "certification") return result("supported", [strong.id], `${strong.excerpt.replace(/, as claimed in listing text:.*$/, "")} claimed in ${where(strong)} (not checked with the certifier)`);
+        if (strong.claim === "explicit") return result("supported", [strong.id], strong.source === "serpapi_immersive_product" ? `${strong.excerpt}` : `Listing states it: "${strong.excerpt.slice(0, 80)}"`);
+        return result("supported", [strong.id], strong.source === "serpapi_immersive_product" ? `Product specs mention: ${req.label}` : `Listing mentions: ${req.label}`);
+      }
+      // A keyword or marketing phrase is recorded but never confirms the requirement on its own.
+      const marketing = yes.find((x) => x.claim === "marketing");
+      const keyword = yes.find((x) => x.claim === "keyword");
+      const lookedUp = offer.details.status === "fetched" ? "; product specs do not confirm it either" : "; no product spec or explicit statement confirms it";
+      if (marketing) return result("unknown", [marketing.id], `"${marketing.excerpt.slice(0, 60)}" is marketing wording, not ${req.label.charAt(0).toLowerCase()}${req.label.slice(1)}${lookedUp}`);
+      if (keyword) return result("unknown", [keyword.id], `Seller's title uses the word only ("${keyword.excerpt.slice(0, 60)}")${lookedUp}`);
       return result("unknown", [], offer.details.status === "fetched" ? `Neither listing nor product specs mention: ${req.label}` : `Listing does not mention: ${req.label}`);
     }
     case "delivery_by": {
-      // Only a date the seller states counts. Missing delivery information stays unknown.
+      // Google Shopping delivery text is Google's estimate. Without a delivery location it is not an
+      // arrival date for this customer, so it informs risk but cannot pass or fail the deadline. With
+      // a stated search location it can pass or fail the check, but it stays an estimate: the risk is
+      // never "none" and the reason says so. Only a date the requester confirmed carries no risk.
       const e = ev[ev.length - 1];
       const kind = req.mandatory ? "hard deadline" : "target date";
-      if (!e) return result("unknown", [], `No delivery date stated (${kind} ${req.value})`);
+      const dl = day(req.value);
+      const risky = (state: RequirementResult["state"], ids: string[], reason: string, deadlineRisk: NonNullable<RequirementResult["deadlineRisk"]>) => ({ ...result(state, ids, reason), deadlineRisk });
+      if (!e) return risky("unknown", [], `No delivery date in the retained listing data (${kind} ${dl})`, "no_date");
       const v = e.value as { earliest: string; latest: string };
-      if (v.latest <= req.value) return result("supported", [e.id], `Seller states delivery by ${v.latest} (${kind} ${req.value})`);
-      if (v.earliest > req.value) return result("contradicted", [e.id], `Seller states delivery ${v.earliest === v.latest ? `on ${v.earliest}` : `${v.earliest}–${v.latest}`}, after the ${kind} ${req.value}`);
-      return result("unknown", [], `Stated delivery window ${v.earliest}–${v.latest} may end after the ${kind} ${req.value}`);
+      const estimate = e.source !== "user";
+      const location = offer.delivery.location ?? null;
+      const checkable = !estimate || !!location;
+      const who = !estimate ? "You confirmed delivery" : location ? `Google Shopping estimates delivery to ${location} (an estimate, not a guaranteed arrival)` : "Google Shopping estimates delivery (no delivery location set, so not confirmed for your address)";
+      const when = v.earliest === v.latest ? day(v.latest) : `${day(v.earliest)}–${day(v.latest)}`;
+      if (v.latest < req.value) return risky(checkable ? "supported" : "unknown", [e.id], `${who} by ${when}, before the ${kind} ${dl}`, estimate ? "estimate_only" : "none");
+      if (v.latest === req.value) return risky(checkable ? "supported" : "unknown", [e.id], `${who} by ${when}: the same day as the ${kind}, with no margin`, "on_deadline");
+      if (v.earliest > req.value) return risky(checkable ? "contradicted" : "unknown", [e.id], `${who} ${when}, after the ${kind} ${dl}`, "late_estimate");
+      return risky("unknown", [e.id], `${who} ${when}, which may end after the ${kind} ${dl}`, "late_estimate");
     }
   }
 }
@@ -190,7 +243,14 @@ export function calculatePurchaseCost(offer: Offer, requestedQuantity: number, o
   }
   const unit = priceUsable ? offer.listedPriceCents : null;
   const subtotal = unit !== null && packagesRequired !== null ? multiplyCents(unit, packagesRequired) : null;
-  const shippingCents = offer.shipping.status === "known" && packagesRequired !== null ? offer.shipping.cents : null;
+  let shippingCents = offer.shipping.status === "known" && packagesRequired !== null ? offer.shipping.cents : null;
+  const threshold = offer.shipping.freeOverCents;
+  if (offer.shipping.status === "unknown" && threshold && subtotal !== null) {
+    if (subtotal >= threshold) {
+      shippingCents = 0;
+      notes.push(`Free shipping applies to orders of ${formatUsd(threshold)}+; this ${formatUsd(subtotal)} subtotal qualifies (per listing text)`);
+    } else notes.push(`Free shipping only on orders of ${formatUsd(threshold)}+; this ${formatUsd(subtotal)} subtotal does not qualify, so shipping is unknown`);
+  }
   // Shipping is stated per listing; we do not assume how it scales with packages beyond the stated amount.
   if (shippingCents !== null && shippingCents > 0 && packagesRequired !== null && packagesRequired > 1) notes.push("Stated shipping may be per package; verify at checkout");
   const comparable = subtotal === null ? null : addCents(subtotal, shippingCents ?? 0);
@@ -215,6 +275,41 @@ export function calculatePurchaseCost(offer: Offer, requestedQuantity: number, o
   };
 }
 
+const GAP_LABEL: Record<string, string> = {
+  product_type: "item type unconfirmed",
+  volume: "capacity unconfirmed",
+  feature: "unconfirmed",
+  brand: "brand unconfirmed",
+};
+
+/**
+ * Plain review summary for an offer with no confirmed failure: which specs are confirmed, what
+ * still has to be confirmed, and the delivery-deadline risk, most decisive first. Unknown facts are
+ * named as unconfirmed, never as failures.
+ */
+export function reviewSummary(results: RequirementResult[], cost: PurchaseCost, offer: Offer): string[] {
+  const unknown = results.filter((r) => r.mandatory && r.state === "unknown");
+  const specGaps = unknown.filter((r) => r.attribute !== "condition" && r.attribute !== "delivery_by");
+  const parts: string[] = [];
+  if (specGaps.length === 0) parts.push("Specs match");
+  for (const r of specGaps) parts.push(r.attribute === "feature" ? `${featureLabel(r)} unconfirmed` : GAP_LABEL[r.attribute] ?? `${r.attribute.replace(/_/g, " ")} unconfirmed`);
+  if (unknown.some((r) => r.attribute === "condition")) parts.push("confirm new condition");
+  const d = results.find((r) => r.attribute === "delivery_by");
+  const risk = d?.deadlineRisk;
+  const hard = d?.mandatory;
+  if (d && d.state !== "supported") {
+    if (risk === "no_date") parts.push(hard ? "no delivery date for the hard deadline" : "no delivery date");
+    else if (risk === "late_estimate") parts.push("delivery estimate is after the deadline");
+    else if (risk === "on_deadline") parts.push("delivery estimate lands on the deadline day");
+    else if (risk === "estimate_only") parts.push("delivery is a Google estimate (location not set)");
+  } else if (risk === "on_deadline") parts.push("arrives on the deadline day, no margin");
+  if (cost.listedSubtotalCents === null) parts.push("cost for requested quantity unknown");
+  parts.push(...offer.needsReviewReasons);
+  return parts;
+}
+
+const featureLabel = (r: RequirementResult) => (r.requirementId.replace(/^req_feature_/, "").replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()));
+
 export interface Classification {
   class: CandidateEvaluation["class"];
   affordability: CandidateEvaluation["affordability"];
@@ -228,7 +323,7 @@ export function classifyCandidate(offer: Offer, results: RequirementResult[], co
   const mandatoryUnknown = results.filter((r) => r.mandatory && r.state === "unknown");
   for (const r of mandatoryUnknown) unknowns.push(`${r.attribute}: ${r.reason}`);
   for (const r of results.filter((x) => !x.mandatory && x.state === "unknown")) unknowns.push(`(preference) ${r.attribute}: ${r.reason}`);
-  if (offer.shipping.status === "unknown") unknowns.push("shipping cost");
+  if (cost.shippingCents === null) unknowns.push("shipping cost");
   unknowns.push("sales tax");
   unknowns.push(...offer.needsReviewReasons);
   if (offer.availability.status === "unknown") unknowns.push("availability");
@@ -248,17 +343,26 @@ export function classifyCandidate(offer: Offer, results: RequirementResult[], co
     return { class: "rejected", affordability, unknowns, reason: `Known cost ${formatUsd(cost.knownComparableCostCents!)} exceeds budget ${formatUsd(budgetCents)}` };
   }
   if (mandatoryUnknown.length > 0 || cost.listedSubtotalCents === null || offer.needsReviewReasons.length > 0) {
-    const why = [
-      ...mandatoryUnknown.map((r) => `${r.attribute} unconfirmed`),
-      ...(cost.listedSubtotalCents === null ? ["cost for requested quantity unknown"] : []),
-      ...offer.needsReviewReasons,
-    ];
-    return { class: "needs_review", affordability, unknowns, reason: `Needs review: ${why.join("; ")}` };
+    return { class: "needs_review", affordability, unknowns, reason: `Needs review: ${reviewSummary(results, cost, offer).join(" · ")}` };
   }
-  return { class: "eligible", affordability, unknowns, reason: `All mandatory requirements supported by listing evidence; provisional cost ${formatUsd(cost.knownComparableCostCents!)} (tax unknown)` };
+  const d = results.find((r) => r.attribute === "delivery_by");
+  const estimateNote = d && d.state === "supported" && d.deadlineRisk && d.deadlineRisk !== "none" ? `; delivery date is a Google estimate${d.deadlineRisk === "on_deadline" ? " on the deadline day, with no margin" : ""}` : "";
+  return { class: "eligible", affordability, unknowns, reason: `All mandatory requirements supported by listing evidence; provisional cost ${formatUsd(cost.knownComparableCostCents!)} (tax unknown)${estimateNote}` };
 }
 
 const CLASS_ORDER = { eligible: 0, needs_review: 1, rejected: 2 } as const;
+const RISK_LEVEL = { none: 0, estimate_only: 1, on_deadline: 2, late_estimate: 3, no_date: 4 } as const;
+
+type Ranked = Pick<CandidateEvaluation, "requirementResults">;
+const specGaps = (x: Ranked) => x.requirementResults.filter((r) => r.mandatory && r.state !== "supported" && r.attribute !== "condition" && r.attribute !== "delivery_by").length;
+const conditionGap = (x: Ranked) => (x.requirementResults.some((r) => r.mandatory && r.attribute === "condition" && r.state !== "supported") ? 1 : 0);
+/** Only a hard deadline carries risk in ranking; a target date is a preference. */
+export function deadlineRiskLevel(x: Ranked): number {
+  const d = x.requirementResults.find((r) => r.attribute === "delivery_by");
+  if (!d || !d.mandatory) return 0;
+  if (d.deadlineRisk) return RISK_LEVEL[d.deadlineRisk];
+  return d.state === "supported" ? 0 : 4;
+}
 
 /** Stable, reproducible ranking. Inputs are not mutated. */
 export function rankCandidates(evals: Array<Omit<CandidateEvaluation, "rank">>, priority: RankingPriority = "lowest_known_total"): CandidateEvaluation[] {
@@ -268,10 +372,10 @@ export function rankCandidates(evals: Array<Omit<CandidateEvaluation, "rank">>, 
     const aff = (x: typeof a) => (x.affordability === "within_budget_provisional" ? 0 : x.affordability === "unknown" ? 1 : 2);
     const af = aff(a) - aff(b);
     if (af !== 0) return af;
-    // Among uncertain options, prefer fewer missing must-haves before cheap near-misses.
+    // Among uncertain options, in order: fewer unconfirmed specs, then lower hard-deadline risk, then
+    // condition evidence, before price. A deadline risk outranks a missing condition statement.
     if (a.class === "needs_review") {
-      const missing = (x: typeof a) => x.requirementResults.filter((r) => r.mandatory && r.state !== "supported").length;
-      const gap = missing(a) - missing(b);
+      const gap = specGaps(a) - specGaps(b) || deadlineRiskLevel(a) - deadlineRiskLevel(b) || conditionGap(a) - conditionGap(b);
       if (gap !== 0) return gap;
     }
     const costCmp = () => {
@@ -403,8 +507,8 @@ export function recommend(evals: CandidateEvaluation[], offers: Offer[], require
 
   if (deadline) {
     const meets = eligible.filter((x) => x.c.deliveryState === "meets").sort((a, b) => (a.c.deliveryLatest! < b.c.deliveryLatest! ? -1 : a.c.deliveryLatest! > b.c.deliveryLatest! ? 1 : 0) || byCost(a.c, b.c) || tie(a, b));
-    if (meets[0]) pick(meets[0], "deadline_fit", [`Seller states delivery by ${meets[0].c.deliveryLatest}, before the ${deadline.mandatory ? "hard deadline" : "target date"} ${deadline.value}`]);
-    else notes.push(`No compliant offer states delivery by ${deadline.value}; delivery for the others is unknown${deadline.mandatory ? "" : " or late"}.`);
+    if (meets[0]) pick(meets[0], "deadline_fit", [meets[0].e.requirementResults.find((r) => r.attribute === "delivery_by")?.reason ?? `Delivery by ${meets[0].c.deliveryLatest}`]);
+    else notes.push(`No compliant offer has a confirmed delivery by ${deadline.value}; delivery for the others is unknown or only a Google estimate.`);
   } else {
     const dated = eligible.filter((x) => x.c.deliveryLatest !== null).sort((a, b) => (a.c.deliveryLatest! < b.c.deliveryLatest! ? -1 : 1) || byCost(a.c, b.c) || tie(a, b));
     if (dated[0]) pick(dated[0], "deadline_fit", [`No deadline set; earliest stated delivery (${dated[0].c.deliveryLatest})`]);

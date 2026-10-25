@@ -388,4 +388,11 @@ CREATE TABLE employee_payments (
 );
 `,
   },
+  {
+    version: 7,
+    sql: `
+-- The shortlist shown for a research run (labels and explanations), saved once when the run ends.
+ALTER TABLE runs ADD COLUMN shortlist TEXT;
+`,
+  },
 ];

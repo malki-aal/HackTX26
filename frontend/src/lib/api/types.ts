@@ -173,6 +173,24 @@ export interface DeliveryInfo {
   status: "stated" | "unknown";
   /** Text as the seller stated it. Never computed by the UI. */
   text?: string;
+  /** Google Shopping's estimate, not confirmed for this customer's address. */
+  estimate?: boolean;
+}
+
+/** Backend-selected shortlist card for an offer (deterministic, or model wording the backend validated). */
+export interface ShortlistCard {
+  /** 1-based order in the shortlist. */
+  position: number;
+  role: string;
+  /** Prominent 1–5 word label, e.g. "Closest match", "More battery capacity". */
+  label: string;
+  /** Short factual status, e.g. "Confirm new condition", "Over budget by $35.00". */
+  status: string;
+  compliance: "meets_all" | "unconfirmed" | "over_budget" | "fails_must_have";
+  explanation: string;
+  compromise: string;
+  unverified: string[];
+  source: "deterministic" | "model";
 }
 
 export interface Offer {
@@ -196,6 +214,16 @@ export interface Offer {
   highlights: OfferHighlight[];
   /** PROPOSED: backend-written plain-language tradeoff; falls back to rankNote. */
   tradeoff?: string;
+  /** Set when this offer is on the backend shortlist. */
+  shortlist?: ShortlistCard;
+  /** Short factual status for any offer ("Meets checked requirements", "Below required capacity"). */
+  statusLine?: string;
+  /** Shown above an item's shortlist when no option meets every must-have; same on each offer of the item. */
+  shortlistHeadline?: string | null;
+  /** Request specifications the backend cannot check (general search); same on each offer of the item. */
+  notEvaluated?: string[];
+  /** The backend's reading of delivery against the deadline, in words. */
+  deliveryNote?: string;
   eligibility: Eligibility;
   findings: Finding[];
   rankNote: string;

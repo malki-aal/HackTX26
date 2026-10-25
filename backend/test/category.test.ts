@@ -185,7 +185,7 @@ describe("deadlines and multivariable recommendations", () => {
       { title: "Wood Glue 16 fl oz", source: "C", price: "$4.10" },
     ].map((it, i) => {
       // Each listing states its condition; condition inference is covered in domain.test.ts.
-      const r = normalizeOffer({ ...it, extensions: ["Condition: New"] }, { runId: "r", queryId: `q${i}`, observedAt: now, offerMaxAgeMinutes: 30, fromCache: false, category: glue });
+      const r = normalizeOffer({ ...it, extensions: ["Condition: New"] }, { runId: "r", queryId: `q${i}`, observedAt: now, offerMaxAgeMinutes: 30, fromCache: false, category: glue, deliveryLocation: "Austin, Texas, United States" });
       if (!r.ok) throw new Error(r.reason);
       return r.offer;
     });

@@ -11,11 +11,14 @@ import type { AppContext } from "../src/app/context.js";
 import type { FastifyInstance } from "fastify";
 import type { IdentityProvider } from "../src/auth/identity.js";
 
+/** Fixture searches are made for a set delivery location, so delivery estimates can be checked against deadlines. */
+export const TEST_LOCATION = "Austin, Texas, United States";
+
 export const FAKE_SECRET = "sk_test_SUPERSECRET_should_never_leak_123";
 
 export function testConfig(overrides: Partial<Record<string, string>> = {}): AppConfig {
   const dir = mkdtempSync(join(tmpdir(), "runway-test-"));
-  return parseConfig({ NODE_ENV: "test", INTEGRATION_MODE: "fixtures", DATABASE_PATH: join(dir, "t.sqlite"), SERPAPI_API_KEY: FAKE_SECRET, ...overrides });
+  return parseConfig({ NODE_ENV: "test", INTEGRATION_MODE: "fixtures", DATABASE_PATH: join(dir, "t.sqlite"), SERPAPI_API_KEY: FAKE_SECRET, SHOPPING_LOCATION: TEST_LOCATION, ...overrides });
 }
 
 export interface Harness {
