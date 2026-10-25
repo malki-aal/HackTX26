@@ -6,23 +6,56 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { CheckingSession, ConfigError, PendingAccess, Unreachable } from "@/components/auth";
 import { GoogleButton } from "@/components/google-button";
-import { Page, PageHeader, Section } from "@/components/ui";
+import { SignInStage } from "@/components/sign-in-stage";
 import { authMode, homeFor } from "@/lib/auth/config";
 import { useIdentity } from "@/lib/auth/identity";
 
 const TAGLINE = "Turn purchase requests into approved, evidence-backed buys.";
 
-function Hero() {
+/** Status screens (checking, pending, unreachable…) keep the narrow phone layout inside the full-screen page. */
+function Narrow({ children }: { children: React.ReactNode }) {
+  return <div className="mx-auto min-h-dvh max-w-[430px]">{children}</div>;
+}
+
+function Mark() {
   return (
-    <PageHeader title="Runway">
-      <p className="mt-2 max-w-[30ch] text-[17px] leading-snug text-white/90">{TAGLINE}</p>
-    </PageHeader>
+    <span className="flex items-center gap-2.5">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden>
+        <path d="M13 0a13 13 0 0 1 0 26z" fill="var(--ink)" />
+      </svg>
+      <span className="text-[20px] font-extrabold tracking-tight">Runway</span>
+    </span>
+  );
+}
+
+/** Full-screen landing: wordmark, headline and the sign-in card over the interactive backdrop. */
+function Landing({ children }: { children: React.ReactNode }) {
+  return (
+    <SignInStage>
+      <div className="mx-auto flex min-h-dvh w-full max-w-[1200px] flex-col px-6 sm:px-10" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <header className="flex h-20 items-center">
+          <Mark />
+        </header>
+        <main className="grid flex-1 items-center gap-10 py-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+          <section>
+            <h1 className="text-[clamp(52px,9vw,104px)] font-extrabold leading-[0.95] tracking-[-0.03em]">Runway</h1>
+            <p className="mt-5 max-w-[26ch] text-[clamp(20px,2.4vw,28px)] font-semibold leading-snug tracking-tight">{TAGLINE}</p>
+          </section>
+          <section className="w-full max-w-[440px] justify-self-center rounded-2xl bg-paper p-6 border border-rule shadow-[0_12px_32px_rgba(27,27,47,0.08)] sm:p-8 lg:justify-self-end">
+            {children}
+          </section>
+        </main>
+        <footer className="flex h-16 items-center text-[13px] text-muted">
+          Your role is set by Runway’s server, not by anything you choose here.
+        </footer>
+      </div>
+    </SignInStage>
   );
 }
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<CheckingSession />}>
+    <Suspense fallback={<Narrow><CheckingSession /></Narrow>}>
       <SignInRouter />
     </Suspense>
   );
@@ -32,18 +65,18 @@ function SignInRouter() {
   if (authMode === "clerk") return <ClerkSignIn />;
   if (authMode === "misconfigured") {
     return (
-      <ConfigError message="This build needs NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (and CLERK_SECRET_KEY on the server) before anyone can sign in." />
+      <Narrow>
+        <ConfigError message="This build needs NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (and CLERK_SECRET_KEY on the server) before anyone can sign in." />
+      </Narrow>
     );
   }
   // Sample-data demo build: there is no sign-in, and this page says so instead of pretending.
   return (
-    <Page>
-      <Hero />
-      <Section>
-        <p className="mb-4 text-[16px]">This build runs on sample data and has no sign-in.</p>
-        <Link href="/" className="touch text-[15px] font-medium text-accent">Open the sample app</Link>
-      </Section>
-    </Page>
+    <Landing>
+      <h2 className="mb-2 text-[24px] font-bold tracking-tight">Sample data</h2>
+      <p className="mb-4 text-[16px] text-muted">This build runs on sample data and has no sign-in.</p>
+      <Link href="/" className="touch text-[15px] font-medium text-accent">Open the sample app</Link>
+    </Landing>
   );
 }
 
@@ -88,15 +121,15 @@ function ClerkSignIn() {
 
   switch (identity.status) {
     case "loading":
-      return <CheckingSession />;
+      return <Narrow><CheckingSession /></Narrow>;
     case "ready":
-      return <CheckingSession label="Taking you to your home" />;
+      return <Narrow><CheckingSession label="Taking you to your home" /></Narrow>;
     case "pending_access":
-      return <PendingAccess email={identity.email} />;
+      return <Narrow><PendingAccess email={identity.email} /></Narrow>;
     case "unreachable":
-      return <Unreachable message={identity.message} />;
+      return <Narrow><Unreachable message={identity.message} /></Narrow>;
     case "misconfigured":
-      return <ConfigError message={identity.message} />;
+      return <Narrow><ConfigError message={identity.message} /></Narrow>;
     default:
       break;
   }
@@ -114,32 +147,28 @@ function ClerkSignIn() {
         : unavailable);
 
   return (
-    <Page>
-      <Hero />
-      <Section>
-        {expired && !banner && (
-          <p role="status" className="mb-4 rounded-xl bg-accent-soft p-3 text-[14px]">
-            Your session ended. Sign in again to continue.
-          </p>
-        )}
-        {banner && (
-          <div role="alert" className="mb-4 rounded-xl border-l-4 border-bad bg-bad-soft p-3 text-[14px]">
-            <p className="font-medium text-bad">{banner}</p>
-            {unavailable && !failure && !returned && (
-              <button type="button" onClick={() => retry?.()} className="touch text-[15px] font-medium text-accent">
-                Check again
-              </button>
-            )}
-          </div>
-        )}
-        <GoogleButton onClick={start} busy={redirecting} />
-        <p className="mt-4 text-[13px] text-muted">
-          Use the Google account your team added. Your role is set by Runway’s server, not by anything you choose here.
+    <Landing>
+      <h2 className="mb-1 text-[24px] font-bold tracking-tight">Sign in</h2>
+      <p className="mb-5 text-[15px] text-muted">Use the Google account your team added.</p>
+      {expired && !banner && (
+        <p role="status" className="mb-4 rounded-xl bg-accent-soft p-3 text-[14px]">
+          Your session ended. Sign in again to continue.
         </p>
-        <div role="status" aria-live="polite" className="sr-only">
-          {redirecting ? "Redirecting to Google" : ""}
+      )}
+      {banner && (
+        <div role="alert" className="mb-4 rounded-xl border-l-4 border-bad bg-bad-soft p-3 text-[14px]">
+          <p className="font-medium text-bad">{banner}</p>
+          {unavailable && !failure && !returned && (
+            <button type="button" onClick={() => retry?.()} className="touch text-[15px] font-medium text-accent">
+              Check again
+            </button>
+          )}
         </div>
-      </Section>
-    </Page>
+      )}
+      <GoogleButton onClick={start} busy={redirecting} />
+      <div role="status" aria-live="polite" className="sr-only">
+        {redirecting ? "Redirecting to Google" : ""}
+      </div>
+    </Landing>
   );
 }

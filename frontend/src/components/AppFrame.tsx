@@ -38,6 +38,16 @@ function PlusIcon() {
 // On wide screens it stays centred at phone width so layout never reflows.
 export function AppFrame({ children }: { children: React.ReactNode }) {
   return (
+    <Suspense fallback={<div className="h-dvh bg-canvas" />}>
+      <Frame>{children}</Frame>
+    </Suspense>
+  );
+}
+
+function Frame({ children }: { children: React.ReactNode }) {
+  // The sign-in page is a full-screen landing page; everything else lives in the phone frame.
+  if (usePathname() === "/sign-in") return <div className="app-shell h-dvh overflow-y-auto overscroll-contain bg-canvas">{children}</div>;
+  return (
     <div className="app-shell flex h-dvh justify-center bg-canvas">
       <div className="app-shell relative flex h-dvh w-full max-w-[430px] flex-col bg-canvas min-[431px]:shadow-[0_0_0_1px_rgba(16,24,40,0.06)]">
         <main className="app-main min-h-0 flex-1 overflow-y-auto overscroll-contain">

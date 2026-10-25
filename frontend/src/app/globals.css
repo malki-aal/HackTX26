@@ -127,3 +127,19 @@ select {
     background: #fff;
   }
 }
+
+@keyframes bills-up {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+@keyframes bills-down {
+  from { transform: translateY(-50%); }
+  to { transform: translateY(0); }
+}
+.bills-up,
+.bills-down {
+  animation: linear infinite;
+  will-change: transform;
+}
+.bills-up { animation-name: bills-up; }
+.bills-down { animation-name: bills-down; }
