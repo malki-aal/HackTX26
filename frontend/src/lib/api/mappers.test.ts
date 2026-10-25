@@ -67,7 +67,7 @@ describe("approval gate", () => {
     expect(approvalGate({ kind: "loading" }, 2, true).enabled).toBe(false);
     const e = approvalGate({ kind: "error", message: "Can't reach the backend." }, 2, true);
     expect(e.enabled).toBe(false);
-    expect(e.reason).toMatch(/request changes or reject/);
+    expect(e.reason).toMatch(/Change or Deny/);
   });
   it("is closed when the server reports blockers, naming them", () => {
     const g = approvalGate({ kind: "ready", preview: preview({ canApprove: false, blockingReasons: [{ code: "exceeds_available_budget", message: "$587.56 exceeds available $100.00" }] }) }, 2, true);

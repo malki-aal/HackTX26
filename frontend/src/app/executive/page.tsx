@@ -65,50 +65,57 @@ export default function ExecutivePage() {
         <ul className="space-y-3">
           {rows.map((a) => (
             <li key={a.proposalId}>
-              <Link
-                href={`/executive/${a.proposalId}`}
-                className="block rounded-2xl bg-paper p-4 shadow-[0_1px_2px_rgba(16,24,40,0.06),0_2px_8px_rgba(16,24,40,0.04)] active:bg-raised"
-              >
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[17px] font-semibold leading-snug">{a.title}</span>
-                  <span className="shrink-0 text-[16px] font-semibold tabular-nums">{formatCents(a.exactAmountCents)}</span>
-                </div>
-                <div className="mt-2 flex gap-3">
-                  {a.imageUrl && isSafeHttpUrl(a.imageUrl) && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={a.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg bg-raised object-contain" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="line-clamp-2 text-[14px]">{a.selectedTitle}</p>
-                    <p className="text-[13px] text-muted">{[a.quantityText, a.seller].filter(Boolean).join(" · ")}</p>
+              <div className="rounded-2xl bg-paper p-4 shadow-[0_1px_2px_rgba(16,24,40,0.06),0_2px_8px_rgba(16,24,40,0.04)]">
+                <Link href={`/executive/${a.proposalId}`} className="block active:opacity-80">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[17px] font-semibold leading-snug">{a.title}</span>
+                    <span className="shrink-0 text-[16px] font-semibold tabular-nums">{formatCents(a.exactAmountCents)}</span>
                   </div>
-                </div>
-                <p className="mt-2 flex items-center gap-1.5 text-[13px] text-muted">
-                  <Avatar role="employee" size={20} />
-                  <span>
-                    {personLabel(a.requester, "Unknown requester")} · {a.submittedAt ? `Submitted ${formatWhen(a.submittedAt)}` : `Updated ${formatWhen(a.updatedAt)}`} · Revision {a.version}
-                  </span>
-                </p>
-                {tab === "pending" && (a.unresolved.length > 0 || a.offerStale) && (
-                  <p className="mt-2 text-[13px] font-medium text-orange-ink">
-                    {[a.offerStale ? "Offer evidence expired" : null, a.unresolved.length ? `${a.unresolved.length} unresolved` : null].filter(Boolean).join(" · ")}
-                  </p>
-                )}
-                {tab === "decided" && (
-                  <p className="mt-2 text-[14px] font-medium">
-                    {DECISION_LABEL[a.decision]}
-                    {a.execution && (
-                      <>
-                        {" · "}
-                        <ExecutionStatusText status={a.execution.status} />
-                      </>
+                  <div className="mt-2 flex gap-3">
+                    {a.imageUrl && isSafeHttpUrl(a.imageUrl) && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={a.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg bg-raised object-contain" />
                     )}
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 text-[14px]">{a.selectedTitle}</p>
+                      <p className="text-[13px] text-muted">{[a.quantityText, a.seller].filter(Boolean).join(" · ")}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 flex items-center gap-1.5 text-[13px] text-muted">
+                    <Avatar role="employee" size={20} />
+                    <span>
+                      {personLabel(a.requester, "Unknown requester")} · {a.submittedAt ? `Submitted ${formatWhen(a.submittedAt)}` : `Updated ${formatWhen(a.updatedAt)}`} · Revision {a.version}
+                    </span>
                   </p>
+                  {tab === "pending" && (a.unresolved.length > 0 || a.offerStale) && (
+                    <p className="mt-2 text-[13px] font-medium text-orange-ink">
+                      {[a.offerStale ? "Offer evidence expired" : null, a.unresolved.length ? `${a.unresolved.length} unresolved` : null].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
+                  {tab === "decided" && (
+                    <p className="mt-2 text-[14px] font-medium">
+                      {DECISION_LABEL[a.decision]}
+                      {a.execution && (
+                        <>
+                          {" · "}
+                          <ExecutionStatusText status={a.execution.status} />
+                        </>
+                      )}
+                    </p>
+                  )}
+                  {tab === "decided" && a.latestDecision?.note && (
+                    <p className="mt-1 line-clamp-2 text-[13px] text-muted">Note: {a.latestDecision.note}</p>
+                  )}
+                </Link>
+                {tab === "pending" && (
+                  <Link
+                    href={`/executive/${a.proposalId}`}
+                    className="mt-3 flex h-11 w-full items-center justify-center rounded-xl bg-accent text-[15px] font-semibold text-white active:bg-accent-press"
+                  >
+                    Review
+                  </Link>
                 )}
-                {tab === "decided" && a.latestDecision?.note && (
-                  <p className="mt-1 line-clamp-2 text-[13px] text-muted">Note: {a.latestDecision.note}</p>
-                )}
-              </Link>
+              </div>
             </li>
           ))}
         </ul>

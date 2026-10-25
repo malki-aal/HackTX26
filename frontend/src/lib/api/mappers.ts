@@ -101,12 +101,12 @@ export type PreviewState =
  */
 export function approvalGate(s: PreviewState, reviewedVersion: number, confirmed: boolean): { enabled: boolean; reason: string | null } {
   if (s.kind === "loading") return { enabled: false, reason: "Checking the budget before approval…" };
-  if (s.kind === "error") return { enabled: false, reason: `Budget check unavailable: ${s.message} Refresh to try again. You can still request changes or reject.` };
+  if (s.kind === "error") return { enabled: false, reason: `Budget check unavailable: ${s.message} Refresh to try again. You can still choose Change or Deny.` };
   const p = s.preview;
   if (p.proposalVersion !== reviewedVersion) return { enabled: false, reason: "This proposal changed since you opened it. Reload to review the latest revision." };
   if (!p.canApprove) {
     const why = p.blockingReasons.map((r) => r.message).join("; ") || "The server reported a blocker.";
-    return { enabled: false, reason: `Approval is blocked: ${why}. You can still request changes or reject.` };
+    return { enabled: false, reason: `Approval is blocked: ${why}. You can still choose Change or Deny.` };
   }
   if (!confirmed) return { enabled: false, reason: "Tick the confirmation to approve." };
   return { enabled: true, reason: null };
