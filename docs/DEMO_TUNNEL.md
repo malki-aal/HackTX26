@@ -1,4 +1,24 @@
-# Demo hosting: local backend + Cloudflare quick tunnel
+# Demo hosting: local backend + public HTTPS
+
+## Primary: Tailscale Funnel (fixed URL)
+
+```bash
+cd backend && ./scripts/demo-funnel.sh
+```
+
+- **Public base URL (fixed):** `https://salehs-macbook-air.taild1c525.ts.net/api/v1`. It is also saved to `backend/var/public-url.txt`.
+  - The URL stays the same across backend restarts, launcher restarts, reboots and sleep. It only changes if the machine is renamed in the Tailscale admin, or if Tailscale is signed out or the machine removed.
+  - Set `NEXT_PUBLIC_API_BASE_URL` in Vercel once.
+- **What the launcher does:**
+  - stops the old quick tunnel;
+  - starts the backend, blocks idle sleep, and restarts the backend if it crashes;
+  - checks that public health returns 200 and that an unauthenticated `/me` returns 401.
+- **Funnel config:** `tailscale funnel --bg http://127.0.0.1:8000` is stored by Tailscale and survives reboots. Check it with `tailscale funnel status`, and turn it off with `tailscale funnel --https=443 off`.
+- **Still needs this Mac** to be on, awake, plugged in and online, with Tailscale running. If the Mac sleeps or goes offline, the API is down, but it comes back at the **same URL** once the Mac is awake and the launcher is running.
+- **After a reboot**, rerun `./scripts/demo-funnel.sh`. The Funnel config persists, but the backend doesn't start by itself.
+- **Checking it from this Mac:** curl can short-circuit over the tailnet. To test the public path, resolve through public DNS, for example `dig +short <host> @1.1.1.1`, then use `curl --resolve <host>:443:<ip>`.
+
+## Fallback: Cloudflare quick tunnel (URL changes every restart)
 
 This is the hackathon setup. The backend runs on a laptop and a free Cloudflare quick tunnel gives it a public HTTPS URL. There's no hosting cost and no account. The Vercel/Supabase migration is paused; see `MIGRATION_HANDOFF.md` on branch `migrate/vercel-supabase`.
 
@@ -29,7 +49,7 @@ On demo day, start the launcher once, update Vercel once, and don't restart. Whi
 | Name | Value |
 | --- | --- |
 | `NEXT_PUBLIC_API_MODE` | `live` |
-| `NEXT_PUBLIC_API_BASE_URL` | `https://<current-tunnel>.trycloudflare.com/api/v1` |
+| `NEXT_PUBLIC_API_BASE_URL` | `https://salehs-macbook-air.taild1c525.ts.net/api/v1` (Funnel), or the current quick-tunnel URL if you use the fallback |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | publishable key of the **same** Clerk app as `backend/.env` |
 | `CLERK_SECRET_KEY` | the same Clerk app's secret, server-only (never `NEXT_PUBLIC_`) |
 
