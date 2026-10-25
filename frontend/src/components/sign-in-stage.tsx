@@ -1,31 +1,49 @@
 // Animated backdrop for the sign-in page: columns of small low-poly green "bills" that scroll up and down
 // in alternating directions. Pure CSS animation, decoration only; it stands still with reduced motion.
 
-const GREENS = ["#14532d", "#166534", "#15803d", "#22863a", "#4caf50", "#6fcf75", "#9be3a0", "#c4f0c6"];
-const COLUMNS = 36;
-const BILLS = 16;
+// Flat note in the reference style: a darker rim, a lighter face, notched corners, two dots and a centre
+// medallion (no symbol on it). Each bill borrows one of these shade sets, so the field runs from dark to light green.
+const THEMES = [
+  { rim: "#2f8f2f", face: "#4cb04c", ink: "#2f8f2f" },
+  { rim: "#14532d", face: "#2f8a43", ink: "#14532d" },
+  { rim: "#1f6f35", face: "#45a35a", ink: "#1f6f35" },
+  { rim: "#4caf50", face: "#a5e3a8", ink: "#3d9a42" },
+  { rim: "#6fcf75", face: "#c9f2cb", ink: "#58b85e" },
+  { rim: "#166534", face: "#3f9d52", ink: "#166534" },
+];
+const COLUMNS = 40;
+const BILLS = 18;
+const BILL_W = 36;
+const BILL_H = 76;
+const GAP_Y = 10;
 
 // Deterministic so server and client render the same markup.
-const pick = (i: number, salt: number) => {
-  const n = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
-  return Math.floor((n - Math.floor(n)) * GREENS.length);
+const pick = (i: number) => {
+  const n = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+  return Math.floor((n - Math.floor(n)) * THEMES.length);
 };
 
 function Bill({ seed }: { seed: number }) {
-  const a = GREENS[pick(seed, 1)];
-  let b = GREENS[pick(seed, 2)];
-  if (b === a) b = GREENS[(pick(seed, 2) + 3) % GREENS.length];
-  const c = GREENS[pick(seed, 3)];
+  const t = THEMES[pick(seed)];
   return (
-    <div
-      className="relative mb-3 h-[100px] w-[48px] shrink-0 overflow-hidden rounded-[3px]"
-      style={{ background: `linear-gradient(${pick(seed, 4) % 2 ? 135 : 45}deg, ${a} 50%, ${b} 50%)` }}
+    <svg
+      width={BILL_W}
+      height={BILL_H}
+      viewBox="0 0 48 100"
+      className="shrink-0"
+      style={{ marginBottom: GAP_Y }}
+      aria-hidden
     >
-      {/* Facets and a centre emblem keep it reading as a note, not a plain block. */}
-      <div className="absolute inset-[5px] rounded-[2px] border border-white/35" />
-      <div className="absolute left-1/2 top-1/2 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 rotate-45" style={{ background: c, opacity: 0.9 }} />
-      <div className="absolute left-0 top-0 h-0 w-0 border-l-[16px] border-t-[16px] border-l-transparent" style={{ borderTopColor: "rgba(255,255,255,0.28)" }} />
-    </div>
+      <rect width="48" height="100" rx="3" fill={t.rim} />
+      <rect x="6" y="6" width="36" height="88" rx="2" fill={t.face} />
+      <circle cx="6" cy="6" r="7" fill={t.ink} />
+      <circle cx="42" cy="6" r="7" fill={t.ink} />
+      <circle cx="6" cy="94" r="7" fill={t.ink} />
+      <circle cx="42" cy="94" r="7" fill={t.ink} />
+      <circle cx="24" cy="24" r="5" fill={t.ink} />
+      <circle cx="24" cy="76" r="5" fill={t.ink} />
+      <circle cx="24" cy="50" r="12" fill={t.ink} />
+    </svg>
   );
 }
 
@@ -36,7 +54,7 @@ function Column({ index }: { index: number }) {
     <div className="shrink-0 overflow-visible">
       <div
         className={up ? "bills-up" : "bills-down"}
-        style={{ animationDuration: `${34 + (index % 5) * 6}s`, animationDelay: `-${(index * 7) % 30}s` }}
+        style={{ animationDuration: `${(BILL_H + GAP_Y) * BILLS / (22 + (index % 5) * 5)}s`, animationDelay: `-${(index * 7) % 30}s` }}
       >
         {bills}
         {bills}
@@ -48,7 +66,7 @@ function Column({ index }: { index: number }) {
 export function SignInStage({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative isolate min-h-dvh overflow-hidden bg-[#dff2e2]">
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 flex justify-center gap-4 opacity-75">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 flex justify-center gap-3 opacity-80">
         {Array.from({ length: COLUMNS }, (_, i) => (
           <Column key={i} index={i} />
         ))}

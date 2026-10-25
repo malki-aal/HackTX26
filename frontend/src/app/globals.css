@@ -138,7 +138,8 @@ select {
 }
 .bills-up,
 .bills-down {
-  animation: linear infinite;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
   will-change: transform;
 }
 .bills-up { animation-name: bills-up; }
