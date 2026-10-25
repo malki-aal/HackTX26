@@ -98,3 +98,25 @@ employee sees the note and can choose offers again and resubmit a new revision.
 Without keys the app runs in explicit demo mode. **Not verified:** a real Google sign-in has never run (no Clerk application or keys), and the
 backend does not verify tokens or roles yet, so nothing is protected. With a fake publishable key the build and the middleware engage and redirect to
 Clerk, as expected. Passkey or Face ID approval is not built.
+
+
+## Four demo scenarios (feat/four-scenarios)
+
+**New Request → "Try an example"** at the top of the form. It offers "Start from scratch" plus four examples:
+- Manufacturing — Restock wood glue
+- Growing business — Equip incoming interns
+- Café — Replace a broken blender
+- Community nonprofit — Power an outreach event
+
+**How the examples behave:**
+- Choosing one fills the editable form immediately: title, reason, item, quantity and unit, budget, condition, must-haves, nice-to-haves, needed-by date and hard deadline.
+- It shows "Example loaded — edit anything.", announced to screen readers.
+- It never submits, confirms, calls Gemini or searches.
+- If you've edited the form, it asks "Replace current details" or "Keep editing" first.
+- Dates are computed in America/Chicago when the example loads, shown as concrete dates and saved as such.
+
+**Data and contract:**
+- Presets come from `GET /api/v1/demo/scenarios` in live mode, or the bundled copy in sample-data mode.
+- Contract changes are in `backend/docs/CONTRACT_V3_EXECUTIVE_AUTH.md` §12.
+
+**Layout:** item-type questions with many or long options use a stacked list (`ChoiceList`) instead of the pill row, so nothing runs off a phone screen.

@@ -6,10 +6,10 @@ describe("multi-item request flow", () => {
   it("creates separate item searches within a shared budget without requiring the unsupported single-request path", async () => {
     const h = harness();
     const result = await h.call("POST", "/api/v1/projects", {
-      title: "Desk organizer prototypes", purpose: "Build prototypes", budgetCents: 10000, agentConfigId: "cfg_default",
+      title: "Workshop restock", purpose: "Restock the line and power the open day", budgetCents: 60000, agentConfigId: "cfg_default",
       lines: [
-        { key: "glue", title: "Wood glue", description: "Wood glue required", quantity: 2, unit: "bottles", budgetCents: 3000, allowedCondition: "any" },
-        { key: "cork", title: "Cork sheets", description: "Cork sheets required", quantity: 5, unit: "sheets", budgetCents: 7000, allowedCondition: "any" },
+        { key: "glue", title: "Wood glue", description: "Wood glue required", quantity: 2, unit: "bottles", budgetCents: 10000, allowedCondition: "any" },
+        { key: "power", title: "Portable power station", description: "Portable power station, at least 500 Wh", quantity: 5, unit: "power stations", budgetCents: 50000, allowedCondition: "any" },
       ],
     });
     expect(result.status).toBe(201);
@@ -18,12 +18,12 @@ describe("multi-item request flow", () => {
     expect(project.lines.map((line: { quantity: number }) => line.quantity)).toEqual([2, 5]);
     const confirm = await h.call("POST", `/api/v1/projects/${project.id}/confirm`, {});
     expect(confirm.body.data.results.every((line: { result: string }) => line.result === "confirmed")).toBe(true);
-    const research = await h.call("POST", `/api/v1/projects/${project.id}/research`, { lineKeys: ["glue", "cork"] });
+    const research = await h.call("POST", `/api/v1/projects/${project.id}/research`, { lineKeys: ["glue", "power"] });
     expect(research.status).toBe(202);
     expect(research.body.data.results.every((line: { result: string }) => line.result === "started")).toBe(true);
     for (const line of research.body.data.results) await awaitRun(line.runId);
     expect(h.shopping.calls.some((q) => /wood glue/i.test(q.q))).toBe(true);
-    expect(h.shopping.calls.some((q) => /cork/i.test(q.q))).toBe(true);
+    expect(h.shopping.calls.some((q) => /power station/i.test(q.q))).toBe(true);
     expect(h.bank.state.purchases).toHaveLength(0);
   });
 });

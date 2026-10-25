@@ -1,4 +1,5 @@
 import type { RunwayApi } from "./client";
+import { BUNDLED_SCENARIOS } from "../scenarios";
 import type {
   ActivityItem,
   ActivityPage,
@@ -369,6 +370,10 @@ function activity(db: Db): ActivityPage {
 }
 
 export const fixtureApi: RunwayApi = {
+  async getScenarios() {
+    return BUNDLED_SCENARIOS;
+  },
+
   async createProject(input) {
     const id = uid("prj");
     const lines: ProjectView["lines"] = [];

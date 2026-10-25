@@ -1863,7 +1863,58 @@
     },
     "/api/v1/categories": {
       "get": {
-        "summary": "Supported item categories (id, labels, unit, specs, features)",
+        "summary": "Item categories (id, labels, unit, specs, features; `selectable` = offered for new requests)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/demo/scenarios": {
+      "get": {
+        "summary": "Example presets for the New Request form (four sectors). Read-only; creates and researches nothing",
         "parameters": [],
         "responses": {
           "200": {
@@ -2607,7 +2658,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Clerk session token from the frontend (getToken()). Public routes: /health, /categories, /demo/manufacturing. In fixtures demo mode, X-Demo-Actor: employee-demo|executive-demo instead."
+        "description": "Clerk session token from the frontend (getToken()). Public routes: /health, /categories, /demo/manufacturing, /demo/scenarios. In fixtures demo mode, X-Demo-Actor: employee-demo|executive-demo instead."
       }
     },
     "schemas": {
@@ -3580,9 +3631,107 @@
                     "value",
                     "unit"
                   ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "capacity_wh"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 50000
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "wh"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "ac_outlets"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 12
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "outlets"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
                 }
               ]
             }
+          },
+          "presetId": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{2,60}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4393,9 +4542,107 @@
                     "value",
                     "unit"
                   ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "capacity_wh"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 50000
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "wh"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "ac_outlets"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 12
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "outlets"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
                 }
               ]
             }
+          },
+          "presetId": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{2,60}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "expectedVersion": {
             "type": "integer",
@@ -5153,6 +5400,92 @@
               "value",
               "unit"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "capacity_wh"
+              },
+              "operator": {
+                "type": "string",
+                "const": "gte"
+              },
+              "value": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 50000
+              },
+              "unit": {
+                "type": "string",
+                "const": "wh"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "ac_outlets"
+              },
+              "operator": {
+                "type": "string",
+                "const": "gte"
+              },
+              "value": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 12
+              },
+              "unit": {
+                "type": "string",
+                "const": "outlets"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
           }
         ]
       },
@@ -5785,6 +6118,65 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "volume": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requiredMl": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "perPackageMl": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "purchasedMl": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "excessMl": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "requiredMl",
+                      "perPackageMl",
+                      "purchasedMl",
+                      "excessMl"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [

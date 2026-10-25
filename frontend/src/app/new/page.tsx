@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type ApiError, type Condition, type DeadlineKind, type NewRequestInput } from "@/lib/api";
 import { parseDollarsToCents } from "@/lib/money";
+import { BLANK_FORM, dateInZone, isDirty, presetToForm, type RequestFormState, type ScenarioPreset } from "@/lib/scenarios";
 import {
   Button,
   ErrorNote,
+  useLoad,
   Field,
   Page,
   PageHeader,
@@ -31,11 +33,6 @@ interface ItemRow {
 
 const blankItem = (key: number): ItemRow => ({ key, name: "", quantity: "1", unit: "units", budget: "", specifications: "" });
 
-function isoDateIn(days: number): string {
-  const d = new Date(Date.now() + days * 86_400_000);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 export default function NewRequestPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -51,25 +48,61 @@ export default function NewRequestPage() {
   const [apiError, setApiError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
 
-  // Fills editable inputs only. Nothing is submitted or researched until the user continues.
-  function loadDemo() {
-    setTitle("Desk organizer prototypes");
-    setPurpose(
-      "An intern pitched five desk-organizer prototypes built from leftover wood. We need glue, cork backing and screws to finish them.",
-    );
-    setItems([
-      { key: 1, name: "Wood glue", quantity: "2", unit: "bottles", budget: "30", specifications: "Glue rated for wood" },
-      { key: 2, name: "Cork sheet with adhesive backing", quantity: "5", unit: "sheets", budget: "40", specifications: "At least 12 × 12 in\nAdhesive backing" },
-      { key: 3, name: "Wood screws", quantity: "1", unit: "box", budget: "30", specifications: "#6 × 3/4 in\nHardwood-rated" },
-    ]);
-    setMandatory("");
-    setPreferences("Free shipping");
-    setCondition("new");
-    setBudget("100");
-    setDeadline(isoDateIn(10));
-    setDeadlineKind("hard");
+  // ---- Example presets: they fill editable inputs only. Nothing is created, confirmed or researched. ----
+  const scenarios = useLoad(() => api.getScenarios(), []);
+  const [presetId, setPresetId] = useState<string>("");
+  const [eventNote, setEventNote] = useState<string | null>(null);
+  const [baseline, setBaseline] = useState<RequestFormState>(BLANK_FORM);
+  const [pendingChoice, setPendingChoice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(false), 1200);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  const form: RequestFormState = {
+    title, purpose, itemName: items[0]?.name ?? "", quantity: items[0]?.quantity ?? "", unit: items[0]?.unit ?? "",
+    budget, mandatory, preferences, condition, deadline, deadlineKind,
+  };
+  const dirty = items.length > 1 || isDirty(form, baseline);
+
+  function applyForm(next: RequestFormState, preset: ScenarioPreset | null, timeZone: string) {
+    setTitle(next.title);
+    setPurpose(next.purpose);
+    setItems([{ key: 1, name: next.itemName, quantity: next.quantity, unit: next.unit, budget: "", specifications: "" }]);
+    setBudget(next.budget);
+    setMandatory(next.mandatory);
+    setPreferences(next.preferences);
+    setCondition(next.condition);
+    setDeadline(next.deadline);
+    setDeadlineKind(next.deadlineKind);
+    setBaseline(next);
+    setPresetId(preset?.id ?? "");
+    const eventDate = preset?.eventDays ? new Date(`${dateInZone(preset.eventDays, timeZone)}T12:00:00`) : null;
+    setEventNote(eventDate ? `Event date: ${eventDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : null);
     setErrors({});
     setApiError(null);
+    setPendingChoice(null);
+    setNotice(preset ? "Example loaded — edit anything." : "Cleared. Start from scratch.");
+    setFlash(!!preset);
+  }
+
+  function choose(id: string) {
+    if (id === presetId) return;
+    if (dirty) {
+      setPendingChoice(id); // ask before replacing edits
+      return;
+    }
+    load(id);
+  }
+
+  function load(id: string) {
+    const set = scenarios.data;
+    const preset = set?.scenarios.find((x) => x.id === id) ?? null;
+    if (id && (!set || !preset)) return;
+    applyForm(preset ? presetToForm(preset, set!.timezone) : BLANK_FORM, preset, set?.timezone ?? "America/Chicago");
   }
 
   const setItem = (key: number, patch: Partial<ItemRow>) =>
@@ -97,6 +130,7 @@ export default function NewRequestPage() {
     setApiError(null);
     try {
       const input: NewRequestInput = {
+        ...(presetId ? { presetId } : {}),
         title: title.trim(),
         purpose: purpose.trim(),
         items: items.map((it) => ({ name: it.name.trim(), quantity: Number(it.quantity), unit: it.unit.trim() || "units", specifications: lines(it.specifications), budgetCents: parseDollarsToCents(it.budget) ?? undefined })),
@@ -137,10 +171,38 @@ export default function NewRequestPage() {
   return (
     <Page>
       <PageHeader title="New request" />
-      <details className="mb-6 text-[14px]"><summary className="cursor-pointer text-muted">Try an example</summary>
-        <button type="button" onClick={loadDemo} className="mt-2 font-medium text-accent">Load desk organizer project</button>
-      </details>
-      <form onSubmit={submit} noValidate>
+      <div className="mb-6">
+        <label htmlFor="example" className="mb-1.5 block text-[15px] font-medium">Try an example</label>
+        <select
+          id="example"
+          className={inputClass}
+          value={pendingChoice ?? presetId}
+          disabled={!scenarios.data}
+          onChange={(e) => choose(e.target.value)}
+          aria-describedby="example-status"
+        >
+          <option value="">Start from scratch</option>
+          {scenarios.data?.scenarios.map((sc) => (
+            <option key={sc.id} value={sc.id}>{sc.sector} — {sc.menuLabel}</option>
+          ))}
+        </select>
+        {scenarios.error && <ErrorNote error={scenarios.error} onRetry={scenarios.reload} />}
+        {pendingChoice !== null && (
+          <div role="alert" className="mt-2 rounded-xl bg-orange-soft p-3 text-[14px]">
+            <p className="font-medium">Replace what you&apos;ve entered?</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" className="rounded-full bg-accent px-4 py-2 font-semibold text-white" onClick={() => load(pendingChoice)}>
+                Replace current details
+              </button>
+              <button type="button" className="rounded-full bg-raised px-4 py-2 font-semibold" onClick={() => setPendingChoice(null)}>
+                Keep editing
+              </button>
+            </div>
+          </div>
+        )}
+        <p id="example-status" aria-live="polite" className="mt-1.5 min-h-[1.25rem] text-[13px] text-muted">{notice}</p>
+      </div>
+      <form onSubmit={submit} noValidate className={`rounded-2xl transition-colors duration-700 ${flash ? "bg-accent-soft" : ""}`}>
         <Section title="Basics">
         <Field required label="Title" htmlFor="title" error={errors.title}>
           <input id="title" className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)}
@@ -230,6 +292,7 @@ export default function NewRequestPage() {
         <Field label="Needed by" htmlFor="deadline">
           <input id="deadline" type="date" className={inputClass} value={deadline} onChange={(e) => setDeadline(e.target.value)} />
         </Field>
+        {eventNote && <p className="-mt-3 mb-4 text-[13px] text-muted">{eventNote}. The item must arrive by the date above so it can be checked first.</p>}
         {deadline && (
           <div className="-mt-2 mb-5">
             <Segmented label="Deadline type" value={deadlineKind} onChange={setDeadlineKind}

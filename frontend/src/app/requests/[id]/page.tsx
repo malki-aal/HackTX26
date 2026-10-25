@@ -20,7 +20,9 @@ import {
   Page,
   PageHeader,
   Section,
+  ChoiceList,
   Segmented,
+  needsChoiceList,
   formatWhen,
   normalizeError,
   useLoad,
@@ -117,7 +119,9 @@ function Summary({ req }: { req: PurchaseRequest }) {
         <KeyValue label="Condition" value={CONDITION_LABEL[req.condition]} />
       </dl>
       <h3 className="mb-1 mt-3 text-[15px] font-semibold">Must have</h3>
-      <ul className="list-disc pl-5 text-[16px]">{req.mandatory.map((m) => <li key={m}>{m}</li>)}</ul>
+      {req.mandatory.length
+        ? <ul className="list-disc pl-5 text-[16px]">{req.mandatory.map((m) => <li key={m}>{m}</li>)}</ul>
+        : <p className="text-[15px] text-muted">None stated</p>}
       {req.preferences.length > 0 && (
         <>
           <h3 className="mb-1 mt-3 text-[15px] font-semibold">Nice to have</h3>
@@ -167,8 +171,10 @@ function Review({ req, onChange }: { req: PurchaseRequest; onChange: (r: Purchas
       {req.clarifications.map((c) => (
         <div key={c.id} className="mb-4">
           <p className="mb-1.5 text-[16px]">{c.question}</p>
-          {c.options.length ? <Segmented label={c.question} value={answerOf(c.id, c.answer) ?? ""}
-            onChange={(v) => setAnswers({ ...answers, [c.id]: v })} options={c.options} /> :
+          {c.options.length ? (needsChoiceList(c.options)
+            ? <ChoiceList label={c.question} value={answerOf(c.id, c.answer) ?? ""} onChange={(v) => setAnswers({ ...answers, [c.id]: v })} options={c.options} />
+            : <Segmented label={c.question} value={answerOf(c.id, c.answer) ?? ""}
+            onChange={(v) => setAnswers({ ...answers, [c.id]: v })} options={c.options} />) :
             <input aria-label={c.question} className="w-full rounded-xl border border-rule p-3" value={answerOf(c.id, c.answer) ?? ""} onChange={(e) => setAnswers({ ...answers, [c.id]: e.target.value })} />}
         </div>
       ))}
@@ -394,6 +400,8 @@ function ItemOffers({
       </div>
       <p className="mt-0.5 text-[13px] text-muted">{o.seller}</p>
       <p className="mt-2 text-[16px] tabular-nums">{priceLine(o)}</p>
+      {/* Volume orders: how many containers cover the amount, and any excess (or why it can't be verified). */}
+      {o.costNotes.filter((n) => /fl oz/.test(n)).map((n) => <p key={n} className="text-[13px] text-muted">{n}</p>)}
       {!o.tradeoff && <p className="text-[14px] text-muted">{deliveryLine(o)}</p>}
       <p className="mt-1 text-[14px]">{o.tradeoff ?? o.rankNote}</p>
       <div className="mt-2 flex items-center gap-4">

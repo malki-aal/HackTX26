@@ -97,7 +97,21 @@ function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): Re
       const e = ev[0];
       if (!e) return result("unknown", [], "No volume stated");
       const v = e.value as number;
-      return v >= req.value ? result("supported", [e.id], `States ${v} ml`) : result("contradicted", [e.id], `States ${v} ml, below ${req.value} ml`);
+      const oz = (ml: number) => Math.round((ml / 29.5735) * 10) / 10;
+      return v >= req.value ? result("supported", [e.id], `States ${oz(v)} fl oz (${v} ml)`) : result("contradicted", [e.id], `States ${oz(v)} fl oz, below ${oz(req.value)} fl oz`);
+    }
+    case "capacity_wh": {
+      // Only a stated watt-hour figure counts; output watts are never treated as capacity.
+      const e = ev[0];
+      if (!e) return result("unknown", [], "No battery capacity in Wh stated");
+      const v = e.value as number;
+      return v >= req.value ? result("supported", [e.id], `States ${v} Wh`) : result("contradicted", [e.id], `States ${v} Wh, below ${req.value} Wh`);
+    }
+    case "ac_outlets": {
+      const e = ev[0];
+      if (!e) return result("unknown", [], "Number of AC outlets not stated");
+      const v = e.value as number;
+      return v >= req.value ? result("supported", [e.id], `States ${v} AC outlet${v === 1 ? "" : "s"}`) : result("contradicted", [e.id], `States ${v} AC outlet${v === 1 ? "" : "s"}, fewer than ${req.value}`);
     }
     case "dimensions": {
       const e = ev[0];
@@ -140,13 +154,40 @@ function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): Re
   }
 }
 
-export function calculatePurchaseCost(offer: Offer, requestedQuantity: number): PurchaseCost {
+const flOz = (ml: number) => Math.round((ml / 29.5735) * 10) / 10;
+
+export function calculatePurchaseCost(offer: Offer, requestedQuantity: number, opts: { requiredMl?: number | null } = {}): PurchaseCost {
   const notes: string[] = [];
   const priceUsable = offer.listedPriceCents !== null && offer.priceBasis === "one_time" && offer.currency === "USD";
   const packQty = offer.packageQuantity;
-  const packagesRequired = packQty ? Math.ceil(requestedQuantity / packQty) : null;
-  if (packQty && packQty > 1) notes.push(`Listing is a ${packQty}-pack; ${packagesRequired} package(s) needed for ${requestedQuantity}`);
-  if (packQty && packagesRequired && packQty * packagesRequired > requestedQuantity) notes.push(`Buying ${packQty * packagesRequired} units to cover ${requestedQuantity}`);
+  let packagesRequired: number | null;
+  let volume: PurchaseCost["volume"] = null;
+  if (opts.requiredMl) {
+    // The order is a total volume: cover it with whole packages of the stated volume (a 2-pack of 64 fl oz = 128 fl oz).
+    const each = offer.evidence.find((e) => e.attribute === "volume")?.value as number | undefined;
+    const perPackageMl = each && packQty ? each * packQty : null;
+    // Volumes are stored as whole ml, so 4 × 32 fl oz (946 ml each) can read 1 ml short of 128 fl oz.
+    // A 0.2% tolerance absorbs that rounding; it is far below a single container.
+    const target = opts.requiredMl * 0.998;
+    packagesRequired = perPackageMl ? Math.ceil(target / perPackageMl) : null;
+    // Purchased and excess volume are computed from each package's stated size in fl oz (to 0.1), so
+    // ml rounding never shows up as a phantom 0.2 fl oz.
+    const perOz = perPackageMl ? flOz(perPackageMl) : null;
+    const purchasedOz = perOz !== null && packagesRequired ? Math.round(perOz * packagesRequired * 10) / 10 : null;
+    const excessOz = purchasedOz === null ? null : Math.max(0, Math.round((purchasedOz - flOz(opts.requiredMl)) * 10) / 10);
+    volume = {
+      requiredMl: opts.requiredMl,
+      perPackageMl,
+      purchasedMl: purchasedOz === null ? null : Math.round(purchasedOz * 29.5735),
+      excessMl: excessOz === null ? null : Math.round(excessOz * 29.5735),
+    };
+    if (perPackageMl === null) notes.push(`Package volume is not stated in fluid units, so it cannot be verified to cover ${flOz(opts.requiredMl)} US fl oz`);
+    else notes.push(`${packagesRequired} × ${perOz} fl oz = ${purchasedOz} fl oz for ${flOz(opts.requiredMl)} fl oz needed${excessOz! > 0 ? ` (${excessOz} fl oz extra)` : ""}`);
+  } else {
+    packagesRequired = packQty ? Math.ceil(requestedQuantity / packQty) : null;
+    if (packQty && packQty > 1) notes.push(`Listing is a ${packQty}-pack; ${packagesRequired} package(s) needed for ${requestedQuantity}`);
+    if (packQty && packagesRequired && packQty * packagesRequired > requestedQuantity) notes.push(`Buying ${packQty * packagesRequired} units to cover ${requestedQuantity}`);
+  }
   const unit = priceUsable ? offer.listedPriceCents : null;
   const subtotal = unit !== null && packagesRequired !== null ? multiplyCents(unit, packagesRequired) : null;
   const shippingCents = offer.shipping.status === "known" && packagesRequired !== null ? offer.shipping.cents : null;
@@ -170,6 +211,7 @@ export function calculatePurchaseCost(offer: Offer, requestedQuantity: number): 
     totalStatus,
     provisional: true,
     notes,
+    volume,
   };
 }
 
@@ -190,6 +232,9 @@ export function classifyCandidate(offer: Offer, results: RequirementResult[], co
   unknowns.push("sales tax");
   unknowns.push(...offer.needsReviewReasons);
   if (offer.availability.status === "unknown") unknowns.push("availability");
+  // One listing does not show that several units are in stock.
+  if (!cost.volume && cost.requestedQuantity > 1) unknowns.push(`stock for ${cost.requestedQuantity} units not confirmed by the seller`);
+  if (cost.volume && cost.volume.perPackageMl === null) unknowns.push("package volume (fluid ounces) not stated");
   if (offer.delivery.latest === null && !results.some((r) => r.attribute === "delivery_by")) unknowns.push("delivery date");
 
   let affordability: CandidateEvaluation["affordability"] = "unknown";
@@ -247,10 +292,10 @@ export function rankCandidates(evals: Array<Omit<CandidateEvaluation, "rank">>, 
   return sorted.map((e, i) => ({ ...e, rank: i + 1 }));
 }
 
-export function evaluateCandidates(offers: Offer[], requirements: Requirement[], quantity: number, budgetCents: number, priority: RankingPriority = "lowest_known_total"): CandidateEvaluation[] {
+export function evaluateCandidates(offers: Offer[], requirements: Requirement[], quantity: number, budgetCents: number, priority: RankingPriority = "lowest_known_total", opts: { requiredMl?: number | null } = {}): CandidateEvaluation[] {
   const evals = offers.map((offer) => {
     const requirementResults = requirements.map((r) => evaluateRequirement(r, offer));
-    const cost = calculatePurchaseCost(offer, quantity);
+    const cost = calculatePurchaseCost(offer, quantity, opts);
     const cls = classifyCandidate(offer, requirementResults, cost, budgetCents);
     return {
       offerId: offer.id,
@@ -367,18 +412,22 @@ export function recommend(evals: CandidateEvaluation[], offers: Offer[], require
 
   // Best overall: documented lexicographic order, no opaque score.
   const deliveryRank = { meets: 0, no_deadline: 1, unknown: 1, late: 2 } as const;
+  // For a total-volume order, fewer containers to handle is better when everything above is equal.
+  const fewerPackages = (x: CandidateEvaluation, y: CandidateEvaluation) =>
+    x.cost.volume && y.cost.volume ? (x.cost.packagesRequired ?? Infinity) - (y.cost.packagesRequired ?? Infinity) : 0;
   const overall = [...eligible].sort(
     (a, b) =>
       deliveryRank[a.c.deliveryState] - deliveryRank[b.c.deliveryState] ||
       a.c.unknownCount - b.c.unknownCount ||
       b.c.preferencesSupported - a.c.preferencesSupported ||
+      fewerPackages(a.e, b.e) ||
       byCost(a.c, b.c) ||
       tie(a, b),
   );
   if (overall[0]) {
     const c = overall[0].c;
     pick(overall[0], "best_overall", [
-      "Best overall by, in order: delivery fit, fewest unknowns, most preferences met, then lower cost",
+      "Best overall by, in order: delivery fit, fewest unknowns, most preferences met, fewer containers (volume orders), then lower cost",
       `Delivery: ${c.deliveryState.replace("_", " ")}${c.deliveryLatest ? ` (stated ${c.deliveryLatest})` : ""}; unknowns: ${c.unknownCount}; preferences met: ${c.preferencesSupported}/${c.preferencesTotal}; cost: ${usd(c.knownComparableCostCents)}`,
     ]);
   }
