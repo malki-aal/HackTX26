@@ -19,7 +19,7 @@ function Narrow({ children }: { children: React.ReactNode }) {
 
 function Mark() {
   return (
-    <span className="flex items-center gap-2.5 rounded-full bg-paper py-2 pl-3 pr-4 shadow-[0_6px_18px_rgba(27,27,47,0.12)]">
+    <span className="flex items-center gap-2.5 rounded-full bg-paper py-2 pl-3 pr-4 shadow-[0_6px_18px_rgba(20,35,26,0.12)]">
       <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden>
         <path d="M13 0a13 13 0 0 1 0 26z" fill="var(--ink)" />
       </svg>
@@ -41,12 +41,12 @@ function Landing({ children }: { children: React.ReactNode }) {
             <h1 className="text-[clamp(48px,8vw,96px)] font-extrabold leading-[0.95] tracking-[-0.03em]">Runway</h1>
             <p className="mt-4 max-w-[26ch] text-[clamp(18px,2.2vw,26px)] font-semibold leading-snug tracking-tight">{TAGLINE}</p>
           </section>
-          <section className="w-full max-w-[440px] justify-self-center rounded-2xl bg-paper p-6 border border-rule shadow-[0_12px_32px_rgba(27,27,47,0.08)] sm:p-8 lg:justify-self-end">
+          <section className="w-full max-w-[440px] justify-self-center rounded-2xl bg-paper p-6 border border-rule shadow-[0_12px_32px_rgba(20,35,26,0.08)] sm:p-8 lg:justify-self-end">
             {children}
           </section>
         </main>
         <footer className="flex min-h-16 items-center py-3">
-          <p className="rounded-full bg-paper px-4 py-2 text-[13px] text-muted shadow-[0_6px_18px_rgba(27,27,47,0.12)]">
+          <p className="rounded-full bg-paper px-4 py-2 text-[13px] text-muted shadow-[0_6px_18px_rgba(20,35,26,0.12)]">
             Your role is set by Runway’s server, not by anything you choose here.
           </p>
         </footer>

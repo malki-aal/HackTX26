@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-// Original app icon: indigo square, white "R". Served as a PNG at /icons/180, /icons/192 and /icons/512.
+// Original app icon: green square, white "R". Served as a PNG at /icons/180, /icons/192 and /icons/512.
 export function generateStaticParams() {
   return [{ size: "180" }, { size: "192" }, { size: "512" }];
 }
@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ size: s
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#4f46e5",
+          background: "#14532d",
           color: "#ffffff",
           fontSize: px * 0.62,
           fontWeight: 800,
