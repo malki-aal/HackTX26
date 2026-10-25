@@ -22,6 +22,7 @@ import { getConfig } from "./agentConfigs.js";
 import { markIntegration } from "./budget.js";
 import { actorInfo } from "../auth/access.js";
 import { z } from "zod";
+import { formatUsd } from "../domain/money.js";
 
 const ORG_ID = "org_demo";
 const NON_MATERIAL_FIELDS = new Set(["title", "purpose"]);
@@ -53,18 +54,41 @@ function questionsFor(ctx: AppContext, id: string): ClarificationQuestion[] {
   return rows.map((r) => ({ ...json<Omit<ClarificationQuestion, "answer" | "answeredAt">>(r.question), answer: r.answer === null ? null : json(r.answer), answeredAt: r.answered_at }));
 }
 
+/** What the form already set, in words the model can match against. */
+function formValues(fields: RequestFields): string[] {
+  return [
+    `budget ${formatUsd(fields.budgetCents)} (${fields.budgetBasis ?? "total"})`,
+    `quantity ${fields.quantity}${fields.unit ? ` ${fields.unit}` : ""}`,
+    `condition ${fields.allowedCondition}`,
+    ...(fields.deadline ? [`needed by ${fields.deadline} (${fields.deadlineType ?? "hard"})`] : []),
+  ];
+}
+
+/**
+ * A model question about something the form already answers (budget, quantity, condition, deadline)
+ * would ask the requester to repeat themselves; it is dropped whatever the model was told.
+ */
+export function askedOnForm(q: { text: string; affects: string }, fields: RequestFields): boolean {
+  const t = `${q.affects} ${q.text}`.toLowerCase();
+  if (/\b(?:budget|price|cost|spend|afford|how much)\b/.test(t)) return true;
+  if (/\b(?:quantity|how many|number of units)\b/.test(t)) return true;
+  if (/\b(?:condition|refurbished|used|pre-?owned|brand[\s-]?new)\b/.test(t)) return true;
+  if (fields.deadline && /\b(?:deadline|needed by|need it by|by when|when do you need|delivery date|arrive by)\b/.test(t)) return true;
+  return false;
+}
+
 async function deriveRequirements(ctx: AppContext, fields: RequestFields): Promise<{ requirements: Requirement[]; extraction: ExtractionReport; modelQuestions: Array<{ text: string; affects: string }> }> {
   const base = deriveDomainRequirements(fields);
   const extraction: ExtractionReport = { deterministic: true, model: "skipped", modelError: null, droppedModelRequirements: [] };
   // Model extraction only runs once the category is known, and only fills specs that category has.
   if (!fields.description.trim() || !fields.category) return { requirements: base, extraction, modelQuestions: [] };
   try {
-    const out = await ctx.adapters.extractor.extract({ title: fields.title, description: fields.description, category: getCategory(fields.category)!.plural });
+    const out = await ctx.adapters.extractor.extract({ title: fields.title, description: fields.description, category: getCategory(fields.category)!.plural, alreadySet: formValues(fields) });
     const { merged, dropped } = mergeExtractedRequirements(base, out.requirements, `${fields.title} ${fields.description}`, fields.category);
     extraction.model = ctx.adapters.extractor.source === "fixture" ? "fixture" : "ok";
     extraction.droppedModelRequirements = dropped;
     if (extraction.model === "ok") markIntegration(ctx, "gemini", "ok", null, { model: ctx.config.gemini.model, via: "requirement extraction" });
-    return { requirements: merged, extraction, modelQuestions: out.questions.slice(0, 2) };
+    return { requirements: merged, extraction, modelQuestions: out.questions.filter((q) => !askedOnForm(q, fields)).slice(0, 2) };
   } catch (e) {
     extraction.model = e instanceof IntegrationError && e.code === "INTEGRATION_NOT_CONFIGURED" ? "not_configured" : "error";
     extraction.modelError = e instanceof Error ? e.message : "unknown error";

@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 const client = () => new NessieClient({ apiKey: "test-key", baseUrl: "https://nessie.test" });
 const input = { payeeAccountId: "acct_employee", amountCents: 12499, description: "Runway exe_123 | blender", date: "2026-10-25" };
 const calls = (f: ReturnType<typeof vi.fn>) =>
-  f.mock.calls.map(([url, init]: [string, RequestInit]) => ({ method: init?.method ?? "GET", path: new URL(url).pathname, body: init?.body ? JSON.parse(String(init.body)) : null }));
+  (f.mock.calls as Array<[string, RequestInit | undefined]>).map(([url, init]) => ({ method: init?.method ?? "GET", path: new URL(url).pathname, body: init?.body ? JSON.parse(String(init.body)) : null }));
 
 describe("Nessie transfer (current API has no payee on TransferCreate)", () => {
   it("records a deposit to the employee, then a matching company withdrawal, without payee_id", async () => {
