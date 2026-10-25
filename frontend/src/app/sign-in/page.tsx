@@ -10,7 +10,7 @@ import { SignInStage } from "@/components/sign-in-stage";
 import { authMode, homeFor } from "@/lib/auth/config";
 import { useIdentity } from "@/lib/auth/identity";
 
-const TAGLINE = "Turn purchase requests into approved, evidence-backed buys.";
+const TAGLINE = "Purchasing for small engineering and prototyping teams: researched options, human approval.";
 
 /** Status screens (checking, pending, unreachable…) keep the narrow phone layout inside the full-screen page. */
 function Narrow({ children }: { children: React.ReactNode }) {

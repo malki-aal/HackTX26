@@ -20,8 +20,22 @@ async function rateSlot(): Promise<void> {
       recent.push(now);
       return;
     }
-    await new Promise((r) => setTimeout(r, 60_000 - (now - recent[0]!) + 250));
+    const waitMs = 60_000 - (now - recent[0]!) + 250;
+    reportQuotaWait(waitMs);
+    await new Promise((r) => setTimeout(r, waitMs));
   }
+}
+
+/** Tell the Runway server about a real quota pause so the user sees it. Best effort, never blocks. */
+function reportQuotaWait(waitMs: number): void {
+  const url = process.env.RUNWAY_INTERNAL_URL;
+  const token = process.env.RUNWAY_INTERNAL_TOKEN;
+  if (!url || !token) return;
+  void fetch(`${url}/internal/agent-progress`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ waitMs }),
+  }).catch(() => {});
 }
 
 const model = wrapLanguageModel({

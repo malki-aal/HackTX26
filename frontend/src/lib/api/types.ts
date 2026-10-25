@@ -122,6 +122,10 @@ export interface Run {
   agentConfigName: string;
   agentConfigVersion: number;
   events: RunEvent[];
+  /** Every recorded event type in order (including internal steps), for the progress phase. */
+  trace: { type: string; at: string; tool?: string; waitMs?: number }[];
+  /** When the run's first event was recorded. */
+  startedAt: string | null;
   error?: string;
 }
 
@@ -132,6 +136,17 @@ export interface Finding {
   requirement: string;
   status: FindingStatus;
   evidence: string;
+  /** Backend requirement id (live mode). */
+  requirementId?: string;
+  /** True for must-haves. Unknown must-haves need verification or a recorded exception before submitting. */
+  mandatory?: boolean;
+}
+
+/** The requester's handling of one unconfirmed must-have: verified themselves, or a deliberate exception. */
+export interface RequirementResolution {
+  requirementId: string;
+  kind: "verified" | "exception";
+  note: string;
 }
 
 /** PROPOSED: backend-generated tradeoff labels. An offer may carry more than one. */
@@ -213,7 +228,7 @@ export interface ProposalReview {
   };
   alternatives: { title: string; seller: string | null; eligibility: string; costCents: number | null }[];
   budget: { status: string; availableCents: number | null; notes: string[] };
-  history: { version: number; at: string; decision: string; actor: string; note: string }[];
+  history: { version: number; at: string; decision: string; actor: PersonRef; note: string }[];
   revisions: { version: number; submittedAt: string | null; exactAmountCents: number | null }[];
 }
 
@@ -254,8 +269,15 @@ export interface ProposalLine {
   title: string;
   seller: string | null;
   sourceUrl: string | null;
+  imageUrl?: string;
   listedSubtotalCents: number | null;
   quantityText: string;
+}
+
+/** A person as the server identifies them. `demo` is true only for fixed demo identities (sample-data mode). */
+export interface PersonRef {
+  displayName: string;
+  demo: boolean;
 }
 
 export interface Proposal {
@@ -272,14 +294,50 @@ export interface Proposal {
   expenseSource: "user_confirmed";
   decision: DecisionState;
   decisionNote?: string;
-  /** Who requested it and who decided, as the backend records them (demo roles, not accounts). */
-  requester: string;
-  approval?: { actor: string; at: string; decision: string };
+  /** Who requested it and who decided last, as the server records them (verified accounts, or demo identities). */
+  requester: PersonRef | null;
+  approval?: { actor: PersonRef; at: string; decision: string };
   execution: ExecutionState;
   executionDetail?: ExecutionDetail;
   unresolved: string[];
+  /** How the requester verified, or deliberately excepted, each unconfirmed must-have (recorded at submission). */
+  requirementResolutions: { requirement: string; kind: "verified" | "exception"; note: string; evidenceReason: string }[];
   review?: ProposalReview;
   submittedAt?: string;
+  /** Executives only: the server's financial preview (cached bank context). Null for employees. */
+  financialAssessment?: FinancialPreview | null;
+}
+
+export interface BlockingReason {
+  code: string;
+  message: string;
+}
+
+/** `GET /proposals/:id/financial-preview`: what approval would do to Runway's available budget. Integer cents. */
+export interface FinancialPreview {
+  proposalId: string;
+  proposalVersion: number;
+  label: string;
+  /** Runway's available budget (ledger), not the bank's reported balance. */
+  currentAvailableCents: number | null;
+  exactExpenseCents: number | null;
+  projectedAvailableCents: number | null;
+  /** True when this proposal's reservation is already in the ledger, so it is not subtracted again. */
+  reservationIncluded: boolean;
+  freshness: { source: string; fetchedAt: string | null; refreshedNow: boolean; status: string };
+  canApprove: boolean;
+  blockingReasons: BlockingReason[];
+  amounts: {
+    researchListedSubtotalCents: number | null;
+    budgetCeilingCents: number;
+    exactExpenseCents: number | null;
+    amountSource: string | null;
+    approvedAmountCents: number | null;
+    providerStoredAmountCents: number | null;
+    discrepancyCents: number | null;
+  };
+  unknowns: string[];
+  notes: string[];
 }
 
 export interface SaveProposalInput {
@@ -287,21 +345,40 @@ export interface SaveProposalInput {
   justification: string;
   suitabilityConfirmed: boolean;
   expenseCents: number;
+  requirementResolutions?: RequirementResolution[];
 }
 
-/** One row of purchasing activity: a submitted proposal and, once approved, its execution. */
+/** One row of purchasing activity (`GET /proposals` item): a submitted proposal and its execution status. */
 export interface ActivityItem {
   proposalId: string;
   requestId: string;
+  version: number;
+  /** The request's title. */
   title: string;
   decision: DecisionState;
-  exactAmountCents: number;
+  /** Requester-confirmed expense; null if not confirmed. */
+  exactAmountCents: number | null;
   updatedAt: string;
+  submittedAt: string | null;
+  /** The selected product (offer) title, not the request title. */
   selectedTitle: string;
   seller: string | null;
+  imageUrl?: string;
   quantityText: string;
-  requester: string;
-  execution?: ExecutionDetail;
+  requester: PersonRef | null;
+  eligibility: string;
+  unresolved: string[];
+  offerStale: boolean;
+  latestDecision?: { decision: string; note: string; actor: PersonRef | null; at: string; version: number };
+  execution?: { id: string; status: ExecutionState; providerStatus: string | null };
+}
+
+/** Activity plus server-computed totals per decision state (over the whole scope, not just this page). */
+export interface ActivityPage {
+  items: ActivityItem[];
+  counts: Record<DecisionState, number>;
+  /** True if the server had more rows than were fetched. */
+  truncated: boolean;
 }
 
 export interface ApiError {

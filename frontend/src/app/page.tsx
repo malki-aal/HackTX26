@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { homeFor } from "@/lib/auth/config";
 import { api } from "@/lib/api";
 import { useIdentity } from "@/lib/auth/identity";
 import { PendingActivity } from "@/components/pending";
@@ -10,18 +13,26 @@ import { formatCents } from "@/lib/money";
 import { Empty, ErrorNote, Loading, Page, PageHeader, formatWhen, useLoad, usePolling } from "@/components/ui";
 
 export default function RequestsPage() {
-  const { data, error, loading, reload, refresh } = useLoad(() => api.listRequests(), []);
-  // Cached read: opening the list never asks the bank again.
   const { identity } = useIdentity();
+  const router = useRouter();
   const isExecutive = identity.status === "ready" && identity.role === "executive";
-  // Employees never request the company budget. (The backend must refuse it for them too.)
-  const budget = useLoad(() => (isExecutive ? api.getBudget({ fresh: false }).catch(() => null) : Promise.resolve(null)), [isExecutive]);
-  const activity = useLoad(() => api.listActivity().catch(() => []), []);
+  // Executives start at their approval queue (also when the home-screen app opens at "/").
+  useEffect(() => {
+    if (identity.status === "ready" && identity.role === "executive") router.replace(homeFor("executive"));
+  }, [identity, router]);
+  if (isExecutive) return null;
+  return <EmployeeRequests />;
+}
+
+function EmployeeRequests() {
+  const { data, error, loading, reload, refresh } = useLoad(() => api.listRequests(), []);
+  // Errors are shown, never replaced with an empty list.
+  const activity = useLoad(() => api.listActivity(), []);
   // A decision or a purchase update shows up on its own. Read-only polling.
   usePolling(async () => {
     await Promise.all([refresh(), activity.refresh()]);
   }, 5000);
-  const acts = activity.data ?? [];
+  const acts = activity.data?.items ?? [];
   const awaiting = acts.filter((a) => a.decision === "awaiting_review").length;
   const toRecord = acts.filter((a) => a.decision === "approved" && a.execution?.status !== "recorded").length;
 
@@ -29,8 +40,6 @@ export default function RequestsPage() {
     <Page>
       <PageHeader
         title="Requests"
-        amount={isExecutive ? (budget.loading ? undefined : (budget.data?.availableCents ?? null)) : undefined}
-        amountLabel={isExecutive ? "Available budget" : undefined}
         stats={[
           { label: "Requests", value: data ? data.length : "–" },
           { label: "Awaiting approval", value: activity.data ? awaiting : "–" },

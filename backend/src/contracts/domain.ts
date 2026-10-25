@@ -320,6 +320,7 @@ export const RunEventType = z.enum([
   "details_fetched",
   "candidates_normalized",
   "evaluation_completed",
+  "model_quota_wait",
   "budget_checked",
   "research_completed",
   "research_failed",
@@ -378,11 +379,28 @@ export const CreateProposalBody = z.object({
   actor: DemoActorField,
 });
 
+/**
+ * How the requester dealt with one mandatory requirement the evidence left unconfirmed: they verified it
+ * themselves (with how), or they deliberately proceed anyway (with why). Both are recorded for the reviewer.
+ */
+export const RequirementResolution = z.object({
+  requirementId: z.string().min(1).max(80),
+  kind: z.enum(["verified", "exception"]),
+  note: z
+    .string()
+    .transform((s) => s.replace(/\s+/g, " ").trim())
+    .pipe(z.string().min(3, "Explain how it was verified or why the exception is acceptable").max(500))
+    .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), "Note contains control characters"),
+});
+export type RequirementResolution = z.infer<typeof RequirementResolution>;
+
 export const SubmitProposalBody = z.object({
   version: z.number().int().positive(),
   technicalReviewConfirmed: z.literal(true),
   exactAmountCents: Cents.refine((v) => v > 0, "exactAmountCents must be positive"),
   amountSource: z.enum(["user_confirmed"]).default("user_confirmed"),
+  /** Required for every mandatory requirement whose evidence is unknown (see UNRESOLVED_REQUIREMENTS). */
+  requirementResolutions: z.array(RequirementResolution).max(30).default([]),
   actor: DemoActorField,
 });
 

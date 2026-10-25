@@ -1,8 +1,11 @@
 import type { RunwayApi } from "./client";
 import { UNAUTHORIZED_EVENT, getAuthToken } from "../auth/token";
 import { authMode } from "../auth/config";
+import { EMPTY_COUNTS, mapPreview, mapQueueItem, personOf, type BActorInfo, type BQueueItem } from "./mappers";
 import type {
   ActivityItem,
+  ActivityPage,
+  FinancialPreview,
   Me,
   ProposalReview,
   AgentConfig,
@@ -43,6 +46,14 @@ async function call<T>(
   path: string,
   init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<T> {
+  return (await callWithMeta<T>(path, init)).data;
+}
+
+/** Same as `call`, also returning the response `meta` (pagination cursors, counts, server time). */
+async function callWithMeta<T, M = Record<string, unknown>>(
+  path: string,
+  init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<{ data: T; meta: M }> {
   let res: Response;
   const token = await getAuthToken();
   try {
@@ -65,7 +76,7 @@ async function call<T>(
     throw e;
   }
   const json = (await res.json().catch(() => null)) as
-    | { data: T }
+    | { data: T; meta?: M }
     | { error: { code: string; message: string; retryable?: boolean; requestId?: string } }
     | null;
   if (res.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
@@ -79,7 +90,7 @@ async function call<T>(
     };
     throw e;
   }
-  return json.data;
+  return { data: json.data, meta: (json.meta ?? {}) as M };
 }
 
 // ---------- backend shapes (only the fields the UI reads) ----------
@@ -274,6 +285,7 @@ interface BEvent {
   type: string;
   summary: string;
   createdAt: string;
+  payload?: { tool?: string; waitMs?: number } | null;
 }
 interface BRun {
   id: string;
@@ -289,7 +301,7 @@ interface BRun {
 const HIDDEN_EVENTS = new Set(["agent_step", "tool_called"]);
 
 async function mapRun(b: BRun): Promise<Run> {
-  const events = await call<BEvent[]>(`/runs/${b.id}/events`);
+  const events = await call<BEvent[]>(`/runs/${b.id}/events?limit=500`);
   const err = b.error == null ? undefined : typeof b.error === "string" ? b.error : (b.error.message ?? b.error.code);
   return {
     id: b.id,
@@ -302,6 +314,8 @@ async function mapRun(b: BRun): Promise<Run> {
     events: events
       .filter((e) => !HIDDEN_EVENTS.has(e.type))
       .map((e) => ({ id: e.id, at: e.createdAt, message: e.summary })),
+    trace: events.map((e) => ({ type: e.type, at: e.createdAt, tool: e.payload?.tool, waitMs: e.payload?.waitMs })),
+    startedAt: events[0]?.createdAt ?? null,
     error: err,
   };
 }
@@ -396,6 +410,8 @@ function mapCandidate(
     findings: c.requirementChecks.map((k) => {
       const ev = k.evidenceIds.map((id) => excerpts.get(id)).find(Boolean);
       return {
+        requirementId: k.requirementId,
+        mandatory: req.requirements.find((r) => r.id === k.requirementId)?.mandatory ?? false,
         requirement: labels.get(k.requirementId) ?? k.attribute,
         status: k.state,
         evidence: ev ? `${k.reason} — “${ev.excerpt}” (${SOURCE_LABEL[ev.source] ?? ev.source})` : k.reason,
@@ -465,11 +481,13 @@ interface BProposal {
   version: number;
   decisionState: DecisionState;
   quantity: number;
+  requester: BActorInfo | null;
   offer: {
     id: string;
     title: string;
     seller: string | null;
     sourceUrl: string | null;
+    imageUrl?: string | null;
     observedAt?: string;
     expiresAt?: string;
     fromCache?: boolean;
@@ -490,13 +508,16 @@ interface BProposal {
   justification: string;
   technicalReviewConfirmed: boolean;
   unresolved: string[];
+  requirementResolutions?: { requirementId: string; attribute: string; evidenceReason: string; kind: "verified" | "exception"; note: string }[];
   amounts: {
     researchListedSubtotalCents: number | null;
     requestBudgetCeilingCents: number;
     exactAmountCents: number | null;
   };
-  decisions: { version: number; decision: string; note: string; actor: string; createdAt: string }[];
+  decisions: { version: number; decision: string; note: string; actor: string; actorInfo: BActorInfo | null; createdAt: string }[];
   execution: BExecution | null;
+  /** Executives only (null for employees). */
+  financialAssessment?: FinancialPreview | null;
   versions: { version: number; submittedAt?: string | null; exactAmountCents?: number | null }[];
 }
 
@@ -539,7 +560,7 @@ async function mapProposal(p: BProposal): Promise<Proposal> {
       availableCents: p.budgetAssessment?.availableBudgetCents ?? null,
       notes: p.budgetAssessment?.notes ?? [],
     },
-    history: p.decisions.map((d) => ({ version: d.version, at: d.createdAt, decision: d.decision, actor: d.actor, note: d.note })),
+    history: p.decisions.map((d) => ({ version: d.version, at: d.createdAt, decision: d.decision, actor: personOf(d.actorInfo) ?? { displayName: "Unknown", demo: false }, note: d.note })),
     revisions: p.versions.map((x) => ({ version: x.version, submittedAt: x.submittedAt ?? null, exactAmountCents: x.exactAmountCents ?? null })),
   };
   return {
@@ -555,6 +576,7 @@ async function mapProposal(p: BProposal): Promise<Proposal> {
         title: p.offer.title,
         seller: p.offer.seller,
         sourceUrl: p.offer.sourceUrl,
+        imageUrl: p.offer.imageUrl ?? undefined,
         listedSubtotalCents: p.amounts.researchListedSubtotalCents,
         quantityText: `${p.quantity} ${unit}`,
       },
@@ -567,13 +589,15 @@ async function mapProposal(p: BProposal): Promise<Proposal> {
     expenseSource: "user_confirmed",
     decision: p.decisionState,
     decisionNote: last?.note || undefined,
-    requester: "employee-demo",
-    approval: last ? { actor: last.actor, at: last.createdAt, decision: last.decision } : undefined,
+    requester: personOf(p.requester),
+    approval: last ? { actor: personOf(last.actorInfo) ?? { displayName: "Unknown", demo: false }, at: last.createdAt, decision: last.decision } : undefined,
     execution: p.execution?.status ?? "not_started",
     executionDetail: p.execution ? mapExecution(p.execution, p.offer.seller) : undefined,
     unresolved: p.unresolved,
+    requirementResolutions: (p.requirementResolutions ?? []).map((r) => ({ requirement: labels.get(r.requirementId) ?? r.attribute, kind: r.kind, note: r.note, evidenceReason: r.evidenceReason })),
     review,
     submittedAt: v?.submittedAt ?? undefined,
+    financialAssessment: p.financialAssessment ? mapPreview(p.financialAssessment) : null,
   };
 }
 
@@ -741,7 +765,7 @@ export const liveApi: RunwayApi = {
     });
     const submitted = await call<BProposal>(`/proposals/${draft.id}/submit`, {
       method: "POST",
-      body: { version: draft.version, technicalReviewConfirmed: true, exactAmountCents: input.expenseCents },
+      body: { version: draft.version, technicalReviewConfirmed: true, exactAmountCents: input.expenseCents, requirementResolutions: input.requirementResolutions ?? [] },
     });
     return mapProposal(submitted);
   },
@@ -750,43 +774,25 @@ export const liveApi: RunwayApi = {
     return mapProposal(await call<BProposal>(`/proposals/${id}`));
   },
 
-  async listActivity(): Promise<ActivityItem[]> {
-    const [rows, requests] = await Promise.all([
-      call<
-        {
-          id: string;
-          requestId: string;
-          decisionState: DecisionState;
-          title: string;
-          seller: string | null;
-          exactAmountCents: number | null;
-          executionId: string | null;
-          updatedAt: string;
-        }[]
-      >("/proposals?limit=100"),
-      call<BRequestSummary[]>("/requests?limit=50"),
-    ]);
-    const titles = new Map(requests.map((r) => [r.id, r.title]));
-    const sizes = new Map(requests.map((r) => [r.id, `${r.quantity} ${r.item?.unit ?? "units"}`]));
-    const submitted = rows.filter((r) => r.decisionState !== "not_submitted");
-    return Promise.all(
-      submitted.map(async (r): Promise<ActivityItem> => {
-        const ex = r.executionId ? await call<BExecution>(`/executions/${r.executionId}`) : null;
-        return {
-          proposalId: r.id,
-          requestId: r.requestId,
-          title: titles.get(r.requestId) ?? "Request",
-          decision: r.decisionState,
-          exactAmountCents: r.exactAmountCents ?? 0,
-          updatedAt: r.updatedAt,
-          selectedTitle: r.title,
-          seller: r.seller,
-          quantityText: sizes.get(r.requestId) ?? "",
-          requester: "employee-demo",
-          execution: ex ? mapExecution(ex, r.seller) : undefined,
-        };
-      }),
-    );
+  async listActivity(): Promise<ActivityPage> {
+    // Follow the server cursor (newest first). Counts come from the server over the whole scope.
+    const MAX_PAGES = 10;
+    const items: ActivityItem[] = [];
+    let counts = EMPTY_COUNTS;
+    let cursor: string | null = null;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const q: string = `/proposals?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      const r: { data: BQueueItem[]; meta: { nextCursor?: string | null; counts?: ActivityPage["counts"] } } = await callWithMeta(q);
+      if (r.meta.counts) counts = { ...EMPTY_COUNTS, ...r.meta.counts };
+      items.push(...r.data.filter((x) => x.decisionState !== "not_submitted").map(mapQueueItem));
+      cursor = r.meta.nextCursor ?? null;
+      if (!cursor) break;
+    }
+    return { items, counts, truncated: cursor !== null };
+  },
+
+  async getFinancialPreview(proposalId, opts) {
+    return mapPreview(await call<FinancialPreview>(`/proposals/${proposalId}/financial-preview${opts?.refresh ? "?refresh=true" : ""}`));
   },
 
   async getExecution(id) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { personLabel } from "@/lib/api/mappers";
 import { useParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api, type ApiError, type ExecutionDetail } from "@/lib/api";
@@ -106,15 +107,14 @@ function PurchaseRecord() {
 
           <Section title="People">
             <dl>
-              <KeyValue label="Requested by" value={p ? `${p.requester} (demo role)` : "Not available"} />
+              <KeyValue label="Requested by" value={p ? personLabel(p.requester, "Not available") : "Not available"} />
               <KeyValue
                 label="Approved by"
-                value={p?.approval ? `${p.approval.actor} (demo role)` : "Not available"}
+                value={p?.approval ? personLabel(p.approval.actor) : "Not available"}
                 note={p?.approval ? formatDate(p.approval.at) : undefined}
               />
             </dl>
             {p?.decisionNote && <p className="mt-1 text-[16px]"><span className="text-muted">Note: </span>{p.decisionNote}</p>}
-            <p className="mt-1 text-[13px] text-muted">Demo roles are labels, not accounts. There is no sign-in yet.</p>
           </Section>
 
           <Section title="Merchant">

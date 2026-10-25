@@ -1,6 +1,7 @@
 import type { RunwayApi } from "./client";
 import type {
   ActivityItem,
+  ActivityPage,
   Me,
   AgentConfig,
   AgentConfigDetail,
@@ -270,7 +271,8 @@ function buildRun(entry: RunEntry): Run {
     message,
   }));
   const state = entry.cancelled ? "cancelled" : done >= RUN_MESSAGES.length ? "completed" : "running";
-  return { ...entry.run, events, state, outcome: state === "completed" ? "candidates_found" : null };
+  // Sample data has no recorded event types; progress shows the generic phase.
+  return { ...entry.run, events, trace: [], startedAt: events[0]?.at ?? null, state, outcome: state === "completed" ? "candidates_found" : null };
 }
 
 function syncStatus(db: Db, r: PurchaseRequest) {
@@ -330,23 +332,38 @@ function proposalView(db: Db, p: StoredProposal): Proposal {
   return { ...rest, execution: ex?.status ?? "not_started", executionDetail: ex, review: buildReview(db, p) };
 }
 
-function activity(db: Db): ActivityItem[] {
-  return [...db.proposals]
+const DEMO_EMPLOYEE = { displayName: "Demo Employee", demo: true };
+const DEMO_EXECUTIVE = { displayName: "Demo Executive", demo: true };
+
+function activity(db: Db): ActivityPage {
+  const counts = { not_submitted: 0, awaiting_review: 0, approved: 0, changes_requested: 0, rejected: 0 };
+  for (const p of db.proposals) counts[p.decision]++;
+  const items = [...db.proposals]
     .filter((p) => p.decision !== "not_submitted")
     .sort((a, b) => (b.submittedAt ?? "").localeCompare(a.submittedAt ?? ""))
-    .map((p) => ({
-      proposalId: p.id,
-      requestId: p.requestId,
-      title: p.requestTitle,
-      decision: p.decision,
-      exactAmountCents: p.expenseCents,
-      updatedAt: p.approval?.at ?? p.submittedAt ?? now(),
-      selectedTitle: p.lines.map((l) => l.title).join(", "),
-      seller: p.lines[0]?.seller ?? null,
-      quantityText: p.lines.map((l) => l.quantityText).join(" · "),
-      requester: p.requester,
-      execution: p.executionId ? db.executions.find((e) => e.id === p.executionId) : undefined,
-    }));
+    .map((p): ActivityItem => {
+      const ex = p.executionId ? db.executions.find((e) => e.id === p.executionId) : undefined;
+      return {
+        proposalId: p.id,
+        requestId: p.requestId,
+        version: p.version,
+        title: p.requestTitle,
+        decision: p.decision,
+        exactAmountCents: p.expenseCents,
+        updatedAt: p.approval?.at ?? p.submittedAt ?? now(),
+        submittedAt: p.submittedAt ?? null,
+        selectedTitle: p.lines.map((l) => l.title).join(", "),
+        seller: p.lines[0]?.seller ?? null,
+        quantityText: p.lines.map((l) => l.quantityText).join(" · "),
+        requester: p.requester,
+        eligibility: "eligible",
+        unresolved: p.unresolved,
+        offerStale: false,
+        latestDecision: p.approval ? { decision: p.approval.decision, note: p.decisionNote ?? "", actor: p.approval.actor, at: p.approval.at, version: p.version } : undefined,
+        execution: ex ? { id: ex.id, status: ex.status, providerStatus: ex.providerStatus } : undefined,
+      };
+    });
+  return { items, counts, truncated: false };
 }
 
 export const fixtureApi: RunwayApi = {
@@ -456,6 +473,8 @@ export const fixtureApi: RunwayApi = {
           agentConfigName: cfg.name,
           agentConfigVersion: cfg.version,
           events: [],
+          trace: [],
+          startedAt: null,
         };
         db.runs[run.id] = { startedAt: Date.now(), run };
         r.runId = run.id;
@@ -542,8 +561,9 @@ export const fixtureApi: RunwayApi = {
           expenseCents: input.expenseCents,
           expenseSource: "user_confirmed",
           decision: "awaiting_review",
-          requester: "employee-demo",
+          requester: DEMO_EMPLOYEE,
           unresolved: ["Shipping cost unknown", "Sales tax unknown"],
+          requirementResolutions: [],
           submittedAt: now(),
         };
         db.proposals = [...db.proposals.filter((x) => x.requestId !== requestId), p];
@@ -569,6 +589,32 @@ export const fixtureApi: RunwayApi = {
     return delay(mutate((db) => activity(db)));
   },
 
+  async getFinancialPreview(proposalId) {
+    // Sample data has no ledger: say so instead of inventing a balance.
+    return delay(
+      mutate((db) => {
+        const p = db.proposals.find((x) => x.id === proposalId);
+        if (!p) throw { code: "NOT_FOUND", message: "Proposal not found." };
+        const blocking = p.decision !== "awaiting_review" ? [{ code: "not_awaiting_review", message: `Proposal is ${p.decision}` }] : [];
+        return {
+          proposalId: p.id,
+          proposalVersion: p.version,
+          label: "Sample data. No ledger or bank figures.",
+          currentAvailableCents: null,
+          exactExpenseCents: p.expenseCents,
+          projectedAvailableCents: null,
+          reservationIncluded: !!p.executionId,
+          freshness: { source: "fixture", fetchedAt: null, refreshedNow: false, status: "fixture" },
+          canApprove: blocking.length === 0,
+          blockingReasons: blocking,
+          amounts: { researchListedSubtotalCents: p.researchSubtotalCents, budgetCeilingCents: p.budgetCeilingCents, exactExpenseCents: p.expenseCents, amountSource: "user_confirmed", approvedAmountCents: null, providerStoredAmountCents: null, discrepancyCents: null },
+          unknowns: ["Sales tax", "Shipping"],
+          notes: ["Sample data: nothing here is a real balance or purchase."],
+        };
+      }),
+    );
+  },
+
   async getExecution(id) {
     return delay(
       mutate((db) => {
@@ -590,7 +636,7 @@ export const fixtureApi: RunwayApi = {
         const at = now();
         p.decision = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "changes_requested";
         p.decisionNote = note || undefined;
-        p.approval = { actor: "executive-demo", at, decision: p.decision };
+        p.approval = { actor: DEMO_EXECUTIVE, at, decision: p.decision };
         r.status = p.decision;
         r.updatedAt = at;
         if (decision === "approve") {

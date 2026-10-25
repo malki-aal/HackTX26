@@ -306,6 +306,19 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
 
   // ---- Internal: agent tool callbacks from the eve process (loopback + shared token only) ----
   const tokenBuf = Buffer.from(opts.internalToken);
+  // The agent process reports real model-quota pauses (its pacing has no session context, so the
+  // wait is recorded on every active agent run; normally there is one).
+  app.post<{ Body: { waitMs?: unknown } }>("/internal/agent-progress", async (req, reply) => {
+    const auth = String(req.headers.authorization ?? "");
+    const given = Buffer.from(auth.replace(/^Bearer /, ""));
+    const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.ip);
+    if (!loopback || given.length !== tokenBuf.length || !timingSafeEqual(given, tokenBuf)) return reply.status(401).send({ error: "unauthorized" });
+    const waitMs = Number(req.body?.waitMs);
+    if (!Number.isFinite(waitMs) || waitMs <= 0 || waitMs > 600_000) return reply.status(400).send({ error: "waitMs must be a positive number of milliseconds" });
+    for (const host of sessionToolHosts.values()) host.quotaWait?.(waitMs);
+    return reply.send({ ok: true });
+  });
+
   app.post<{ Params: { tool: string } }>("/internal/agent-tools/:tool", async (req, reply) => {
     const auth = String(req.headers.authorization ?? "");
     const given = Buffer.from(auth.replace(/^Bearer /, ""));

@@ -82,6 +82,16 @@ export function fixtureCatalog(category: string, now: Date): RawShoppingItem[] {
   }
 }
 
+/**
+ * Catalog listings state "Condition: New" in their extensions, the way many merchants do, unless they are
+ * marked second-hand. Absence of a second-hand marker alone is only an inference, never proof of new.
+ */
+export function withStatedCondition(items: RawShoppingItem[]): RawShoppingItem[] {
+  return items.map((i) =>
+    i.second_hand_condition || /renewed|refurb|used|open[\s-]?box/i.test(i.title) ? i : { ...i, extensions: [...(i.extensions ?? []), "Condition: New"] },
+  );
+}
+
 export class FixtureShopping implements ShoppingSearch {
   readonly source = "fixture" as const;
   calls: ShoppingQuery[] = [];
@@ -103,7 +113,7 @@ export class FixtureShopping implements ShoppingSearch {
     }
     if (this.behavior.failWith) throw this.behavior.failWith;
     const now = new Date();
-    const items = this.items ?? fixtureCatalog(detectCategory(query.q, "").best ?? "", now);
+    const items = this.items ?? withStatedCondition(fixtureCatalog(detectCategory(query.q, "").best ?? "", now));
     return { items: structuredClone(items), fetchedAt: now, fromCache: false, outcome: items.length ? "results" : "empty", providerSearchId: "fixture" };
   }
   detailCalls: string[] = [];

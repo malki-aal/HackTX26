@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
+import { elapsedLabel, researchProgress } from "@/lib/research";
 import { api, type ApiError, type Offer, type PurchaseRequest, type RequestItem, type Run } from "@/lib/api";
 import { HIGHLIGHT_LABEL, stageIndex, stages } from "@/lib/labels";
 import { itemLine } from "@/lib/format";
@@ -71,7 +72,7 @@ function RequestDetail() {
           {req.status === "researching" && req.runId && <Research runId={req.runId} onDone={reload} />}
           {["results_ready", "proposal_drafted", "submitted", "approved", "changes_requested", "rejected"].includes(
             req.status,
-          ) && <Compare req={req} />}
+          ) && <Compare req={req} onChange={setData} />}
         </>
       )}
     </Page>
@@ -198,6 +199,12 @@ function StartResearch({ req, onChange }: { req: PurchaseRequest; onChange: (r: 
 
 function Research({ runId, onDone }: { runId: string; onDone: () => void }) {
   const [run, setRun] = useState<Run | null>(null);
+  // Ticks the elapsed time and quota countdown between polls; display only.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
   const [error, setError] = useState<ApiError | null>(null);
   const { pending, run: act } = useAction();
   const doneRef = useRef(onDone);
@@ -235,11 +242,20 @@ function Research({ runId, onDone }: { runId: string; onDone: () => void }) {
 
   return (
     <Section title="Research in progress">
-      {run && (
-        <p className="mb-3 text-[13px] text-muted">
-          Using {run.agentConfigName} v{run.agentConfigVersion}
-        </p>
-      )}
+      {run && (() => {
+        const pr = researchProgress(run, now);
+        const el = elapsedLabel(run.startedAt, now);
+        return (
+          <div className="mb-3" aria-live="polite">
+            <p className="text-[16px] font-semibold">
+              {pr.label}
+              {el && <span className="font-normal text-muted"> · {el}</span>}
+            </p>
+            {pr.detail && <p className="text-[13px] text-muted">{pr.detail}</p>}
+            <p className="mt-1 text-[13px] text-muted">Using {run.agentConfigName} v{run.agentConfigVersion}</p>
+          </div>
+        );
+      })()}
       {!run && !error && <Loading label="Checking run" />}
       <ol className="mb-4 space-y-2">
         {run?.events.map((e) => (
@@ -280,9 +296,10 @@ function deliveryLine(o: Offer): string {
   return o.delivery.status === "stated" && o.delivery.text ? o.delivery.text : "Delivery unknown";
 }
 
-function Compare({ req }: { req: PurchaseRequest }) {
+function Compare({ req, onChange }: { req: PurchaseRequest; onChange: (r: PurchaseRequest) => void }) {
   const router = useRouter();
   const { data, error, loading, reload } = useLoad<Offer[]>(() => api.listCandidates(req.id), [req.id]);
+  const again = useAction();
   const [selection, setSelection] = useState<Record<string, string>>(() => readSelection(req.id));
   const locked = req.status !== "results_ready" && req.status !== "proposal_drafted" && req.status !== "changes_requested";
 
@@ -317,6 +334,19 @@ function Compare({ req }: { req: PurchaseRequest }) {
             Review proposal
           </Button>
         </>
+      )}
+      {!locked && data && (data.some((o) => o.stale) || req.status === "changes_requested") && (
+        <div className="mt-4">
+          <p className="mb-2 text-[14px] text-muted">
+            {data.some((o) => o.stale) ? "Some offer evidence has expired, and approval is refused for expired offers." : "To revise with fresh offers, search again."}{" "}
+            Searching again uses search and model quota and starts only when you press the button.
+          </p>
+          <ErrorNote error={again.error} />
+          <Button variant="quiet" disabled={again.pending}
+            onClick={() => again.run(() => api.startResearch(req.id), () => api.getRequest(req.id).then(onChange))}>
+            {again.pending ? "Starting…" : "Search again"}
+          </Button>
+        </div>
       )}
       {req.proposalId && (req.status === "submitted" || req.status === "approved" || req.status === "changes_requested" || req.status === "rejected") && (
         <Link href={`/requests/${req.id}/proposal`} className="mt-4 block text-[15px] font-medium text-accent">

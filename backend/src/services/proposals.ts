@@ -36,6 +36,8 @@ export interface ProposalPayload {
   unresolved: string[];
   budgetAssessmentAtCreation: ReturnType<typeof assessBudget>;
   createdBy: string;
+  /** Set at submission: the requester's verification or deliberate exception per unconfirmed mandatory requirement. */
+  requirementResolutions?: Array<{ requirementId: string; attribute: string; evidenceReason: string; kind: "verified" | "exception"; note: string; recordedAt: string }>;
 }
 
 function loadProposal(ctx: AppContext, id: string): ProposalRow {
@@ -139,12 +141,27 @@ export function submitProposal(ctx: AppContext, id: string, body: unknown) {
   if (req.current_version !== pv.data.requestVersion) throw new AppError("VERSION_CONFLICT", "Requirements changed after this proposal was created", 409, false, { proposalRequestVersion: pv.data.requestVersion, currentVersion: req.current_version });
   const subtotal = pv.data.evaluation.cost.listedSubtotalCents;
   if (subtotal !== null && parsed.exactAmountCents < subtotal) throw new AppError("VALIDATION_ERROR", `Exact amount ${formatUsd(parsed.exactAmountCents)} is below the listed subtotal ${formatUsd(subtotal)}`, 422);
+  // Unconfirmed mandatory requirements are never treated as met. Each needs the requester's documented
+  // verification or a deliberate exception, recorded with this version for the reviewer.
+  const open = pv.data.evaluation.requirementResults.filter((r) => r.mandatory && r.state === "unknown");
+  const given = new Map(parsed.requirementResolutions.map((r) => [r.requirementId, r]));
+  const extra = parsed.requirementResolutions.filter((r) => !open.some((o) => o.requirementId === r.requirementId));
+  if (extra.length) throw new AppError("VALIDATION_ERROR", "requirementResolutions may only cover mandatory requirements the evidence left unconfirmed", 422, false, { requirementIds: extra.map((r) => r.requirementId) });
+  const missing = open.filter((o) => !given.has(o.requirementId));
+  if (missing.length) {
+    throw new AppError("UNRESOLVED_REQUIREMENTS", `Verify or record an exception for ${missing.length} unconfirmed mandatory requirement${missing.length === 1 ? "" : "s"} before submitting`, 422, false, {
+      requirements: missing.map((m) => ({ requirementId: m.requirementId, attribute: m.attribute, reason: m.reason })),
+    });
+  }
   const now = nowIso();
+  const resolutions = open.map((o) => ({ requirementId: o.requirementId, attribute: o.attribute, evidenceReason: o.reason, kind: given.get(o.requirementId)!.kind, note: given.get(o.requirementId)!.note, recordedAt: now }));
   tx(ctx.db, () => {
+    // The version is still a draft here, so recording the resolutions with it rewrites no submitted history.
+    if (resolutions.length) ctx.db.prepare("UPDATE proposal_versions SET payload = ? WHERE proposal_id = ? AND version = ?").run(JSON.stringify({ ...pv.data, requirementResolutions: resolutions }), id, parsed.version);
     ctx.db.prepare("UPDATE proposal_versions SET status = 'submitted', exact_amount_cents = ?, amount_source = ?, technical_review_confirmed = 1, submitted_at = ? WHERE proposal_id = ? AND version = ?").run(parsed.exactAmountCents, parsed.amountSource, now, id, parsed.version);
     ctx.db.prepare("UPDATE proposals SET decision_state = 'awaiting_review', updated_at = ? WHERE id = ?").run(now, id);
     setRequestStatus(ctx, pv.data.requestId, "submitted");
-    emitEvent(ctx.db, { type: "proposal_submitted", requestId: pv.data.requestId, proposalId: id, summary: `Submitted for ${formatUsd(parsed.exactAmountCents)} (user-confirmed amount)`, payload: { version: parsed.version, exactAmountCents: parsed.exactAmountCents, amountSource: parsed.amountSource } });
+    emitEvent(ctx.db, { type: "proposal_submitted", requestId: pv.data.requestId, proposalId: id, summary: `Submitted for ${formatUsd(parsed.exactAmountCents)} (user-confirmed amount)`, payload: { version: parsed.version, exactAmountCents: parsed.exactAmountCents, amountSource: parsed.amountSource, resolutions: resolutions.map((r) => ({ requirementId: r.requirementId, kind: r.kind })) } });
   });
   return getProposalView(ctx, id);
 }
@@ -452,6 +469,7 @@ export function getProposalView(ctx: AppContext, id: string, viewer?: Principal)
     justification: cur.data.justification,
     alternatives: cur.data.alternatives,
     unresolved: cur.data.unresolved,
+    requirementResolutions: cur.data.requirementResolutions ?? [],
     amounts: {
       researchListedSubtotalCents: cur.data.evaluation.cost.listedSubtotalCents,
       researchKnownComparableCostCents: cur.data.evaluation.cost.knownComparableCostCents,
