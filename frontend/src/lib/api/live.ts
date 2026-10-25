@@ -20,6 +20,8 @@ import type {
   ExecutionDetail,
   ExecutionState,
   NewRequestInput,
+  ProjectView,
+  ProjectSummary,
   Offer,
   Proposal,
   PurchaseRequest,
@@ -32,9 +34,8 @@ import type {
 // { data, meta }; every error is { error: { code, message, retryable, requestId } }.
 // Money is already integer cents on the wire.
 //
-// The backend currently supports one item type (monitors) per request, no deadline kinds and no
-// tradeoff alternatives. Anything the UI offers beyond that is refused here with an explicit
-// error rather than approximated. See docs/FRONTEND_CONTRACT_REQUESTS.md.
+// Each request researches one item category. Multi-item forms use project endpoints, with
+// explicit per-line budgets and separate approval records under the project-wide hard cap.
 
 const BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1").replace(/\/$/, "");
 
@@ -119,6 +120,7 @@ interface BQuestion {
 }
 interface BRequest {
   id: string;
+  projectId?: string | null;
   version: number;
   status: string;
   isCurrentVersionConfirmed: boolean;
@@ -142,6 +144,7 @@ interface BRequest {
 }
 interface BRequestSummary {
   id: string;
+  projectId?: string | null;
   version: number;
   title: string;
   category?: string | null;
@@ -214,6 +217,7 @@ function mapRequest(b: BRequest): PurchaseRequest {
   const latestProposal = b.proposals[b.proposals.length - 1];
   return {
     id: b.id,
+    projectId: b.projectId ?? undefined,
     version: b.version,
     title: b.title,
     purpose: b.purpose,
@@ -247,6 +251,7 @@ function mapRequest(b: BRequest): PurchaseRequest {
 function mapSummary(b: BRequestSummary): PurchaseRequest {
   return {
     id: b.id,
+    projectId: b.projectId ?? undefined,
     version: b.version,
     title: b.title,
     purpose: "",
@@ -275,9 +280,10 @@ function mapSummary(b: BRequestSummary): PurchaseRequest {
 const SECTION_GAP = " ".repeat(80);
 function buildDescription(input: NewRequestInput): string {
   const clean = (l: string) => l.replace(/[.\s]+$/, "");
-  const must = input.mandatory.map(clean).filter(Boolean).map((l) => `${l} (required).`).join(" ");
+  const must = [...input.mandatory, ...(input.items[0]?.specifications ?? [])].map(clean).filter(Boolean).map((l) => `${l} (required).`).join(" ");
   const nice = input.preferences.map(clean).filter(Boolean).map((l) => `Nice to have: ${l}.`).join(" ");
-  return nice ? `${must}${SECTION_GAP}${nice}` : must;
+  const description = nice ? `${must}${SECTION_GAP}${nice}` : must;
+  return `${input.items[0]?.name ?? ""}. ${description}`;
 }
 
 interface BEvent {
@@ -670,9 +676,38 @@ export const liveApi: RunwayApi = {
 
   getRequest: fetchRequest,
 
+  async createProject(input) {
+    const project = await call<ProjectView>("/projects", {
+      method: "POST",
+      body: {
+        title: input.title, purpose: input.purpose, budgetCents: input.budgetTotalCents,
+        neededBy: input.deadline ?? null, deadlineType: input.deadlineKind === "hard" ? "hard" : "target",
+        agentConfigId: input.agentConfigId,
+        lines: input.items.map((item, i) => ({
+          key: `item_${i + 1}`, title: item.name, quantity: item.quantity, unit: item.unit,
+          budgetCents: item.budgetCents,
+          description: buildDescription({ ...input, items: [item] }),
+          allowedCondition: input.condition,
+        })),
+      },
+    });
+    return project;
+  },
+  getProject: (id) => call<ProjectView>(`/projects/${id}`),
+  listProjects: () => call<ProjectSummary[]>("/projects"),
+  async startProjectResearch(id) {
+    const project = await this.getProject(id);
+    const lineKeys = project.lines.filter((line) =>
+      !line.unansweredQuestionIds.length && ["draft", "ready_to_confirm", "confirmed"].includes(line.status),
+    ).map((line) => line.key);
+    if (!lineKeys.length) return { results: [] };
+    await call(`/projects/${id}/confirm`, { method: "POST", body: {} });
+    return call<{ results: { key: string; result: string; code?: string }[] }>(`/projects/${id}/research`, { method: "POST", body: { lineKeys } });
+  },
+
   async createRequest(input: NewRequestInput) {
     if (input.items.length !== 1) {
-      throw unsupported("This request has several item types. One request covers one item type until project requests are connected.");
+      throw unsupported("Use a grouped request for multiple item types.");
     }
     const item = input.items[0];
     const b = await call<BRequest>("/requests", {

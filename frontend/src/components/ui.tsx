@@ -240,10 +240,10 @@ export function ErrorNote({ error, onRetry }: { error: ApiError | null; onRetry?
   return (
     <div role="alert" className="my-4 rounded-xl border-l-4 border-bad bg-bad-soft p-3 text-[14px]">
       <p className="text-bad">{error.message}</p>
-      <p className="mt-0.5 text-[13px] text-muted">
-        Code: {error.code}
-        {error.requestId && ` · Trace: ${error.requestId}`}
-      </p>
+      <details className="mt-1 text-[12px] text-muted">
+        <summary className="cursor-pointer">Technical details</summary>
+        {error.code}{error.requestId && ` · ${error.requestId}`}
+      </details>
       {onRetry && (
         <button onClick={onRetry} className="mt-1 text-[15px] font-medium text-accent">
           Try again

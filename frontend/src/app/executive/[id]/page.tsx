@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { api, type ApiError, type Budget, type FinancialPreview, type Proposal } from "@/lib/api";
 import { approvalGate, personLabel, type PreviewState } from "@/lib/api/mappers";
 import { Avatar } from "@/components/avatars";
@@ -137,7 +137,7 @@ function ReviewSections({ p }: { p: Proposal }) {
                 </li>
               );
             })}
-            {p.unresolved.map((u) => <li key={`u-${u}`}>{u}</li>)}
+            {p.unresolved.filter((u) => !unknownMandatory.length || !/^Mandatory .+ unconfirmed:/i.test(u)).map((u) => <li key={`u-${u}`}>{u}</li>)}
           </ul>
         </div>
       )}
@@ -211,7 +211,9 @@ function ReviewSections({ p }: { p: Proposal }) {
       </Section>
 
       {r && r.findings.length > 0 && (
-        <Section title="Requirements and evidence">
+        <details className="mb-4 rounded-2xl border border-rule bg-paper p-4">
+        <summary className="cursor-pointer font-medium">Requirements and evidence ({r.findings.length})</summary>
+        <div className="mt-3">
           <ul className="divide-y divide-rule">
             {r.findings.map((f) => (
               <li key={f.requirement} className="py-2.5 first:pt-0">
@@ -223,8 +225,9 @@ function ReviewSections({ p }: { p: Proposal }) {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[13px] text-muted">Evidence comes from the listing, not from the manufacturer.</p>
-        </Section>
+          <p className="mt-2 text-[13px] text-muted">Listing evidence, not independent product certification.</p>
+        </div>
+        </details>
       )}
 
       <Section title="Cost">
@@ -234,11 +237,11 @@ function ReviewSections({ p }: { p: Proposal }) {
           <KeyValue label="Listed subtotal" value={formatCents(p.researchSubtotalCents)} />
           {r && <KeyValue label="Shipping" value={r.cost.shippingCents === null ? "Unknown" : formatCents(r.cost.shippingCents)} />}
           <KeyValue label="Tax" value="Unknown" />
-          <KeyValue label="Request budget ceiling" value={formatCents(p.budgetCeilingCents)} note="The most the requester asked to spend. Not an approved amount." />
+          <KeyValue label="Budget limit" value={formatCents(p.budgetCeilingCents)} />
           <KeyValue
-            label="Proposed expense"
+            label="Proposed total"
             value={formatCents(p.expenseCents)}
-            note="Entered and confirmed by the requester (may include their shipping/tax estimate). Not verified at a merchant checkout."
+            note="Requester-confirmed; not a merchant checkout total."
           />
         </dl>
         {r && <p className="mt-1 text-[13px] text-muted">{TOTAL_STATUS[r.cost.totalStatus] ?? ""}</p>}
@@ -264,7 +267,7 @@ function ReviewSections({ p }: { p: Proposal }) {
         <p className="text-[16px]">{p.justification || "No justification given."}</p>
         <p className="mt-2 text-[14px]">
           {p.suitabilityConfirmed
-            ? "The requester confirmed they reviewed technical suitability. That is their review, not a certification."
+            ? "Requester reviewed product fit."
             : "Technical suitability was not confirmed."}
         </p>
       </Section>
@@ -326,6 +329,16 @@ function DecisionStep({
   const fp: FinancialPreview | null = preview.kind === "ready" ? preview.preview : null;
   const needsMapping = !!fp?.blockingReasons.some((r) => r.code === "merchant_mapping_required");
 
+  useEffect(() => {
+    if (p.financialAssessment) return;
+    let active = true;
+    void api.getFinancialPreview(p.id).then(
+      (next) => { if (active) setPreview({ kind: "ready", preview: next }); },
+      (e) => { if (active) setPreview({ kind: "error", message: normalizeError(e).message }); },
+    );
+    return () => { active = false; };
+  }, [p.id, p.revision, p.financialAssessment]);
+
   async function refreshPreview() {
     setPreview({ kind: "loading" });
     try {
@@ -340,6 +353,7 @@ function DecisionStep({
 
   function choose(d: Decision) {
     setChoice(d);
+    setAck(false);
     setError(null);
     setLinked(null);
     if (d === "approve") void refreshPreview();
@@ -391,35 +405,19 @@ function DecisionStep({
     }
   }
 
-  if (!choice) {
-    return (
-      <Section title="Review">
-        <BudgetImpact preview={preview} budget={budget} onRefresh={refreshPreview} />
-        <p className="mb-4 mt-4 text-[14px] text-muted">
-          Check the proposal above, then choose. Nothing happens until you confirm on the next step.
-        </p>
-        <div className="space-y-3">
-          <Button onClick={() => choose("approve")}>Accept</Button>
-          <Button variant="quiet" onClick={() => choose("request_changes")}>Change</Button>
-          <Button variant="quiet" onClick={() => choose("reject")}>Deny</Button>
-        </div>
-        <p className="mt-3 text-[13px] text-muted">
-          Change sends your notes back to the employee so they can edit the request and resubmit.
-        </p>
-      </Section>
-    );
-  }
-
-  const label = DECISION_BUTTON[choice];
   return (
-    <Section title={`Confirm: ${label.toLowerCase()}`}>
-      <dl>
-        <KeyValue label="Proposal" value={p.requestTitle} />
-        <KeyValue label="Revision" value={p.revision} />
-        <KeyValue label="Proposed expense" value={amount} />
-      </dl>
-      {choice === "approve" && <div className="mt-3"><BudgetImpact preview={preview} budget={budget} onRefresh={refreshPreview} /></div>}
+    <Section title="Decision">
+      <BudgetImpact preview={preview} budget={budget} onRefresh={refreshPreview} />
+      <div className="my-4 flex gap-2" role="group" aria-label="Decision">
+        {(["approve", "request_changes", "reject"] as Decision[]).map((d) => (
+          <button key={d} type="button" disabled={pending} aria-pressed={choice === d} onClick={() => choose(d)}
+            className={`rounded-full px-5 py-2 text-[15px] font-semibold ${choice === d ? "bg-accent text-white" : "bg-raised text-ink"}`}>
+            {DECISION_BUTTON[d]}
+          </button>
+        ))}
+      </div>
 
+      {choice && (
       <div className="mt-4">
         <label htmlFor="decision-note" className="mb-1.5 block text-[15px] font-medium">
           {choice === "request_changes" ? "What needs to change?" : "Note (optional)"}
@@ -436,6 +434,7 @@ function DecisionStep({
           {choice === "request_changes" ? "The employee sees this and can edit the request and resubmit." : "The requester will see this note."}
         </p>
       </div>
+      )}
 
       {choice === "approve" && (
         <label className="mt-4 flex items-start gap-3 text-[16px]">
@@ -447,45 +446,44 @@ function DecisionStep({
             onChange={(e) => setAck(e.target.checked)}
           />
           <span>
-            I approve this simulated purchase for {amount} (revision {p.revision}) and understand that it commits this amount from the available company budget.
+            Approve {amount} from the company budget for this sandbox purchase (revision {p.revision}).
           </span>
         </label>
       )}
 
-      {choice === "approve" && needsMapping && (
+      {needsMapping && (
         <div role="alert" className="mt-4 rounded-xl bg-orange-soft p-3 text-[14px]">
-          <p className="font-medium text-warn">No Nessie sandbox merchant is linked to {p.lines[0]?.seller ?? "this seller"}.</p>
+          <p className="font-medium text-warn">Set up {p.lines[0]?.seller ?? "this seller"} for demo purchases</p>
           <p className="mt-1 text-ink">
-            Approval needs one so the simulated purchase is booked against the right sandbox record. Nothing has been reserved.
+            One-time sandbox setup. This does not place an order or approve this request.
           </p>
           <div className="mt-3">
             <Button variant="quiet" disabled={linking} onClick={link}>
-              {linking ? "Linking…" : `Create a sandbox merchant for ${p.lines[0]?.seller ?? "this seller"}`}
+              {linking ? "Setting up…" : `Set up ${p.lines[0]?.seller ?? "seller"}`}
             </Button>
           </div>
         </div>
       )}
-      {linked && <p className="mt-4 text-[14px] text-ok">Linked to {linked}.</p>}
+      {linked && <p className="mt-4 text-[14px] text-ok">Seller ready for sandbox purchases.</p>}
       <ErrorNote error={error} />
 
       {choice === "approve" && gate.reason && (
         <p id="approve-gate" className="mt-3 text-[14px] text-muted">{gate.reason}</p>
       )}
-      <div className="mt-4 space-y-3">
+      {choice && <div className="mt-4 space-y-3">
         <Button
           disabled={pending || (choice === "approve" && !gate.enabled) || (choice === "request_changes" && !note.trim())}
           onClick={submit}
         >
           {pending ? "Working…" : choice === "approve" ? `Accept ${amount}` : choice === "reject" ? "Deny proposal" : "Send back to employee"}
         </Button>
-        <Button variant="quiet" disabled={pending} onClick={() => setChoice(null)}>Back</Button>
-      </div>
+      </div>}
     </Section>
   );
 }
 
 /** Server-calculated effect of approval. Runway's available budget is kept apart from Nessie's reported balance. */
-function BudgetImpact({ preview, budget, onRefresh }: { preview: PreviewState; budget: Budget | null; onRefresh: () => void }) {
+function BudgetImpact({ preview, onRefresh }: { preview: PreviewState; budget: Budget | null; onRefresh: () => void }) {
   if (preview.kind === "loading") return <Loading label="Checking the budget" />;
   if (preview.kind === "error") {
     return (
@@ -509,20 +507,17 @@ function BudgetImpact({ preview, budget, onRefresh }: { preview: PreviewState; b
           value={f.projectedAvailableCents === null ? "Unknown" : formatCents(f.projectedAvailableCents)}
           note={f.reservationIncluded ? "This proposal’s reservation is already counted, so it isn’t subtracted again." : undefined}
         />
-        {budget && budget.reportedBalanceCents !== null && (
-          <KeyValue label="Nessie reported balance" value={formatCents(budget.reportedBalanceCents)} note="The sandbox account’s balance. Not the same as available budget." />
-        )}
       </dl>
       <p className="mt-1 text-[13px] text-muted">
-        {f.label} {fetched ? `Bank data ${f.freshness.refreshedNow ? "refreshed" : "cached"} ${fetched}.` : "No bank data yet."}{" "}
+        {fetched ? `Updated ${fetched}.` : "No budget data yet."}{" "}
         <button type="button" className="font-medium text-accent" onClick={onRefresh}>Refresh</button>
       </p>
       {f.unknowns.length > 0 && <p className="mt-1 text-[13px] text-muted">Not included: {f.unknowns.join(", ")}.</p>}
-      {f.blockingReasons.length > 0 && (
+      {f.blockingReasons.some((r) => r.code !== "merchant_mapping_required") && (
         <div role="alert" className="mt-2 rounded-xl bg-bad-soft p-3">
           <p className="text-[14px] font-medium text-bad">Approval blocked</p>
           <ul className="mt-1 list-disc pl-5 text-[14px] text-ink">
-            {f.blockingReasons.map((r) => <li key={r.code}>{r.message}</li>)}
+            {f.blockingReasons.filter((r) => r.code !== "merchant_mapping_required").map((r) => <li key={r.code}>{r.message}</li>)}
           </ul>
         </div>
       )}

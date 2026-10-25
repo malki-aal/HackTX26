@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { elapsedLabel, researchProgress } from "@/lib/research";
 import { api, type ApiError, type Offer, type PurchaseRequest, type RequestItem, type Run } from "@/lib/api";
-import { HIGHLIGHT_LABEL, stageIndex, stages } from "@/lib/labels";
+import { CONDITION_LABEL, HIGHLIGHT_LABEL, stageIndex, stages } from "@/lib/labels";
 import { itemLine } from "@/lib/format";
 import { formatCents } from "@/lib/money";
 import { readSelection, selectionQuery, writeSelection } from "@/lib/selection";
@@ -49,11 +49,10 @@ function RequestDetail() {
         back={{ href: "/", label: "Requests" }}
         amount={req ? req.budgetTotalCents : undefined}
         amountLabel="Total budget"
-        amountNote="For the whole order"
         stats={
           req
             ? [
-                { label: "Items", value: req.items.length },
+                { label: "Quantity", value: req.items.reduce((n, item) => n + item.quantity, 0) },
                 { label: req.deadline ? (req.deadlineKind === "hard" ? "Hard deadline" : "Target date") : "Deadline", value: req.deadline ?? "None" },
               ]
             : undefined
@@ -65,7 +64,9 @@ function RequestDetail() {
       <ErrorNote error={error} onRetry={reload} />
       {req && (
         <>
-          <Summary req={req} />
+          {["clarifying", "awaiting_confirmation", "confirmed"].includes(req.status) ? <Summary req={req} /> : (
+            <details className="mb-4 rounded-2xl bg-paper p-4"><summary className="cursor-pointer font-medium">Request details</summary><Summary req={req} /></details>
+          )}
           {req.status === "changes_requested" && req.proposalId && <ChangesNote proposalId={req.proposalId} requestId={req.id} />}
           {(req.status === "clarifying" || req.status === "awaiting_confirmation") && <Review req={req} onChange={setData} />}
           {req.status === "confirmed" && <StartResearch req={req} onChange={setData} />}
@@ -87,9 +88,6 @@ function StageBar({ current }: { current: number }) {
           <span key={s} className={`h-1.5 flex-1 rounded-full ${i <= current ? "bg-white" : "bg-hero-tile"}`} />
         ))}
       </div>
-      <p className="mt-2 text-[13px] text-white/85" aria-hidden>
-        Step {current + 1} of {stages.length} · {stages[current]}
-      </p>
     </div>
   );
 }
@@ -113,7 +111,7 @@ function Summary({ req }: { req: PurchaseRequest }) {
       <h3 className="mb-1 text-[15px] font-semibold">Items</h3>
       <ul className="mb-2 list-disc pl-5 text-[16px]">{req.items.map((it) => <li key={it.id}>{itemLine(it)}</li>)}</ul>
       <dl>
-        <KeyValue label="Condition" value={req.condition} />
+        <KeyValue label="Condition" value={CONDITION_LABEL[req.condition]} />
       </dl>
       <h3 className="mb-1 mt-3 text-[15px] font-semibold">Must have</h3>
       <ul className="list-disc pl-5 text-[16px]">{req.mandatory.map((m) => <li key={m}>{m}</li>)}</ul>
@@ -148,7 +146,6 @@ function useAction() {
 /** One step: answer any open question and confirm the exact requirement version. */
 function Review({ req, onChange }: { req: PurchaseRequest; onChange: (r: PurchaseRequest) => void }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [ok, setOk] = useState(false);
   const { pending, error, run } = useAction();
   const answerOf = (id: string, saved?: string) => answers[id] ?? saved;
   const unanswered = req.clarifications.filter((c) => !answerOf(c.id, c.answer));
@@ -156,27 +153,27 @@ function Review({ req, onChange }: { req: PurchaseRequest; onChange: (r: Purchas
   async function confirm() {
     const changed = Object.keys(answers).length > 0;
     const current = changed ? await api.answerClarifications(req.id, answers) : req;
-    return api.confirmRequirements(current.id, current.version);
+    const confirmed = await api.confirmRequirements(current.id, current.version);
+    onChange(confirmed); // Keep the recoverable state if starting research fails.
+    await api.startResearch(confirmed.id);
+    return api.getRequest(confirmed.id);
   }
 
   return (
-    <Section title="Review and confirm">
+    <Section title={req.clarifications.length ? "A few details" : "Ready to search"}>
       {req.clarifications.map((c) => (
         <div key={c.id} className="mb-4">
           <p className="mb-1.5 text-[16px]">{c.question}</p>
-          <Segmented label={c.question} value={answerOf(c.id, c.answer) ?? ""}
-            onChange={(v) => setAnswers({ ...answers, [c.id]: v })} options={c.options} />
+          {c.options.length ? <Segmented label={c.question} value={answerOf(c.id, c.answer) ?? ""}
+            onChange={(v) => setAnswers({ ...answers, [c.id]: v })} options={c.options} /> :
+            <input aria-label={c.question} className="w-full rounded-xl border border-rule p-3" value={answerOf(c.id, c.answer) ?? ""} onChange={(e) => setAnswers({ ...answers, [c.id]: e.target.value })} />}
         </div>
       ))}
-      <label className="my-4 flex items-start gap-3 text-[16px]">
-        <input type="checkbox" className="mt-1 h-5 w-5 accent-[var(--accent)]" checked={ok}
-          onChange={(e) => setOk(e.target.checked)} />
-        <span>The items and must-haves above match what I need (version {req.version}). They will not be loosened.</span>
-      </label>
       <ErrorNote error={error} />
-      <Button disabled={!ok || unanswered.length > 0 || pending} onClick={() => run(confirm, onChange)}>
-        {pending ? "Confirming…" : "Confirm requirements"}
+      <Button disabled={unanswered.length > 0 || pending} onClick={() => run(confirm, onChange)}>
+        {pending ? "Starting…" : "Find options"}
       </Button>
+      <p className="mt-2 text-[12px] text-muted">Confirms these requirements and starts research using search quota.</p>
     </Section>
   );
 }
@@ -185,14 +182,12 @@ function StartResearch({ req, onChange }: { req: PurchaseRequest; onChange: (r: 
   const { pending, error, run } = useAction();
   return (
     <Section title="Research">
-      <p className="mb-4 text-[14px] text-muted">
-        Research searches for your confirmed requirements and uses search quota. It starts only when you press the button.
-      </p>
       <ErrorNote error={error} />
       <Button disabled={pending}
         onClick={() => run(() => api.startResearch(req.id), () => api.getRequest(req.id).then(onChange))}>
-        {pending ? "Starting…" : "Start research"}
+        {pending ? "Starting…" : "Find options"}
       </Button>
+      <p className="mt-2 text-[12px] text-muted">Uses search quota.</p>
     </Section>
   );
 }
@@ -252,19 +247,18 @@ function Research({ runId, onDone }: { runId: string; onDone: () => void }) {
               {el && <span className="font-normal text-muted"> · {el}</span>}
             </p>
             {pr.detail && <p className="text-[13px] text-muted">{pr.detail}</p>}
-            <p className="mt-1 text-[13px] text-muted">Using {run.agentConfigName} v{run.agentConfigVersion}</p>
           </div>
         );
       })()}
       {!run && !error && <Loading label="Checking run" />}
-      <ol className="mb-4 space-y-2">
+      <details className="mb-4"><summary className="cursor-pointer text-[13px] text-muted">Research activity</summary><ol className="mt-2 space-y-2">
         {run?.events.map((e) => (
           <li key={e.id} className="text-[16px]">
             {e.message}
             <span className="block text-[13px] text-muted">{formatWhen(e.at)}</span>
           </li>
         ))}
-      </ol>
+      </ol></details>
       <ErrorNote error={error} />
       {run?.state === "failed" ? (
         <>
@@ -381,6 +375,7 @@ function ItemOffers({
     .filter((o) => o.highlights.length > 0 && !late(o) && o.eligibility !== "rejected")
     .sort((a, b) => Math.min(...a.highlights.map((h) => HIGHLIGHT_ORDER.indexOf(h))) - Math.min(...b.highlights.map((h) => HIGHLIGHT_ORDER.indexOf(h))));
   const other = offers.filter((o) => !suggested.includes(o) && !late(o) && o.eligibility !== "rejected");
+  const fullyMatched = offers.filter((o) => o.eligibility === "eligible" && !late(o));
   const afterDeadline = offers.filter((o) => late(o) && o.eligibility !== "rejected");
   const rejected = offers.filter((o) => o.eligibility === "rejected");
 
@@ -425,10 +420,14 @@ function ItemOffers({
           <ul>{suggested.map((o) => row(o))}</ul>
         </>
       )}
+      {fullyMatched.length === 0 && offers.some((o) => o.eligibility === "needs_review") && (
+        <p className="mb-3 rounded-xl bg-orange-soft p-3 text-[14px]">No fully verified match yet. These options have gaps to check before submitting.</p>
+      )}
       {other.length > 0 && (
         <>
           <h4 className="mt-3 text-[15px] font-semibold">{suggested.length ? "Other options" : "Options"}</h4>
-          <ul>{other.map((o) => row(o))}</ul>
+          <ul>{other.slice(0, 5).map((o) => row(o))}</ul>
+          {other.length > 5 && <details className="mt-3"><summary className="cursor-pointer text-[14px] font-medium text-accent">More options ({other.length - 5})</summary><ul>{other.slice(5).map((o) => row(o))}</ul></details>}
         </>
       )}
       {afterDeadline.length > 0 && (
@@ -439,10 +438,10 @@ function ItemOffers({
         </>
       )}
       {rejected.length > 0 && offers.some((o) => o.eligibility !== "rejected") && (
-        <>
-          <h4 className="mt-3 text-[15px] font-semibold">Did not meet a must-have</h4>
+        <details className="mt-3">
+          <summary className="cursor-pointer text-[14px] text-muted">Excluded options ({rejected.length})</summary>
           <ul>{rejected.map((o) => row(o))}</ul>
-        </>
+        </details>
       )}
       {rejected.length > 0 && offers.every((o) => o.eligibility === "rejected") && (
         <ul>{rejected.map((o) => row(o))}</ul>

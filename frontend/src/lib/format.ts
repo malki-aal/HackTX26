@@ -2,7 +2,7 @@ import type { RequestItem } from "./api";
 
 /** "4 units Monitors" style text built only from the request's own items. */
 export function itemLine(item: Pick<RequestItem, "name" | "quantity" | "unit">): string {
-  return `${item.quantity} ${item.unit} · ${item.name}`;
+  return `${item.quantity} × ${item.name}`;
 }
 
 /** One short summary for lists. Never hard-codes a product word. */

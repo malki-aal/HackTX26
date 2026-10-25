@@ -10,6 +10,8 @@ import type {
   Budget,
   ExecutionDetail,
   NewRequestInput,
+  ProjectView,
+  ProjectSummary,
   Offer,
   Proposal,
   PurchaseRequest,
@@ -28,6 +30,10 @@ export interface RunwayApi {
   listRequests(): Promise<PurchaseRequest[]>;
   getRequest(id: string): Promise<PurchaseRequest>;
   createRequest(input: NewRequestInput): Promise<PurchaseRequest>;
+  createProject(input: NewRequestInput): Promise<ProjectView>;
+  getProject(id: string): Promise<ProjectView>;
+  listProjects(): Promise<ProjectSummary[]>;
+  startProjectResearch(id: string): Promise<{ results: { key: string; result: string; code?: string }[] }>;
   answerClarifications(id: string, answers: Record<string, string>): Promise<PurchaseRequest>;
   confirmRequirements(id: string, version: number): Promise<PurchaseRequest>;
   startResearch(id: string): Promise<Run>;

@@ -63,6 +63,11 @@ function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): Re
       return result("unknown", [], offer.details.status === "fetched" ? `Neither listing nor product specs mention ${req.value}` : `Listing does not mention ${req.value}`);
     }
     case "condition": {
+      // With no condition restriction, missing condition evidence cannot disqualify an offer.
+      // This confirms the request is unrestricted, not that the listing is demonstrably new.
+      if (["new", "refurbished", "used"].every((c) => req.value.includes(c as "new" | "refurbished" | "used"))) {
+        return result("supported", [], "Any condition accepted by the requester");
+      }
       const e = ev[0];
       if (!e || offer.condition === null) return result("unknown", [], "Condition not stated");
       if (!req.value.includes(offer.condition)) return result("contradicted", [e.id], `Listing condition is ${offer.condition}`);
@@ -218,6 +223,12 @@ export function rankCandidates(evals: Array<Omit<CandidateEvaluation, "rank">>, 
     const aff = (x: typeof a) => (x.affordability === "within_budget_provisional" ? 0 : x.affordability === "unknown" ? 1 : 2);
     const af = aff(a) - aff(b);
     if (af !== 0) return af;
+    // Among uncertain options, prefer fewer missing must-haves before cheap near-misses.
+    if (a.class === "needs_review") {
+      const missing = (x: typeof a) => x.requirementResults.filter((r) => r.mandatory && r.state !== "supported").length;
+      const gap = missing(a) - missing(b);
+      if (gap !== 0) return gap;
+    }
     const costCmp = () => {
       const ac = a.cost.knownComparableCostCents;
       const bc = b.cost.knownComparableCostCents;
