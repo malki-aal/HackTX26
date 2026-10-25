@@ -210,3 +210,26 @@ describe("saved shortlist and fallback", () => {
     expect(data.shortlist.entries[0].label).toBe("Closest match");
   });
 });
+
+describe("release safety", () => {
+  it("a near-identical spec value is not presented as an advantage", () => {
+    const list = offers([
+      { title: "New Blender for commercial use, 2L pitcher", price: "$150.00", delivery: "Free delivery by Tue" },
+      { title: "New Blender for commercial use, 68 oz pitcher", price: "$180.00", delivery: "Free delivery by Tue" },
+      { title: "New Blender for commercial use, 90 oz pitcher", price: "$220.00", delivery: "Free delivery by Tue" },
+    ]);
+    const sl = shortlist(list);
+    const adv = sl.entries.find((e) => e.role === "spec_advantage")!;
+    expect(list.find((o) => o.id === adv.offerId)!.title).toMatch(/90 oz/); // 68 vs 67.6 fl oz is not "larger"
+    expect(adv.label).toBe("Larger capacity");
+  });
+
+  it("runs saved before shortlists existed get a computed shortlist that says it predates the current checks", async () => {
+    const { h, runId, get } = await runWith(new ScriptedAgentRunner());
+    h.ctx.db.prepare("UPDATE runs SET shortlist = NULL WHERE id = ?").run(runId);
+    const data = await get();
+    expect(data.shortlist.source).toBe("computed");
+    expect(data.shortlist.headline).toMatch(/^These results were researched before Runway's current evidence checks/);
+    expect(data.shortlist.entries.length).toBeGreaterThan(0);
+  });
+});

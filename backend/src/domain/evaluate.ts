@@ -185,7 +185,9 @@ function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): Re
     }
     case "delivery_by": {
       // Google Shopping delivery text is Google's estimate. Without a delivery location it is not an
-      // arrival date for this customer, so it informs risk but cannot confirm or fail the deadline.
+      // arrival date for this customer, so it informs risk but cannot pass or fail the deadline. With
+      // a stated search location it can pass or fail the check, but it stays an estimate: the risk is
+      // never "none" and the reason says so. Only a date the requester confirmed carries no risk.
       const e = ev[ev.length - 1];
       const kind = req.mandatory ? "hard deadline" : "target date";
       const dl = day(req.value);
@@ -194,12 +196,12 @@ function evaluateWith(req: Requirement, offer: Offer, ev: Offer["evidence"]): Re
       const v = e.value as { earliest: string; latest: string };
       const estimate = e.source !== "user";
       const location = offer.delivery.location ?? null;
-      const confirmed = !estimate || !!location;
-      const who = !estimate ? "You confirmed delivery" : location ? `Google Shopping estimates delivery to ${location}` : "Google Shopping estimates delivery (no delivery location set, so not confirmed for your address)";
+      const checkable = !estimate || !!location;
+      const who = !estimate ? "You confirmed delivery" : location ? `Google Shopping estimates delivery to ${location} (an estimate, not a guaranteed arrival)` : "Google Shopping estimates delivery (no delivery location set, so not confirmed for your address)";
       const when = v.earliest === v.latest ? day(v.latest) : `${day(v.earliest)}–${day(v.latest)}`;
-      if (v.latest < req.value) return risky(confirmed ? "supported" : "unknown", [e.id], `${who} by ${when}, before the ${kind} ${dl}`, confirmed ? "none" : "estimate_only");
-      if (v.latest === req.value) return risky(confirmed ? "supported" : "unknown", [e.id], `${who} by ${when}: the same day as the ${kind}, with no margin`, "on_deadline");
-      if (v.earliest > req.value) return risky(confirmed ? "contradicted" : "unknown", [e.id], `${who} ${when}, after the ${kind} ${dl}`, "late_estimate");
+      if (v.latest < req.value) return risky(checkable ? "supported" : "unknown", [e.id], `${who} by ${when}, before the ${kind} ${dl}`, estimate ? "estimate_only" : "none");
+      if (v.latest === req.value) return risky(checkable ? "supported" : "unknown", [e.id], `${who} by ${when}: the same day as the ${kind}, with no margin`, "on_deadline");
+      if (v.earliest > req.value) return risky(checkable ? "contradicted" : "unknown", [e.id], `${who} ${when}, after the ${kind} ${dl}`, "late_estimate");
       return risky("unknown", [e.id], `${who} ${when}, which may end after the ${kind} ${dl}`, "late_estimate");
     }
   }
@@ -343,7 +345,9 @@ export function classifyCandidate(offer: Offer, results: RequirementResult[], co
   if (mandatoryUnknown.length > 0 || cost.listedSubtotalCents === null || offer.needsReviewReasons.length > 0) {
     return { class: "needs_review", affordability, unknowns, reason: `Needs review: ${reviewSummary(results, cost, offer).join(" · ")}` };
   }
-  return { class: "eligible", affordability, unknowns, reason: `All mandatory requirements supported by listing evidence; provisional cost ${formatUsd(cost.knownComparableCostCents!)} (tax unknown)` };
+  const d = results.find((r) => r.attribute === "delivery_by");
+  const estimateNote = d && d.state === "supported" && d.deadlineRisk && d.deadlineRisk !== "none" ? `; delivery date is a Google estimate${d.deadlineRisk === "on_deadline" ? " on the deadline day, with no margin" : ""}` : "";
+  return { class: "eligible", affordability, unknowns, reason: `All mandatory requirements supported by listing evidence; provisional cost ${formatUsd(cost.knownComparableCostCents!)} (tax unknown)${estimateNote}` };
 }
 
 const CLASS_ORDER = { eligible: 0, needs_review: 1, rejected: 2 } as const;

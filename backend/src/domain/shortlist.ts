@@ -193,13 +193,16 @@ function specValue(c: Cand, attribute: string): number | null {
   return vals.length ? Math.min(...vals) : null;
 }
 
-const SPEC_ADVANTAGE: Record<string, { label: string; unit: (n: number) => string }> = {
+// A spec advantage must be meaningful: counts must be strictly larger, measured values at least 5% larger
+// (68 against 67.6 fl oz is the same pitcher size, not an advantage).
+const SPEC_ADVANTAGE: Record<string, { label: string; unit: (n: number) => string; count?: boolean }> = {
   capacity_wh: { label: "More battery capacity", unit: (n) => `${n} Wh` },
-  ac_outlets: { label: "More AC outlets", unit: (n) => `${n} AC outlets` },
+  ac_outlets: { label: "More AC outlets", unit: (n) => `${n} AC outlets`, count: true },
   volume: { label: "Larger capacity", unit: (n) => `${ozOf(n)} fl oz` },
   refresh_rate: { label: "Higher refresh rate", unit: (n) => `${n} Hz` },
   screen_size: { label: "Larger screen", unit: (n) => `${n}"` },
 };
+const clearlyMore = (attribute: string, value: number | null, than: number) => value !== null && (SPEC_ADVANTAGE[attribute]?.count ? value > than : value >= than * 1.05);
 
 const meaningfulCostGap = (a: number, b: number) => Math.abs(a - b) >= Math.max(500, Math.round(Math.min(a, b) * 0.05));
 
@@ -259,9 +262,23 @@ function compromiseOf(c: Cand, reqs: Map<string, Requirement>, budgetCents: numb
   const parts: string[] = [];
   if (c.specGaps.length) parts.push(`${join(c.specGaps.map((r) => shortName(r, reqs)))} not confirmed`);
   const d = c.e.requirementResults.find((r) => r.attribute === "delivery_by");
-  if (d && d.mandatory && c.risk >= 1) parts.push(c.risk >= 4 ? "no delivery date in the listing data" : c.risk === 3 ? "Google's delivery estimate is after your deadline" : c.risk === 2 ? "Google's delivery estimate lands on your deadline day" : "delivery is a Google estimate, not confirmed for your address");
+  const loc = c.o.delivery.location;
+  if (d && d.mandatory && c.risk >= 1)
+    parts.push(
+      c.risk >= 4
+        ? "no delivery date in the listing data"
+        : c.risk === 3
+          ? "Google's delivery estimate is after your deadline"
+          : c.risk === 2
+            ? "Google's delivery estimate lands on your deadline day"
+            : loc
+              ? `the delivery date is Google's estimate for ${loc}, not a guaranteed arrival`
+              : "delivery is a Google estimate, not confirmed for your address",
+    );
   if (c.conditionGap) parts.push("new condition remains unconfirmed");
-  if (!parts.length) return c.e.cost.shippingCents === null ? "Shipping and tax are unknown, so the final total is not known." : "Tax is unknown, so the final total is not known.";
+  const totals = c.e.cost.shippingCents === null ? "Shipping and tax are unknown, so the final total is not known." : "Tax is unknown, so the final total is not known.";
+  if (!parts.length) return totals;
+  if (c.compliance === "meets_all") return `${capital(parts.join("; "))}. ${totals}`;
   return `${capital(parts.join("; "))}.`;
 }
 
@@ -329,7 +346,7 @@ export function buildShortlist(input: ShortlistInput): Shortlist {
       const mine = specValue(closest, r.attribute);
       if (mine === null) continue;
       const better = usable
-        .filter((c) => !taken(c) && (specValue(c, r.attribute) ?? -Infinity) > mine && c.specGaps.length <= closest.specGaps.length)
+        .filter((c) => !taken(c) && clearlyMore(r.attribute, specValue(c, r.attribute), mine) && c.specGaps.length <= closest.specGaps.length)
         .sort((a, b) => specValue(b, r.attribute)! - specValue(a, r.attribute)! || (a.cost ?? Infinity) - (b.cost ?? Infinity))[0];
       if (!better) continue;
       const adv = SPEC_ADVANTAGE[r.attribute]!;

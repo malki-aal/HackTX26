@@ -86,7 +86,7 @@ function OfferDetail() {
               <KeyValue label="Tax" value={offer.taxCents === null ? "Unknown" : formatCents(offer.taxCents)} />
               <KeyValue label="Against your budget" value={AFFORDABILITY[offer.affordability]} />
               <KeyValue label="Delivery" value={offer.delivery.status === "stated" ? (offer.delivery.text ?? "Stated") : "Unknown"}
-                note={offer.deliveryNote ?? (offer.deadlineFit === "meets" ? "Arrives by your date" : offer.deadlineFit === "misses" ? "Arrives after your date" : offer.deadlineFit === "unknown" ? "Can't be checked against your date" : undefined)} />
+                note={offer.deliveryNote ?? (offer.deadlineFit === "meets" ? (offer.delivery.estimate ? "Estimated to arrive by your date" : "Arrives by your date") : offer.deadlineFit === "misses" ? "Arrives after your date" : offer.deadlineFit === "unknown" ? "Can't be checked against your date" : undefined)} />
             </dl>
             {offer.costNotes.length > 0 && (
               <ul className="mt-2 list-disc pl-5 text-[13px] text-muted">

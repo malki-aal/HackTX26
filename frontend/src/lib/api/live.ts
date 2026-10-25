@@ -428,7 +428,8 @@ function mapCandidate(
   const deliveryCheck = c.requirementChecks.find((k) => k.attribute === "delivery_by");
   let fit: Offer["deadlineFit"] = "not_applicable";
   if (req.deadline) fit = noncompliant || deliveryCheck?.state === "contradicted" ? "misses" : deliveryCheck?.state === "supported" ? "meets" : "unknown";
-  const estimate = d?.basis === "google_estimate" && deliveryCheck?.state !== "supported";
+  // Google's delivery text stays an estimate even when it passes the deadline check for a stated search location.
+  const estimate = d?.basis === "google_estimate";
   const entryIndex = shortlist?.entries.findIndex((e) => e.offerId === c.offerId) ?? -1;
   const entry = entryIndex >= 0 ? shortlist!.entries[entryIndex] : undefined;
   const kinds = rec?.kinds ?? c.recommendationKinds ?? [];
@@ -448,7 +449,7 @@ function mapCandidate(
     shippingCents: c.shippingCents,
     taxCents: null, // the backend never knows tax
     delivery: stated
-      ? { status: "stated", text: d?.excerpt ? (estimate ? `Google estimate: ${d.excerpt}` : d.excerpt) : d?.latest ? `Arrives by ${d.latest}` : undefined, estimate }
+      ? { status: "stated", text: d?.excerpt ? (estimate ? `Google estimate: ${d.excerpt}` : d.excerpt) : d?.latest ? `${estimate ? "Estimated by" : "Arrives by"} ${d.latest}` : undefined, estimate }
       : { status: "unknown" },
     deadlineFit: fit,
     deliveryNote: deliveryCheck?.reason,

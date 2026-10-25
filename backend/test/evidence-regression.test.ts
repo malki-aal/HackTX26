@@ -143,7 +143,17 @@ describe("saved café-blender run: delivery, ranking and enrichment", () => {
   it("with a delivery location, an estimate on the deadline day passes but is flagged", () => {
     const { r } = check(offers("Austin, Texas, United States"), "Walmart - TERUISI", "delivery_by");
     expect(r).toMatchObject({ state: "supported", deadlineRisk: "on_deadline" });
-    expect(r.reason).toMatch(/estimates delivery to Austin, Texas, United States by Wed, Oct 28/);
+    expect(r.reason).toMatch(/estimates delivery to Austin, Texas, United States \(an estimate, not a guaranteed arrival\) by Wed, Oct 28/);
+  });
+
+  it("a stated search location lets an estimate pass the deadline check without becoming a guarantee", () => {
+    const list = offers("Austin, Texas, United States");
+    const located = list.find((o) => o.delivery.excerpt === "Free delivery by Wed")!;
+    const early = { ...located, evidence: located.evidence.map((e) => (e.attribute === "delivery_by" ? { ...e, value: { earliest: "2026-10-27", latest: "2026-10-27" } } : e)) };
+    const e = evaluateCandidates([early], requirements, 1, 30000)[0]!;
+    const d = e.requirementResults.find((r) => r.attribute === "delivery_by")!;
+    expect(d).toMatchObject({ state: "supported", deadlineRisk: "estimate_only" }); // never "none" for a Google estimate
+    expect(d.reason).toMatch(/an estimate, not a guaranteed arrival/);
   });
 
   it("keeps unknown condition unknown and ranks deadline risk above missing condition", () => {

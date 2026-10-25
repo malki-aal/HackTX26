@@ -720,7 +720,13 @@ function shortlistFor(run: { id: string; shortlist?: string | null; request_vers
     const saved = json<SavedShortlist>(run.shortlist);
     if (saved.requestVersion === run.request_version) return { ...saved.shortlist, source: "saved" };
   }
-  return { ...computeShortlist(evals, offers, version.requirements, version.fields), source: "computed" };
+  // Runs from before saved shortlists were evaluated under older evidence rules (a title keyword could
+  // count as commercial use; a Google date without a location could pass a deadline). Say so plainly.
+  const sl = computeShortlist(evals, offers, version.requirements, version.fields);
+  return { ...sl, headline: [LEGACY_RULES_NOTE, sl.headline].filter(Boolean).join(" "), source: "computed" };
 }
+
+export const LEGACY_RULES_NOTE =
+  "These results were researched before Runway's current evidence checks (commercial-use wording, delivery estimates, conditional shipping), so some confirmations below may be weaker than they look. Search again to apply the current checks.";
 
 export { loadOffers };
