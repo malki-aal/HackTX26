@@ -83,6 +83,8 @@ export interface BankAdapter {
   getTransfer(transferId: string): Promise<NessieTransfer | null>;
   /** Transfers the account sent (payer side). */
   listTransfers(payerAccountId: string): Promise<NessieTransfer[]>;
+  /** Transfers the account received (payee side); used to find a transfer by its reference. */
+  listTransfersTo(payeeAccountId: string): Promise<NessieTransfer[]>;
   /** Sandbox customer + checking account for an employee (starts at $0). */
   createCustomer(firstName: string, lastName: string): Promise<{ id: string }>;
   createAccount(customerId: string, nickname: string): Promise<NessieAccount>;
@@ -261,44 +263,76 @@ export class NessieClient implements BankAdapter {
   }
 
   /** Single POST, never retried here (same contract as createPurchase). */
+  /**
+   * Company → employee money movement. The current Nessie API's TransferCreate has no payee field
+   * (it rejects medium and payee_id), so a transfer is recorded as a matched pair carrying the same
+   * description: a deposit into the employee's account (the record the employee sees, and the one we
+   * track and read back) and then a withdrawal from the company account. The deposit decides success:
+   * if it is rejected, nothing moved. A withdrawal that fails afterwards does not undo the employee's
+   * deposit; Runway's own ledger already subtracts the approved amount, and the message says so.
+   */
   async createTransfer(payerAccountId: string, input: CreateTransferInput): Promise<CreatePurchaseResult> {
-    const body = {
+    const amount = toNessieAmount(input.amountCents);
+    const deposit = await this.request("POST", `/accounts/${encodeURIComponent(input.payeeAccountId)}/deposits`, {
       medium: "balance",
-      payee_id: input.payeeAccountId,
-      amount: toNessieAmount(input.amountCents),
       transaction_date: input.date,
       status: "pending",
+      amount,
       description: input.description,
-    };
-    const res = await this.request("POST", `/accounts/${encodeURIComponent(payerAccountId)}/transfers`, body);
-    if (res.status !== 200 && res.status !== 201 && res.status !== 202) this.fail(res, "transfer create");
-    const obj = unwrapObject(res.body);
+    });
+    if (deposit.status !== 200 && deposit.status !== 201 && deposit.status !== 202) this.fail(deposit, "transfer deposit to the employee account");
+    const obj = unwrapObject(deposit.body);
     const created = obj ? TransferSchema.safeParse(obj) : null;
-    const message = res.body && typeof res.body === "object" ? ((res.body as { message?: string }).message ?? null) : typeof res.body === "string" ? res.body.slice(0, 200) : null;
+    let note: string | null = null;
+    try {
+      const w = await this.request("POST", `/accounts/${encodeURIComponent(payerAccountId)}/withdrawals`, {
+        medium: "balance",
+        transaction_date: input.date,
+        status: "pending",
+        amount,
+        description: input.description,
+      });
+      if (w.status !== 200 && w.status !== 201 && w.status !== 202) note = `Employee deposit recorded; the matching company withdrawal was not (HTTP ${w.status})`;
+    } catch (e) {
+      note = `Employee deposit recorded; the matching company withdrawal was not (${e instanceof Error ? e.message.slice(0, 120) : "error"})`;
+    }
+    const message = deposit.body && typeof deposit.body === "object" ? ((deposit.body as { message?: string }).message ?? null) : typeof deposit.body === "string" ? deposit.body.slice(0, 200) : null;
     return {
       externalId: created?.success ? created.data._id : null,
       providerStatus: created?.success ? (created.data.status ?? null) : null,
       providerAmount: created?.success ? created.data.amount : null,
-      httpStatus: res.status,
-      message,
+      httpStatus: deposit.status,
+      message: note ?? message,
     };
   }
 
+  /** A transfer is tracked by its deposit into the employee account. */
   async getTransfer(transferId: string): Promise<NessieTransfer | null> {
-    const res = await this.request("GET", `/transfers/${encodeURIComponent(transferId)}`);
+    const res = await this.request("GET", `/deposits/${encodeURIComponent(transferId)}`);
     if (res.status === 404) return null;
     if (res.status !== 200) this.fail(res, "transfer read");
     const parsed = TransferSchema.safeParse(unwrapObject(res.body));
     return parsed.success ? toTransfer(parsed.data) : null;
   }
 
+  /** The company side: withdrawals recorded for transfers (matched to executions by description). */
   async listTransfers(payerAccountId: string): Promise<NessieTransfer[]> {
-    const res = await this.request("GET", `/accounts/${encodeURIComponent(payerAccountId)}/transfers?type=payer`);
+    return this.listMovements(`/accounts/${encodeURIComponent(payerAccountId)}/withdrawals`, "transfers read", { payerId: payerAccountId });
+  }
+
+  async listTransfersTo(payeeAccountId: string): Promise<NessieTransfer[]> {
+    return this.listMovements(`/accounts/${encodeURIComponent(payeeAccountId)}/deposits`, "transfer deposits read", { payeeId: payeeAccountId });
+  }
+
+  private async listMovements(path: string, what: string, side: { payerId?: string; payeeId?: string }): Promise<NessieTransfer[]> {
+    const res = await this.request("GET", path);
     if (res.status === 404) return [];
-    if (res.status !== 200) this.fail(res, "transfers read");
+    if (res.status !== 200) this.fail(res, what);
     return (unwrapArray(res.body) ?? []).flatMap((t) => {
       const parsed = TransferSchema.safeParse(t);
-      return parsed.success ? [toTransfer(parsed.data)] : [];
+      if (!parsed.success) return [];
+      const m = toTransfer(parsed.data);
+      return [{ ...m, payerId: m.payerId ?? side.payerId ?? null, payeeId: m.payeeId ?? side.payeeId ?? null }];
     });
   }
 

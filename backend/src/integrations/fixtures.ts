@@ -260,6 +260,9 @@ export class FixtureBank implements BankAdapter {
   async listTransfers(payerAccountId: string) {
     return structuredClone(this.state.transfers.filter((t) => t.payerId === payerAccountId));
   }
+  async listTransfersTo(payeeAccountId: string) {
+    return structuredClone(this.state.transfers.filter((t) => t.payeeId === payeeAccountId));
+  }
   async listBills() {
     return structuredClone(this.state.bills);
   }
