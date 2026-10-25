@@ -22,7 +22,7 @@ A quick tunnel gets a **new random `https://<words>.trycloudflare.com` URL each 
 2. Update `NEXT_PUBLIC_API_BASE_URL` in Vercel (Production).
 3. Redeploy the frontend. `NEXT_PUBLIC_*` values are baked in at build time.
 
-On demo day, start the launcher once, update Vercel once, and don't restart. Keep the laptop awake and plugged in.
+On demo day, start the launcher once, update Vercel once, and don't restart. While it runs, the launcher blocks idle sleep with `caffeinate`. Closing the lid on battery still sleeps the Mac, which makes the tunnel answer **530**. Keep it plugged in with the lid open. `cloudflared` reconnects on wake under the same URL as long as the process survives.
 
 ## Frontend settings for live mode (Vercel → Settings → Environment Variables, Production)
 

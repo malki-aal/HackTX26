@@ -34,6 +34,10 @@ done
 curl -sf "http://127.0.0.1:$PORT/api/v1/health" >/dev/null || { echo "Backend not healthy; see backend/$API_LOG"; exit 1; }
 echo "Backend healthy."
 
+# Sleep kills the tunnel (Cloudflare then answers 530). Block idle/system sleep while this runs;
+# closing the lid on battery still sleeps the Mac, so stay plugged in with the lid open.
+if command -v caffeinate >/dev/null; then caffeinate -ims -w $$ & fi
+
 echo "Starting Cloudflare quick tunnel (log: backend/$TUN_LOG)..."
 cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:$PORT" >"$TUN_LOG" 2>&1 &
 TUN_PID=$!
