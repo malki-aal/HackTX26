@@ -1,0 +1,163 @@
+# Contract v3: executive review and Google sign-in
+
+This covers the backend side of `RUNWAY_EXECUTIVE_BACKEND_AUTH.md`, written for the frontend work in `RUNWAY_EXECUTIVE_FRONTEND_AUTH.md`. Everything in v1/v2 still applies. Changes are additive except where marked **(changed)**.
+
+## 1. Sign-in, session transport and modes
+
+- **Provider: Clerk with Google.** The frontend and backend use the **same Clerk application**.
+  - Frontend: publishable key only.
+  - Backend: `CLERK_SECRET_KEY`, server-only.
+- **Transport:**
+  - Every protected request carries `Authorization: Bearer <session token>`, from Clerk's `getToken()` on the frontend. Fetch a fresh token per request; Clerk tokens are short-lived.
+  - The API is cross-origin (`:3000` → `:8000`); CORS allows the `authorization` header from `FRONTEND_ORIGINS`.
+- **Verification:**
+  - The backend calls `verifyToken` from `@clerk/backend` (3.26.2). It checks the signature (Clerk JWKS, or `CLERK_JWT_KEY` for networkless checks), the expiry, and `azp` against `CLERK_AUTHORIZED_PARTIES`, which defaults to `FRONTEND_ORIGINS`.
+  - Identity comes only from the verified `sub` (the Clerk user id).
+- **Modes** (`GET /api/v1/health` → `data.auth = { mode, configured }`):
+  - `clerk`: required with live integrations. When `CLERK_SECRET_KEY` is missing, every protected route returns `503 AUTH_NOT_CONFIGURED`.
+  - `demo`: allowed only with `INTEGRATION_MODE=fixtures`. Identity comes from `X-Demo-Actor: employee-demo|executive-demo` or the legacy body `actor`, and every response has `meta.demoIdentity: true`. The server refuses to start with `AUTH_MODE=demo` plus live integrations.
+- **(changed)** In `clerk` mode, any body `actor` field or `X-Demo-Actor` header returns `400 IDENTITY_FIELD_NOT_ALLOWED`. `meta.demoIdentity` is `false`, and `meta.authMode` is now on every response.
+- **Public routes:** `/health`, `/categories`, `/demo/manufacturing`. Everything else needs a session.
+- The eve internal tool channel keeps its own per-process token on loopback. It is unrelated to user sign-in and never sent to browsers.
+
+## 2. Roles and company assignment (bootstrap allowlist)
+
+- Copy `config/access.example.json` to `config/access.json` (gitignored) and list the **team-supplied** Google emails with `role` (`employee` or `executive`) and `company`.
+  - The file is re-read whenever it changes.
+  - Removing an email revokes that membership on the user's next request.
+- **Matching:**
+  - Only emails that Clerk reports as **verified** match.
+  - The resulting membership is bound to the internal user id, which maps 1:1 to the Clerk user id.
+  - Display-name and avatar edits never change role or company.
+- **No one is auto-promoted.** A signed-in account that isn't in the allowlist is `membership.status: "pending"` and gets `403 ACCESS_PENDING` on everything except `/me`.
+- **Use a new company id** (for example `runway_team`) so old demo data in `org_demo` stays separate. Set `ACCOUNT_COMPANY_ID` to that id: only that company's executives can see the Nessie account (budget figures, merchant mappings, purchase history).
+
+## 3. Current user
+
+`GET /api/v1/me` (signed in; works while access is pending):
+
+```json
+{
+  "user": { "id": "usr_…", "displayName": "Erin Executive", "email": "erin@…", "emailVerified": true,
+            "avatarStyle": "role_default", "defaultAvatar": "executive_silhouette" },
+  "membership": { "status": "active", "role": "executive", "company": { "id": "runway_team", "name": "…" } },
+  "auth": { "mode": "clerk", "demoIdentity": false }
+}
+```
+
+- `defaultAvatar` is `executive_silhouette` or `employee_silhouette`. The frontend renders its own app-local SVG for it. The value is decorative and carries no authority.
+- `PATCH /api/v1/me` accepts only `{ displayName?, avatarStyle?: "role_default"|"executive_silhouette"|"employee_silhouette" }`. Any other field, `role` and `company` included, returns `422`.
+
+## 4. Who can do what
+
+| Area | Employee | Executive (same company) |
+|---|---|---|
+| Requests, runs, candidates, events, projects | own only (others' ids → 404) | read all in company; edit only own |
+| Create/submit proposals | own requests | own requests |
+| `GET /proposals` | own submissions | company queue |
+| `GET /proposals/:id`, `/confirmation`, `/executions/:id` | own | company |
+| Decide, `/financial-preview`, reconcile, agent-config edits | 403 `FORBIDDEN_ROLE` | yes, **except their own proposals** (403 `SELF_APPROVAL_NOT_ALLOWED`) |
+| `/budget` | status only (`scope:"employee"`, figures `null`) | full when the company is `ACCOUNT_COMPANY_ID` |
+| Merchant mappings, `/merchants/:id`, `/purchase-history` | 403 | `ACCOUNT_COMPANY_ID` executives only |
+
+Resources belonging to another company always return `404`, so their existence isn't leaked.
+
+## 5. Queue and employee submissions: `GET /api/v1/proposals`
+
+- **Query parameters:**
+  - `decisionState` (`awaiting_review|approved|changes_requested|rejected|not_submitted`);
+  - `limit` (1–100, default 20);
+  - `cursor`, taken from `meta.nextCursor`;
+  - `updatedAfter`, the `meta.serverTime` returned by the previous poll. It is inclusive, so dedupe by `id`.
+- `meta.counts` holds totals per decision state, computed over the whole scope regardless of paging. Use these for badges, never fixture counts.
+- Item shape: `{ id, requestId, projectId, version, title, item, quantity, unit, deadline, deadlineType, employee { id, displayName, role, demoIdentity }, decisionState, executionStatus, providerStatus, offer { id, title, seller, sourceUrl, imageUrl, observedAt }, exactAmountCents, eligibility, unresolved[], offerStale, latestDecision { decision, resultingState, note, actor, version, createdAt } | null, submittedAt, executionId, updatedAt }`.
+- **Polling:** poll every ~5 s while visible.
+  - Polling is read-only and never runs research, model calls or purchases.
+  - Any execution status change bumps the proposal's `updatedAt`.
+
+## 6. Review detail: `GET /api/v1/proposals/:id`
+
+Adds the following to the v2 detail:
+
+- `requester`;
+- `request { title, purpose, item, quantity, unit, deadline, deadlineType, requirements[] (with display) }` for the **immutable submitted revision**;
+- `decisions[]`: `{ version, decision, resultingState, note, actorInfo { displayName, role }, createdAt, confirmation { proposalVersion, exactAmountCents, confirmedAt, statement } | null }`;
+- `financialAssessment`: the preview below, served from cached data, for executives; `null` for employees.
+
+Employees also get `budgetAssessment.availableBudgetCents: null`.
+
+## 7. Financial preview: `GET /api/v1/proposals/:id/financial-preview?refresh=true`
+
+```json
+{
+  "currency": "USD",
+  "label": "Available budget from Runway's ledger … Not a bank balance.",
+  "currentAvailableCents": 200000,
+  "exactExpenseCents": 58756,
+  "projectedAvailableCents": 141244,
+  "reservationIncluded": false,
+  "freshness": { "source": "nessie_live", "fetchedAt": "…", "refreshedNow": true, "status": "verified" },
+  "canApprove": true,
+  "blockingReasons": [],
+  "amounts": { "researchListedSubtotalCents": …, "budgetCeilingCents": …, "exactExpenseCents": 58756, "amountSource": "user_confirmed",
+               "approvedAmountCents": null, "providerStoredAmountCents": null, "discrepancyCents": null },
+  "unknowns": ["Sales tax", "Shipping"],
+  "project": null,
+  "notes": []
+}
+```
+
+- **The projection:** `projectedAvailableCents = currentAvailableCents - exactExpenseCents`, unless `reservationIncluded` is true. In that case the amount is already in the ledger, so projected equals current and is never subtracted twice.
+- **No fake balance:** if bank data is missing, `currentAvailableCents` is `null` and `blockingReasons` includes `bank_check_unavailable`.
+- **`blockingReasons[].code`:**
+  - `not_awaiting_review`, `no_exact_amount`;
+  - `bank_check_unavailable`, `exceeds_available_budget`, `exceeds_request_budget`, `exceeds_project_budget`;
+  - `offer_stale`, `merchant_mapping_required`, `requirements_changed`.
+- `refresh=true` re-reads Nessie (a free read; no research). The approval itself always rechecks the bank and reserves atomically, so a stale preview can't overspend.
+- **After approval:** `amounts.providerStoredAmountCents` and `discrepancyCents` show Nessie's whole-dollar storage, for example 58756 approved → 58700 stored → 56.
+
+## 8. Decisions: `POST /api/v1/proposals/:id/decision`
+
+Header `Idempotency-Key: <uuid>`. Create one key per decision attempt and reuse it on retries.
+
+```json
+// approve
+{ "version": 2, "decision": "approve", "note": "Optional text",
+  "confirmation": { "confirmed": true, "proposalVersion": 2, "exactAmountCents": 58756 } }
+// request changes / reject: no confirmation needed
+{ "version": 2, "decision": "request_changes", "note": "" }
+```
+
+- **Values:** `decision` is `approve`, `request_changes` or `reject`. The resulting `decisionState` is `approved`, `changes_requested` or `rejected`.
+- **Note:** optional for all three decisions. It is plain text: whitespace is normalized, control characters are rejected (422), and the limit is 1000 characters (422).
+- **Approve without confirmation** (or with `confirmed: false`) returns `422 CONFIRMATION_REQUIRED`. `details` carries `proposalVersion`, `exactAmountCents` and the server's `statement`:
+  > I approve this simulated purchase for $587.56 and understand that it commits this amount from the available company budget.
+- **Terms mismatch** (`proposalVersion` or `exactAmountCents` differs from the server's) returns `409 TERMS_CHANGED` with the current terms. A stale `version` returns `409 VERSION_CONFLICT`. In both cases, refresh the detail and require a fresh checkbox.
+- **Persistence:** the server stores the actor (from the session), a server timestamp, and the confirmed version, amount and statement.
+- **Idempotency:** scoped to *this executive + this proposal*. The same key and payload returns the same result, which covers double clicks and lost responses with exactly one decision and one purchase. The same key with a different payload returns `409 IDEMPOTENCY_CONFLICT`.
+- **Approval** keeps every v1/v2 protection:
+  - fresh evidence and bank checks;
+  - explicit merchant mapping;
+  - the project cap and the atomic reservation;
+  - a durable execution intent before the single Nessie POST;
+  - no automatic resend after an ambiguous result.
+- **Request changes:** the employee creates a revision with `POST /requests/:id/proposals { proposalId, runId, offerId }`, then submits `version + 1`. Old decisions stay in `decisions[]`.
+- **Reject:** no purchase and no reservation.
+
+## 9. Errors the UI should distinguish
+
+| Status / code | Meaning | UI |
+|---|---|---|
+| 401 `UNAUTHENTICATED` (`details.reason: missing/invalid/expired`) | signed out or expired | send to sign-in |
+| 403 `ACCESS_PENDING` | signed in, not on the allowlist | pending-access screen |
+| 403 `FORBIDDEN_ROLE` / `SELF_APPROVAL_NOT_ALLOWED` | wrong role / own proposal | hide action, explain |
+| 404 | not visible to this user (or absent) | not found |
+| 409 `VERSION_CONFLICT` / `TERMS_CHANGED` | stale review | reload, reset checkbox |
+| 409 `BUDGET_EXCEEDED` / `OFFER_STALE` / `MERCHANT_MAPPING_REQUIRED` | approval blocked | show reason |
+| 422 `CONFIRMATION_REQUIRED` / `VALIDATION_ERROR` | input | fix input |
+| 503 `AUTH_NOT_CONFIGURED` | server missing Clerk config | config error state |
+
+## 10. What is not real yet
+
+- Real Google sign-in has **not** been verified. The backend tests use a controlled test identity provider, labeled as such. Verifying it needs the team's Clerk application keys and an allowlist of real emails.
+- Passkeys / Face ID are out of scope.

@@ -20,6 +20,7 @@ import { AppError, IntegrationError, invalidState, notFound, versionConflict } f
 import { emitEvent } from "./events.js";
 import { getConfig } from "./agentConfigs.js";
 import { markIntegration } from "./budget.js";
+import { actorInfo } from "../auth/access.js";
 import { z } from "zod";
 
 const ORG_ID = "org_demo";
@@ -109,7 +110,7 @@ function resetCategoryQuestion(ctx: AppContext, requestId: string) {
   ctx.db.prepare("DELETE FROM clarification_questions WHERE request_id = ? AND id = 'q_category'").run(requestId);
 }
 
-export async function createRequest(ctx: AppContext, body: unknown, actor = "employee-demo", opts: { projectId?: string; lineKey?: string } = {}) {
+export async function createRequest(ctx: AppContext, body: unknown, actor = "employee-demo", opts: { projectId?: string; lineKey?: string; orgId?: string } = {}) {
   const raw = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const parsedFields = RequestFields.parse(raw);
   getConfig(ctx.db, parsedFields.agentConfigId, parsedFields.agentConfigVersion);
@@ -137,7 +138,7 @@ export async function createRequest(ctx: AppContext, body: unknown, actor = "emp
     const status = questions.length ? "needs_clarification" : "ready_to_confirm";
     ctx.db
       .prepare("INSERT INTO requests (id, org_id, current_version, confirmed_version, status, created_by, created_at, updated_at, project_id, line_key) VALUES (?, ?, 1, NULL, ?, ?, ?, ?, ?, ?)")
-      .run(id, ORG_ID, status, actor, now, now, opts.projectId ?? null, opts.lineKey ?? null);
+      .run(id, opts.orgId ?? ORG_ID, status, actor, now, now, opts.projectId ?? null, opts.lineKey ?? null);
     insertVersion(ctx, id, 1, storedFields as RequestFields, requirements, explicit, "created", true, null);
     insertQuestions(ctx, id, 1, questions, "deterministic");
     if (questions.length) emitEvent(ctx.db, { type: "clarification_required", requestId: id, summary: `${questions.length} clarification question(s)`, payload: { questionIds: questions.map((q) => q.id) } });
@@ -178,14 +179,19 @@ export function getRequestView(ctx: AppContext, id: string) {
     projectId: r.project_id,
     lineKey: r.line_key,
     createdBy: r.created_by,
+    requester: actorInfo(ctx, r.created_by),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
-export function listRequests(ctx: AppContext, opts: { limit: number; cursor: string | null; status?: string }) {
-  const params: Array<string | number> = [];
-  let where = "1=1";
+export function listRequests(ctx: AppContext, opts: { limit: number; cursor: string | null; status?: string; orgId: string; ownerId?: string }) {
+  const params: Array<string | number> = [opts.orgId];
+  let where = "org_id = ?";
+  if (opts.ownerId) {
+    where += " AND created_by = ?";
+    params.push(opts.ownerId);
+  }
   if (opts.status) {
     where += " AND status = ?";
     params.push(opts.status);

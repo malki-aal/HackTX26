@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import * as C from "../src/contracts/index.js";
 import { MerchantMappingBody } from "../src/services/merchants.js";
+import { PatchMeBody } from "../src/auth/access.js";
 
 const schema = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
 const envelope = (data: Record<string, unknown>) => ({ type: "object", required: ["data", "meta"], properties: { data, meta: { $ref: "#/components/schemas/Meta" } } });
@@ -28,10 +29,15 @@ const op = (o: Op) => ({
 
 const doc = {
   openapi: "3.1.0",
-  info: { title: "Runway API", version: "1.0.0", description: "Runway purchasing backend. Demo identities only (demoIdentity=true); no authentication. All money is integer USD cents. Timestamps are ISO-8601 UTC. See docs/CONTRACT_V2.md for changes since v1." },
+  info: { title: "Runway API", version: "1.0.0", description: "Runway purchasing backend. Signed-in mode verifies Clerk (Google) session tokens and enforces server-owned roles; fixtures demo mode uses declared demo actors (meta.demoIdentity=true). All money is integer USD cents. Timestamps are ISO-8601 UTC. See docs/CONTRACT_V2.md and docs/CONTRACT_V3_EXECUTIVE_AUTH.md." },
   servers: [{ url: "http://127.0.0.1:8000" }],
   paths: {
-    "/api/v1/health": { get: op({ summary: "Server and storage liveness (no external calls)" }) },
+    "/api/v1/health": { get: op({ summary: "Server and storage liveness, plus auth mode and whether sign-in is configured (public)" }) },
+    "/api/v1/me": {
+      get: op({ summary: "Current signed-in user: profile, server-owned membership/role/company (works before access is granted)" }),
+      patch: op({ summary: "Edit display name or app avatar style only; role/company fields are rejected", body: "PatchMeBody" }),
+    },
+    "/api/v1/proposals/{id}/financial-preview": { get: op({ summary: "Executive: current available budget, exact expense, projected available, reservation state, blocking reasons", params: ["id"], query: [["refresh", "true to re-read Nessie now (free read; no research)"]] }) },
     "/api/v1/integrations/status": { get: op({ summary: "Per-service configuration and last verified state (no secrets, no paid calls)", data: { type: "array", items: { $ref: "#/components/schemas/IntegrationStatus" } } }) },
     "/api/v1/agent-configs": { get: op({ summary: "List agent configurations (current versions)" }), post: op({ summary: "Create a configuration", body: "CreateAgentConfigBody", status: 201, data: { $ref: "#/components/schemas/AgentConfig" } }) },
     "/api/v1/agent-configs/{id}": { patch: op({ summary: "Create the next configuration version", body: "PatchAgentConfigBody", params: ["id"], data: { $ref: "#/components/schemas/AgentConfig" } }) },
@@ -47,7 +53,7 @@ const doc = {
     "/api/v1/runs/{id}/events": { get: op({ summary: "Cursor-based run events", params: ["id"], query: [["after", "cursor"], ["limit", "1-500"]] }) },
     "/api/v1/runs/{id}/cancel": { post: op({ summary: "Cancel future work; completed evidence is preserved", params: ["id"] }) },
     "/api/v1/budget": { get: op({ summary: "Account context with freshness and reservations", query: [["refresh", "true to read Nessie now"]], data: { $ref: "#/components/schemas/FinancialContext" } }) },
-    "/api/v1/proposals": { get: op({ summary: "Review/history list", query: [["decisionState", "filter"], ["limit", "1-200"]] }) },
+    "/api/v1/proposals": { get: op({ summary: "Executive: company queue; employee: own submissions. meta.counts per state, meta.nextCursor, meta.serverTime", query: [["decisionState", "awaiting_review|approved|changes_requested|rejected|not_submitted"], ["limit", "1-100"], ["cursor", "from meta.nextCursor"], ["updatedAfter", "ISO time (inclusive) from a previous meta.serverTime, for polling"]] }) },
     "/api/v1/proposals/{id}": { get: op({ summary: "Proposal with decision, execution and budget assessment", params: ["id"] }) },
     "/api/v1/proposals/{id}/submit": { post: op({ summary: "Confirm technical review and exact amount; submit for review", body: "SubmitProposalBody", params: ["id"] }) },
     "/api/v1/proposals/{id}/decision": { post: op({ summary: "Executive decision (approve executes one Nessie sandbox purchase)", body: "DecisionBody", params: ["id"], headers: ["Idempotency-Key"] }) },
@@ -65,7 +71,11 @@ const doc = {
     "/api/v1/activity": { get: op({ summary: "Pending/recent activity grouped by where each item is waiting", query: [["limit", "1-200"]] }) },
     "/api/v1/proposals/{id}/confirmation": { get: op({ summary: "Persisted confirmation record: ids, item/offer, requester/approver, masked account, seller and mapped merchant, approved vs stored amount, provider purchase, timestamps, evidence", params: ["id"] }) },
   },
+  security: [{ clerkSession: [] }],
   components: {
+    securitySchemes: {
+      clerkSession: { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "Clerk session token from the frontend (getToken()). Public routes: /health, /categories, /demo/manufacturing. In fixtures demo mode, X-Demo-Actor: employee-demo|executive-demo instead." },
+    },
     schemas: {
       Meta: schema(C.Meta),
       ApiError: schema(C.ApiError),
@@ -87,6 +97,7 @@ const doc = {
       SubmitProposalBody: schema(C.SubmitProposalBody),
       DecisionBody: schema(C.DecisionBody),
       ReconcileBody: schema(C.ReconcileBody),
+      PatchMeBody: schema(PatchMeBody),
       RunEventType: schema(C.RunEventType),
       CreateProjectBody: schema(C.CreateProjectBody),
       MerchantMappingBody: schema(MerchantMappingBody),

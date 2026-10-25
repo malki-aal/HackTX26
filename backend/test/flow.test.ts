@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approve, FAKE_SECRET, harness, MONITOR_REQUEST, researched, submittedProposal, testConfig } from "./helpers.js";
+import { approve, FAKE_SECRET, harness, MONITOR_REQUEST, researched, submittedProposal, testConfig, EXEC } from "./helpers.js";
 import { FixtureBank, FixtureShopping } from "../src/integrations/fixtures.js";
 import { IntegrationError } from "../src/lib/errors.js";
 import { createContext, buildAdapters } from "../src/app/bootstrap.js";
@@ -77,7 +77,7 @@ describe("agent configuration", () => {
       rankingPriority: "lowest_known_total",
       searchStrategy: "exact_specs",
       limits: { maxSearchCalls: 1, maxSteps: 8, maxDurationMs: 60000 },
-    });
+    }, EXEC);
     expect(cfg.status).toBe(201);
     const r = await researched(h, {}, { agentConfigId: "cfg_one_search" });
     expect(h.shopping.calls.length).toBe(1);
@@ -85,20 +85,20 @@ describe("agent configuration", () => {
     const ev = await h.call("GET", `/api/v1/runs/${r.runId}/events`);
     expect(ev.body.data.some((e: any) => e.type === "budget_checked")).toBe(false);
 
-    const patched = await h.call("PATCH", "/api/v1/agent-configs/cfg_one_search", { expectedVersion: 1, limits: { maxSearchCalls: 3, maxSteps: 8, maxDurationMs: 60000 } });
+    const patched = await h.call("PATCH", "/api/v1/agent-configs/cfg_one_search", { expectedVersion: 1, limits: { maxSearchCalls: 3, maxSteps: 8, maxDurationMs: 60000 } }, EXEC);
     expect(patched.body.data.version).toBe(2);
-    const stale = await h.call("PATCH", "/api/v1/agent-configs/cfg_one_search", { expectedVersion: 1, displayName: "x" });
+    const stale = await h.call("PATCH", "/api/v1/agent-configs/cfg_one_search", { expectedVersion: 1, displayName: "x" }, EXEC);
     expect(stale.body.error.code).toBe("VERSION_CONFLICT");
     // The environment cap (3) still applies.
-    const big = await h.call("PATCH", "/api/v1/agent-configs/cfg_one_search", { expectedVersion: 2, limits: { maxSearchCalls: 50, maxSteps: 8, maxDurationMs: 60000 } });
+    const big = await h.call("PATCH", "/api/v1/agent-configs/cfg_one_search", { expectedVersion: 2, limits: { maxSearchCalls: 50, maxSteps: 8, maxDurationMs: 60000 } }, EXEC);
     expect(big.status).toBe(422);
-    const tool = await h.call("POST", "/api/v1/agent-configs", { displayName: "bad", instructions: "", enabledTools: ["executePurchase"], rankingPriority: "lowest_known_total", searchStrategy: "exact_specs", limits: { maxSearchCalls: 1, maxSteps: 4, maxDurationMs: 60000 } });
+    const tool = await h.call("POST", "/api/v1/agent-configs", { displayName: "bad", instructions: "", enabledTools: ["executePurchase"], rankingPriority: "lowest_known_total", searchStrategy: "exact_specs", limits: { maxSearchCalls: 1, maxSteps: 4, maxDurationMs: 60000 } }, EXEC);
     expect(tool.status).toBe(422);
   });
 
   it("step limit stops the agent", async () => {
     const h = harness();
-    await h.call("POST", "/api/v1/agent-configs", { id: "cfg_tiny", displayName: "Tiny", instructions: "", enabledTools: ["getConfirmedRequirements", "searchProducts", "evaluateCandidates", "prepareProposalDraft"], rankingPriority: "lowest_known_total", searchStrategy: "exact_specs", limits: { maxSearchCalls: 3, maxSteps: 2, maxDurationMs: 60000 } });
+    await h.call("POST", "/api/v1/agent-configs", { id: "cfg_tiny", displayName: "Tiny", instructions: "", enabledTools: ["getConfirmedRequirements", "searchProducts", "evaluateCandidates", "prepareProposalDraft"], rankingPriority: "lowest_known_total", searchStrategy: "exact_specs", limits: { maxSearchCalls: 3, maxSteps: 2, maxDurationMs: 60000 } }, EXEC);
     const r = await researched(h, {}, { agentConfigId: "cfg_tiny" });
     expect(h.shopping.calls.length).toBe(1);
     expect(r.run.agentSummary.runtime.stopReason).toBe("step_limit");
@@ -282,7 +282,7 @@ describe("budget reconciliation with Nessie balance behavior", () => {
       const p = await submittedProposal(h, 100000);
       const d = await approve(h, p.proposalId);
       expect(d.body.data.execution.status).toBe("recorded");
-      const budget = await h.call("GET", "/api/v1/budget?refresh=true");
+      const budget = await h.call("GET", "/api/v1/budget?refresh=true", undefined, EXEC);
       // Either way the purchase is counted exactly once.
       expect(budget.body.data.availableBudgetCents).toBe(500000 - 120000 - 100000);
       expect(budget.body.data.unreflectedExpensesCents).toBe(reflects ? 0 : 100000);
@@ -299,7 +299,7 @@ describe("budget reconciliation with Nessie balance behavior", () => {
     expect(exe.providerAmountCents).toBe(79600);
     expect(exe.amountDiscrepancyCents).toBe(56);
     expect(exe.amountNote).toMatch(/whole dollars/);
-    const budget = await h.call("GET", "/api/v1/budget?refresh=true");
+    const budget = await h.call("GET", "/api/v1/budget?refresh=true", undefined, EXEC);
     // Balance dropped by $796.00, matched to the expense by the stored amount: counted once.
     expect(budget.body.data.unreflectedExpensesCents).toBe(0);
     expect(budget.body.data.availableBudgetCents).toBe(500000 - 79600 - 120000);
@@ -328,7 +328,7 @@ describe("execution failures and recovery", () => {
     const d = await approve(h, p.proposalId);
     expect(d.body.data.execution.status).toBe("failed");
     expect(d.body.data.execution.ledger[0].status).toBe("released");
-    const budget = await h.call("GET", "/api/v1/budget");
+    const budget = await h.call("GET", "/api/v1/budget", undefined, EXEC);
     expect(budget.body.data.activeReservationsCents).toBe(0);
   });
 
@@ -339,10 +339,10 @@ describe("execution failures and recovery", () => {
     const exe = d.body.data.execution;
     expect(exe.status).toBe("uncertain");
     expect(exe.ledger[0].status).toBe("active");
-    const rec = await h.call("POST", `/api/v1/executions/${exe.id}/reconcile`, { action: "check" });
+    const rec = await h.call("POST", `/api/v1/executions/${exe.id}/reconcile`, { action: "check" }, EXEC);
     expect(rec.body.data.status).toBe("uncertain");
     expect(h.bank.createCalls).toBe(1);
-    const failed = await h.call("POST", `/api/v1/executions/${exe.id}/reconcile`, { action: "mark_failed" });
+    const failed = await h.call("POST", `/api/v1/executions/${exe.id}/reconcile`, { action: "mark_failed" }, EXEC);
     expect(failed.body.data.status).toBe("failed");
     expect(failed.body.data.ledger[0].status).toBe("released");
   });
@@ -353,7 +353,7 @@ describe("execution failures and recovery", () => {
     const d = await approve(h, p.proposalId);
     const exe = d.body.data.execution;
     expect(exe.status).toBe("uncertain");
-    const rec = await h.call("POST", `/api/v1/executions/${exe.id}/reconcile`, {});
+    const rec = await h.call("POST", `/api/v1/executions/${exe.id}/reconcile`, {}, EXEC);
     expect(rec.body.data.status).toBe("recorded");
     expect(rec.body.data.externalReference.purchaseId).toBe("fixture_purchase_1");
     expect(h.bank.createCalls).toBe(1);

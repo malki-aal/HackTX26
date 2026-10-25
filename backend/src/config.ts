@@ -26,6 +26,17 @@ const Env = z.object({
   SERPAPI_TIMEOUT_MS: z.coerce.number().int().min(2_000).max(60_000).default(20_000),
   SERPAPI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(2),
   AGENT_RUNTIME_PORT: z.coerce.number().int().min(1).max(65535).default(8100),
+  /** "clerk" verifies Google sign-in sessions; "demo" uses fixed demo actors and is fixtures-only. */
+  AUTH_MODE: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["clerk", "demo"]).optional()),
+  CLERK_SECRET_KEY: z.string().optional(),
+  /** Optional PEM public key for networkless session verification. */
+  CLERK_JWT_KEY: z.string().optional(),
+  /** Frontend origins allowed to have issued the session token (azp). Defaults to FRONTEND_ORIGINS. */
+  CLERK_AUTHORIZED_PARTIES: z.string().optional(),
+  /** Team-supplied allowlist mapping verified emails to company and role (gitignored). */
+  ACCESS_BOOTSTRAP_FILE: z.string().default("./config/access.json"),
+  /** The company that owns the configured Nessie account. */
+  ACCOUNT_COMPANY_ID: z.string().default("org_demo"),
 });
 
 export interface AppConfig {
@@ -41,6 +52,14 @@ export interface AppConfig {
   nessie: { apiKey: string | null; baseUrl: string; customerId: string | null; accountId: string | null };
   limits: { maxSearchCallsPerRun: number; maxAgentSteps: number; maxResearchDurationMs: number; offerMaxAgeMinutes: number };
   agentRuntimePort: number;
+  auth: {
+    mode: "clerk" | "demo";
+    clerkSecretKey: string | null;
+    clerkJwtKey: string | null;
+    authorizedParties: string[];
+    bootstrapFile: string;
+    accountCompanyId: string;
+  };
 }
 
 const blank = (v: string | undefined) => (v && v.trim() ? v.trim() : null);
@@ -80,10 +99,28 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
       offerMaxAgeMinutes: e.OFFER_MAX_AGE_MINUTES,
     },
     agentRuntimePort: e.AGENT_RUNTIME_PORT,
+    auth: resolveAuth(e),
+  };
+}
+
+function resolveAuth(e: z.infer<typeof Env>): AppConfig["auth"] {
+  const mode = e.AUTH_MODE ?? (e.INTEGRATION_MODE === "fixtures" ? "demo" : "clerk");
+  // Demo actors are an explicit fixtures-only convenience, never a fallback for live money paths.
+  if (mode === "demo" && e.INTEGRATION_MODE === "live") throw new Error("AUTH_MODE=demo is only allowed with INTEGRATION_MODE=fixtures");
+  // A blank value means "use FRONTEND_ORIGINS"; an empty list would let any origin's token through azp.
+  const origins = (blank(e.CLERK_AUTHORIZED_PARTIES) ?? e.FRONTEND_ORIGINS).split(",").map((s) => s.trim()).filter(Boolean);
+  if (mode === "clerk" && origins.length === 0) throw new Error("CLERK_AUTHORIZED_PARTIES/FRONTEND_ORIGINS must list at least one frontend origin");
+  return {
+    mode,
+    clerkSecretKey: blank(e.CLERK_SECRET_KEY),
+    clerkJwtKey: blank(e.CLERK_JWT_KEY),
+    authorizedParties: origins,
+    bootstrapFile: e.ACCESS_BOOTSTRAP_FILE,
+    accountCompanyId: e.ACCOUNT_COMPANY_ID,
   };
 }
 
 /** All secret values currently configured, used to scrub logs and errors. */
 export function secretValues(config: AppConfig): string[] {
-  return [config.gemini.apiKey, config.serpapi.apiKey, config.nessie.apiKey].filter((v): v is string => !!v && v.length >= 6);
+  return [config.gemini.apiKey, config.serpapi.apiKey, config.nessie.apiKey, config.auth.clerkSecretKey].filter((v): v is string => !!v && v.length >= 6);
 }

@@ -41,6 +41,19 @@ npm start              # live mode: API on :8000 + internal eve agent on 127.0.0
 | `npm run seed:nessie` | Explicit sandbox seed; server startup never seeds |
 | `npm run smoke [-- --approve]` | Acceptance client against a running server (`RUNWAY_URL` overrides the base URL) |
 
+## Sign-in and roles (Clerk + Google)
+
+1. **Create the Clerk application** (team-owned) with Google enabled. A development instance can use Clerk's shared Google credentials; production needs custom Google OAuth.
+2. **Backend `.env`:** set `CLERK_SECRET_KEY` (server-only). Optionally set `CLERK_JWT_KEY` and `CLERK_AUTHORIZED_PARTIES`, which defaults to `FRONTEND_ORIGINS`.
+3. **Allowlist:** copy `config/access.example.json` to `config/access.json` and list the team's real Google emails with `role` and `company`. Set `ACCOUNT_COMPANY_ID` to that company.
+4. **Frontend:** uses the same Clerk app's publishable key and sends `Authorization: Bearer <getToken()>`.
+
+How the modes behave:
+- **Live mode:** always uses Clerk. Without `CLERK_SECRET_KEY`, protected routes return `503 AUTH_NOT_CONFIGURED`; nothing falls back to demo identities.
+- **Fixtures mode:** defaults to the declared demo actors (`X-Demo-Actor`).
+
+Details are in `docs/CONTRACT_V3_EXECUTIVE_AUTH.md`.
+
 ## Categories, projects and the manufacturing demo
 
 - **Categories, not monitors.** A request's item category is resolved from its text (`src/domain/categories.ts`): monitors, office chairs, wood glue, cork sheets, wood screws.

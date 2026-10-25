@@ -12,6 +12,7 @@ import { EveAgentRunner } from "../agent/eveRunner.js";
 import { seedDefaultConfigs } from "../services/agentConfigs.js";
 import { failInterruptedRuns } from "../services/research.js";
 import { recoverInterruptedExecutions } from "../services/executions.js";
+import { ClerkIdentityProvider, type IdentityProvider } from "../auth/identity.js";
 
 export function buildAdapters(config: AppConfig): Adapters {
   if (config.mode === "fixtures") {
@@ -27,7 +28,12 @@ export function buildAdapters(config: AppConfig): Adapters {
   };
 }
 
-export function createContext(config: AppConfig, opts: { adapters?: Adapters; agentRunner?: AgentRunner; internalToken?: string; now?: () => Date } = {}): AppContext {
+export function buildIdentity(config: AppConfig): IdentityProvider | null {
+  if (config.auth.mode !== "clerk" || !config.auth.clerkSecretKey) return null;
+  return new ClerkIdentityProvider({ secretKey: config.auth.clerkSecretKey, jwtKey: config.auth.clerkJwtKey, authorizedParties: config.auth.authorizedParties });
+}
+
+export function createContext(config: AppConfig, opts: { adapters?: Adapters; agentRunner?: AgentRunner; internalToken?: string; now?: () => Date; identity?: IdentityProvider | null } = {}): AppContext {
   const db = openDatabase(config.databasePath);
   db.prepare("INSERT OR IGNORE INTO organizations (id, name, created_at) VALUES ('org_demo', 'Runway Demo Co (fictional)', ?)").run(nowIso());
   db.prepare("INSERT OR IGNORE INTO actors (id, org_id, role, label) VALUES ('employee-demo', 'org_demo', 'employee', 'Demo Employee')").run();
@@ -36,7 +42,15 @@ export function createContext(config: AppConfig, opts: { adapters?: Adapters; ag
   const agentRunner =
     opts.agentRunner ??
     (config.mode === "fixtures" ? new ScriptedAgentRunner() : new EveAgentRunner({ host: `http://127.0.0.1:${config.agentRuntimePort}`, token: opts.internalToken ?? "" }));
-  const ctx: AppContext = { config, db, adapters: opts.adapters ?? buildAdapters(config), agentRunner, activeRuns: new Map(), now: opts.now ?? (() => new Date()) };
+  const ctx: AppContext = {
+    config,
+    db,
+    adapters: opts.adapters ?? buildAdapters(config),
+    agentRunner,
+    activeRuns: new Map(),
+    now: opts.now ?? (() => new Date()),
+    identity: opts.identity !== undefined ? opts.identity : buildIdentity(config),
+  };
   failInterruptedRuns(ctx);
   recoverInterruptedExecutions(ctx);
   return ctx;

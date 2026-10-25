@@ -9,3 +9,4 @@ var/
 .output/
 recordings/
 coverage/
+config/access.json

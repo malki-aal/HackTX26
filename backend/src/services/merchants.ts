@@ -7,6 +7,7 @@ import { z } from "zod";
 import { AppError, invalidState, notFound } from "../lib/errors.js";
 import type { NessieMerchant } from "../integrations/nessie.js";
 import { resolveAccountId } from "./budget.js";
+import type { Principal } from "../auth/access.js";
 
 export const sellerKey = (seller: string) => seller.toLowerCase().trim().replace(/\s+/g, " ");
 
@@ -15,14 +16,14 @@ export const MerchantMappingBody = z.discriminatedUnion("action", [
     action: z.literal("create_sandbox_merchant"),
     seller: z.string().trim().min(1).max(120),
     category: z.string().trim().min(1).max(40).default("general"),
-    actor: z.string(),
+    actor: z.string().max(40).optional(),
     note: z.string().max(500).default(""),
   }),
   z.object({
     action: z.literal("link_existing_merchant"),
     seller: z.string().trim().min(1).max(120),
     nessieMerchantId: z.string().trim().min(1).max(100),
-    actor: z.string(),
+    actor: z.string().max(40).optional(),
     note: z.string().max(500).default(""),
   }),
 ]);
@@ -74,9 +75,11 @@ export function listMappings(ctx: AppContext): MerchantMapping[] {
  */
 const pendingMappings = new Set<string>();
 
-export async function createMapping(ctx: AppContext, body: unknown): Promise<MerchantMapping> {
-  const b = MerchantMappingBody.parse(body);
-  if (b.actor !== "executive-demo") throw new AppError("FORBIDDEN_ACTOR", "Only the executive demo role can map a seller to a Nessie merchant", 403);
+export async function createMapping(ctx: AppContext, body: unknown, actor: Principal): Promise<MerchantMapping> {
+  const parsed = MerchantMappingBody.parse(body);
+  // Only executives decide where simulated money is recorded; the actor comes from the session.
+  if (actor.role !== "executive") throw new AppError("FORBIDDEN_ROLE", "Only an executive can map a seller to a Nessie merchant", 403);
+  const b = { ...parsed, actor: actor.userId };
   if (getMapping(ctx, b.seller)) throw invalidState(`Seller "${b.seller}" is already mapped`, { seller: b.seller });
   // One in-flight mapping per seller, so concurrent requests cannot create duplicate Nessie merchants.
   const key = sellerKey(b.seller);
@@ -89,7 +92,7 @@ export async function createMapping(ctx: AppContext, body: unknown): Promise<Mer
   }
 }
 
-async function createMappingNow(ctx: AppContext, b: z.infer<typeof MerchantMappingBody>): Promise<MerchantMapping> {
+async function createMappingNow(ctx: AppContext, b: z.infer<typeof MerchantMappingBody> & { actor: string }): Promise<MerchantMapping> {
   let merchant: NessieMerchant;
   let note: string;
   if (b.action === "link_existing_merchant") {

@@ -1,5 +1,7 @@
 # Frontend integration guide
 
+> **v3 (executive review + Google sign-in):** read [CONTRACT_V3_EXECUTIVE_AUTH.md](CONTRACT_V3_EXECUTIVE_AUTH.md). It covers session transport (`Authorization: Bearer` with a Clerk token), `/me`, roles and the allowlist bootstrap, the queue (`GET /proposals` with counts, cursor and `updatedAfter` polling), the financial preview, decisions with an optional note and required approval confirmation, and the signed-out, forbidden and stale error states.
+>
 > **v2 changes:** read [CONTRACT_V2.md](CONTRACT_V2.md) first. It covers item categories instead of monitors only, deadline types, recommendations, projects, merchant mappings, confirmation records and activity. Everything below still applies.
 
 - **Base URL:** `http://127.0.0.1:8000/api/v1`. For testing on a phone, set `HOST=0.0.0.0` (or your LAN IP) and add the frontend origin to `FRONTEND_ORIGINS`. Use this only on a trusted network, because there is no authentication.

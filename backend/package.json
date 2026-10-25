@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.105",
+    "@clerk/backend": "3.26.2",
     "@fastify/cors": "11.3.1",
     "ai": "7.0.153",
     "eve": "0.83.2",
