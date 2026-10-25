@@ -8,6 +8,7 @@ import { loadEnvFile, parseConfig, secretValues } from "./config.js";
 import { registerSecrets } from "./lib/redact.js";
 import { createContext } from "./app/bootstrap.js";
 import { buildApp } from "./http/app.js";
+import { bootstrapSourceLabel, loadBootstrap } from "./auth/access.js";
 
 loadEnvFile();
 const config = parseConfig(process.env);
@@ -63,6 +64,11 @@ function startAgentRuntime() {
 }
 
 async function main() {
+  // Fail fast on a malformed allowlist (the error names the field path, never an email).
+  if (config.auth.mode === "clerk") {
+    loadBootstrap(config.auth);
+    console.log(`[runway] access allowlist source: ${bootstrapSourceLabel(config.auth)}`);
+  }
   const ctx = createContext(config, { internalToken });
   const app = buildApp(ctx, { internalToken });
   await app.listen({ host: config.host, port: config.port });

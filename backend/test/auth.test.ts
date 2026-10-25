@@ -384,3 +384,118 @@ describe("auth configuration", () => {
     expect(parseConfig({ NODE_ENV: "test", INTEGRATION_MODE: "fixtures", AUTH_MODE: "" }).auth.mode).toBe("demo");
   });
 });
+
+describe("allowlist from ACCESS_BOOTSTRAP_JSON (hosts without secret files)", () => {
+  const ALLOW = JSON.stringify({
+    companies: [{ id: "runway_team", name: "Runway team (fictional)" }],
+    members: [
+      { email: "Boss@Runway.test", role: "executive", company: "runway_team" },
+      { email: "worker@runway.test", role: "employee", company: "runway_team" },
+    ],
+  });
+
+  function jsonWorld(extra: Record<string, string> = {}) {
+    // The file lists someone else entirely, proving the inline JSON takes precedence.
+    const dir = mkdtempSync(join(tmpdir(), "runway-auth-json-"));
+    const file = join(dir, "access.json");
+    writeFileSync(file, JSON.stringify({ members: [{ email: "file-only@runway.test", role: "executive", company: "org_demo" }] }));
+    const config = testConfig({ AUTH_MODE: "clerk", ACCESS_BOOTSTRAP_FILE: file, ACCESS_BOOTSTRAP_JSON: ALLOW, ACCOUNT_COMPANY_ID: "runway_team", ...extra });
+    const idp = new TestIdentityProvider();
+    return {
+      h: harness({ config, identity: idp }),
+      boss: idp.addUser("u_boss", "Bea Boss", "boss@runway.test"),
+      worker: idp.addUser("u_worker", "Wes Worker", "worker@runway.test"),
+      fileOnly: idp.addUser("u_file", "Fay File", "file-only@runway.test"),
+      stranger: idp.addUser("u_str", "Stu Stranger", "stranger@gmail.test"),
+      unverified: idp.addUser("u_unv", "Una", "boss2@runway.test", false),
+    };
+  }
+
+  it("grants server-owned roles from verified emails; JSON wins over the file", async () => {
+    const w = jsonWorld();
+    expect((await w.h.call("GET", "/api/v1/me", undefined, as(w.boss))).body.data.membership).toMatchObject({ status: "active", role: "executive", company: { id: "runway_team" } });
+    expect((await w.h.call("GET", "/api/v1/me", undefined, as(w.worker))).body.data.membership).toMatchObject({ status: "active", role: "employee", company: { id: "runway_team" } });
+    expect((await w.h.call("GET", "/api/v1/me", undefined, as(w.fileOnly))).body.data.membership.status).toBe("pending");
+  });
+
+  it("unlisted and unverified accounts stay pending; employees get null budget figures", async () => {
+    const w = jsonWorld();
+    expect((await w.h.call("GET", "/api/v1/me", undefined, as(w.stranger))).body.data.membership).toEqual({ status: "pending", role: null, company: null });
+    const pending = await w.h.call("GET", "/api/v1/requests", undefined, as(w.stranger));
+    expect([pending.status, pending.body.error.code]).toEqual([403, "ACCESS_PENDING"]);
+    expect((await w.h.call("GET", "/api/v1/me", undefined, as(w.unverified))).body.data.membership.status).toBe("pending");
+    const budget = await w.h.call("GET", "/api/v1/budget", undefined, as(w.worker));
+    expect(budget.status).toBe(200);
+    expect(budget.body.data.scope).toBe("employee");
+    // Real figures are null; the remaining totals are fixed placeholders that carry no company data.
+    expect(budget.body.data).toMatchObject({ reportedBalanceCents: null, availableBudgetCents: null, obligations: [], obligationsCents: 0, activeReservationsCents: 0, unreflectedExpensesCents: 0 });
+  });
+
+  it("rejects malformed JSON or schema errors without echoing emails or the text", async () => {
+    const cases = [
+      '{"members":[{"email":"secret.person@runway.test","role":"executive"',
+      JSON.stringify({ members: [{ email: "secret.person@runway.test", role: "owner", company: "runway_team" }] }),
+      JSON.stringify({ members: [{ email: "secret.person@runway.test", role: "employee", company: "runway_team" }, { email: "SECRET.person@runway.test", role: "executive", company: "runway_team" }] }),
+    ];
+    for (const bad of cases) {
+      const idp = new TestIdentityProvider();
+      const t = idp.addUser("u_x", "X", "secret.person@runway.test");
+      const h = harness({ config: testConfig({ AUTH_MODE: "clerk", ACCESS_BOOTSTRAP_JSON: bad }), identity: idp });
+      const { loadBootstrap } = await import("../src/auth/access.js");
+      let msg = "";
+      try {
+        loadBootstrap(h.ctx.config.auth);
+      } catch (e) {
+        msg = (e as Error).message;
+      }
+      expect(msg).toMatch(/^ACCESS_BOOTSTRAP_JSON /);
+      expect(msg).not.toMatch(/secret\.person|@/i);
+      const r = await h.call("GET", "/api/v1/me", undefined, as(t));
+      expect(r.status).toBe(500);
+      expect(JSON.stringify(r.body)).not.toMatch(/secret\.person/i);
+    }
+  });
+});
+
+describe("production deployment config", () => {
+  const VERCEL = "https://malakai-saleh-h26.vercel.app";
+  const prodEnv = {
+    NODE_ENV: "production",
+    HOST: "0.0.0.0",
+    PORT: "8000",
+    INTEGRATION_MODE: "live",
+    AUTH_MODE: "clerk",
+    DEMO_MODE: "false",
+    FRONTEND_ORIGINS: `${VERCEL}/`,
+    CLERK_AUTHORIZED_PARTIES: VERCEL,
+  };
+
+  it("parses the hosted settings; a trailing slash on an origin still matches", () => {
+    const c = parseConfig({ ...prodEnv, DATABASE_PATH: "/data/runway.sqlite" });
+    expect(c).toMatchObject({ nodeEnv: "production", host: "0.0.0.0", port: 8000, mode: "live", demoMode: false, databasePath: "/data/runway.sqlite", frontendOrigins: [VERCEL] });
+    expect(c.auth).toMatchObject({ mode: "clerk", authorizedParties: [VERCEL], bootstrapJson: null });
+  });
+
+  it("CORS allows the Vercel origin with Authorization and Idempotency-Key, and no other origin", async () => {
+    // Fixtures integrations so nothing paid can run; the CORS and auth layers are the same code.
+    const h = harness({ config: testConfig({ AUTH_MODE: "clerk", FRONTEND_ORIGINS: `${VERCEL}/` }), identity: new TestIdentityProvider() });
+    const pre = await h.app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/proposals/prp_x/decision",
+      headers: { origin: VERCEL, "access-control-request-method": "POST", "access-control-request-headers": "authorization,idempotency-key,content-type" },
+    });
+    expect(pre.statusCode).toBeLessThan(300);
+    expect(pre.headers["access-control-allow-origin"]).toBe(VERCEL);
+    const allowed = String(pre.headers["access-control-allow-headers"]).toLowerCase();
+    for (const hd of ["authorization", "idempotency-key", "content-type"]) expect(allowed).toContain(hd);
+    expect(String(pre.headers["access-control-allow-methods"])).toContain("POST");
+    const evil = await h.app.inject({ method: "OPTIONS", url: "/api/v1/me", headers: { origin: "https://evil.example", "access-control-request-method": "GET", "access-control-request-headers": "authorization" } });
+    expect(evil.headers["access-control-allow-origin"]).toBeUndefined();
+    const noToken = await h.app.inject({ method: "GET", url: "/api/v1/me", headers: { origin: VERCEL } });
+    expect(noToken.statusCode).toBe(401);
+    expect(noToken.json().error.code).toBe("UNAUTHENTICATED");
+    expect(noToken.headers["access-control-allow-origin"]).toBe(VERCEL);
+    const bad = await h.app.inject({ method: "GET", url: "/api/v1/me", headers: { origin: VERCEL, authorization: "Bearer not-a-real-token" } });
+    expect([bad.statusCode, bad.json().error.code]).toEqual([401, "UNAUTHENTICATED"]);
+  });
+});

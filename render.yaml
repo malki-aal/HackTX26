@@ -21,8 +21,12 @@ services:
       - { key: AUTH_MODE, value: clerk }
       - { key: DEMO_MODE, value: "false" }
       - { key: DATABASE_PATH, value: /data/runway.sqlite }
+      # Allowlist: either add the Secret File access.json (read from this path), or paste the same
+      # JSON into ACCESS_BOOTSTRAP_JSON (it takes precedence). Leave ACCESS_BOOTSTRAP_JSON empty to use the file.
       - { key: ACCESS_BOOTSTRAP_FILE, value: /etc/secrets/access.json }
+      - { key: ACCESS_BOOTSTRAP_JSON, sync: false }
       - { key: ACCOUNT_COMPANY_ID, value: runway_team }
+      - { key: GEMINI_MAX_RPM, value: "4" }   # free-tier pacing
       - { key: FRONTEND_ORIGINS, sync: false }
       - { key: GEMINI_API_KEY, sync: false }
       - { key: GEMINI_MODEL, sync: false }
