@@ -1,6 +1,7 @@
 "use client";
 
 import { personLabel } from "@/lib/api/mappers";
+import { ExceptionsRecord } from "@/components/review";
 import { useParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api, type ApiError, type ExecutionDetail } from "@/lib/api";
@@ -115,6 +116,12 @@ function PurchaseRecord() {
             </dl>
             {p?.decisionNote && <p className="mt-1 text-[16px]"><span className="text-muted">Note: </span>{p.decisionNote}</p>}
           </Section>
+
+          {p && p.requirementResolutions.length > 0 && (
+            <Section title="Exceptions">
+              <ExceptionsRecord p={p} />
+            </Section>
+          )}
 
           <Section title="Merchant">
             <dl>

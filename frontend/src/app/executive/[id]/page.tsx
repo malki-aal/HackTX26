@@ -7,7 +7,7 @@ import { api, type ApiError, type FinancialPreview, type Proposal } from "@/lib/
 import { approvalGate, personLabel, type PreviewState } from "@/lib/api/mappers";
 import { Avatar } from "@/components/avatars";
 import { ExecutionAmounts, ExecutionStatusText, ExecutionWarnings } from "@/components/execution";
-import { ApprovalSummary, DecisionRecord } from "@/components/review";
+import { ApprovalSummary, DecisionRecord, ExceptionsRecord } from "@/components/review";
 import { newIdempotencyKey } from "@/lib/format";
 import { formatCents, isSafeHttpUrl } from "@/lib/money";
 import {
@@ -560,6 +560,7 @@ function Outcome({ p, reload }: { p: Proposal; reload: () => Promise<void> }) {
   return (
     <Section title="Decision saved">
       <DecisionRecord p={p} />
+      {p.requirementResolutions.length > 0 && <div className="mt-3"><ExceptionsRecord p={p} /></div>}
       {p.decision === "changes_requested" && (
         <p className="mt-2 text-[13px] text-muted">The employee can revise and resubmit. A new revision appears in Approvals.</p>
       )}
