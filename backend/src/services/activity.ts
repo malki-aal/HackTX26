@@ -6,14 +6,14 @@ import { getProposalView } from "./proposals.js";
 import { getExecutionView } from "./executions.js";
 import { itemView, loadVersion } from "./requests.js";
 import { getMapping } from "./merchants.js";
+import { actorInfo, requireMember, type Principal } from "../auth/access.js";
 
 const BANK_RECORD_NOTICE =
   "This is a simulated purchase recorded on the company's Capital One Nessie sandbox account. It is not a merchant checkout, order, receipt, shipment or delivery confirmation.";
 
 function actor(ctx: AppContext, id: string | null) {
-  if (!id) return null;
-  const r = ctx.db.prepare("SELECT id, role, label FROM actors WHERE id = ?").get(id) as { id: string; role: string; label: string } | undefined;
-  return { id, role: r?.role ?? null, label: r?.label ?? id, demoIdentity: true };
+  const a = actorInfo(ctx, id);
+  return a ? { id: a.id, role: a.role, label: a.displayName, displayName: a.displayName, demoIdentity: a.demoIdentity } : null;
 }
 
 export function confirmationRecord(ctx: AppContext, proposalId: string) {
@@ -86,8 +86,12 @@ export function confirmationRecord(ctx: AppContext, proposalId: string) {
  * Pending and recent activity, split by where each item is waiting:
  * approval, execution start, an in-flight or uncertain write, or Nessie's own pending status.
  */
-export function activity(ctx: AppContext, limit = 50) {
-  const proposals = ctx.db.prepare("SELECT id FROM proposals ORDER BY updated_at DESC LIMIT ?").all(limit) as Array<{ id: string }>;
+export function activity(ctx: AppContext, viewer: Principal, limit = 50) {
+  requireMember(viewer);
+  // Executives see their company's activity; employees see only their own proposals.
+  const proposals = (viewer.role === "executive"
+    ? ctx.db.prepare("SELECT p.id FROM proposals p JOIN requests r ON r.id = p.request_id WHERE r.org_id = ? ORDER BY p.updated_at DESC LIMIT ?").all(viewer.orgId, limit)
+    : ctx.db.prepare("SELECT p.id FROM proposals p JOIN requests r ON r.id = p.request_id WHERE r.org_id = ? AND r.created_by = ? ORDER BY p.updated_at DESC LIMIT ?").all(viewer.orgId, viewer.userId, limit)) as Array<{ id: string }>;
   const groups = {
     awaitingApproval: [] as ReturnType<typeof confirmationRecord>[],
     approvedNotExecuted: [] as ReturnType<typeof confirmationRecord>[],

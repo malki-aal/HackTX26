@@ -35,13 +35,13 @@ function lineRequestBody(p: CreateProjectBody, line: CreateProjectBody["lines"][
   };
 }
 
-export async function createProject(ctx: AppContext, body: unknown, actor = "employee-demo") {
+export async function createProject(ctx: AppContext, body: unknown, actor = "employee-demo", orgId = "org_demo") {
   const p = CreateProjectBody.parse(body);
   // Validate every line before writing anything.
   for (const line of p.lines) RequestFields.parse(lineRequestBody(p, line));
   const id = `prj_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-  ctx.db.prepare("INSERT INTO projects (id, title, payload, budget_cents, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, p.title, JSON.stringify(p), p.budgetCents, actor, nowIso());
-  for (const line of p.lines) await createRequest(ctx, lineRequestBody(p, line), actor, { projectId: id, lineKey: line.key });
+  ctx.db.prepare("INSERT INTO projects (id, title, payload, budget_cents, created_by, created_at, org_id) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, p.title, JSON.stringify(p), p.budgetCents, actor, nowIso(), orgId);
+  for (const line of p.lines) await createRequest(ctx, lineRequestBody(p, line), actor, { projectId: id, lineKey: line.key, orgId });
   return getProjectView(ctx, id);
 }
 
@@ -129,8 +129,10 @@ export function getProjectView(ctx: AppContext, id: string) {
   };
 }
 
-export function listProjects(ctx: AppContext) {
-  const rows = ctx.db.prepare("SELECT id FROM projects ORDER BY created_at DESC").all() as Array<{ id: string }>;
+export function listProjects(ctx: AppContext, scope: { orgId: string; ownerId?: string }) {
+  const rows = (scope.ownerId
+    ? ctx.db.prepare("SELECT id FROM projects WHERE org_id = ? AND created_by = ? ORDER BY created_at DESC").all(scope.orgId, scope.ownerId)
+    : ctx.db.prepare("SELECT id FROM projects WHERE org_id = ? ORDER BY created_at DESC").all(scope.orgId)) as Array<{ id: string }>;
   return rows.map((r) => {
     const v = getProjectView(ctx, r.id);
     return { id: v.id, title: v.title, sector: v.sector, budgetCents: v.budgetCents, neededBy: v.neededBy, lines: v.lines.length, committedCents: v.totals.committedCents, createdAt: v.createdAt };

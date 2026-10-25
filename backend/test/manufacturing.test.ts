@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { approve, harness, mapSeller, submittedProposal } from "./helpers.js";
+import { approve, harness, mapSeller, submittedProposal, EXEC } from "./helpers.js";
 import { awaitRun } from "../src/services/research.js";
 import { CreateProjectBody } from "../src/contracts/domain.js";
 import { FixtureBank } from "../src/integrations/fixtures.js";
@@ -117,7 +117,7 @@ describe("Nessie merchant mapping", () => {
     expect(h.ctx.db.prepare("SELECT COUNT(*) AS n FROM budget_ledger").get()).toEqual({ n: 0 });
     // After mapping, the same key can be retried and approval proceeds.
     await mapSeller(h, p.proposalId);
-    const ok = await h.call("POST", `/api/v1/proposals/${p.proposalId}/decision`, { version: 1, decision: "approve", actor: "executive-demo" }, { "idempotency-key": "k-no-map-1" });
+    const ok = await approve(h, p.proposalId, "k-no-map-1", "approve", 1, false);
     expect(ok.body.data.execution.status).toBe("recorded");
     expect(ok.body.data.execution.merchantMapping).toMatchObject({ provenance: "created_sandbox_merchant", seller: p.top.seller });
   });
@@ -126,7 +126,7 @@ describe("Nessie merchant mapping", () => {
     const h = harness();
     const forbidden = await h.call("POST", "/api/v1/merchant-mappings", { action: "create_sandbox_merchant", seller: "Fixture Mart", actor: "employee-demo" });
     expect(forbidden.status).toBe(403);
-    expect(forbidden.body.error.code).toBe("FORBIDDEN_ACTOR");
+    expect(forbidden.body.error.code).toBe("FORBIDDEN_ROLE");
     const missing = await h.call("POST", "/api/v1/merchant-mappings", { action: "link_existing_merchant", seller: "Fixture Mart", nessieMerchantId: "does_not_exist", actor: "executive-demo" });
     expect(missing.status).toBe(404);
     const linked = await h.call("POST", "/api/v1/merchant-mappings", { action: "link_existing_merchant", seller: "Fixture Mart", nessieMerchantId: "fixture_merchant_existing", actor: "executive-demo" });
@@ -137,7 +137,7 @@ describe("Nessie merchant mapping", () => {
     expect(created.body.data.merchant.name).toBe("Runway sandbox: Fixture Electronics");
     const dup = await h.call("POST", "/api/v1/merchant-mappings", { action: "create_sandbox_merchant", seller: "fixture electronics", actor: "executive-demo" });
     expect(dup.status).toBe(409);
-    const details = await h.call("GET", `/api/v1/merchants/${created.body.data.nessieMerchantId}`);
+    const details = await h.call("GET", `/api/v1/merchants/${created.body.data.nessieMerchantId}`, undefined, EXEC);
     expect(details.body.data).toMatchObject({ merchant: { name: "Runway sandbox: Fixture Electronics" }, mappedSellers: [{ seller: "Fixture Electronics", provenance: "created_sandbox_merchant" }] });
   });
 });
@@ -188,7 +188,7 @@ describe("confirmation record, activity and purchase history", () => {
     const p = await submittedProposal(h);
     const d = await approve(h, p.proposalId);
     h.bank.state.purchases.push({ id: "external_1", merchantId: "fixture_merchant_existing", amountCents: 1200, rawAmount: 12, status: "completed", medium: "balance", description: "Coffee", date: "2026-10-20" });
-    const hist = (await h.call("GET", "/api/v1/purchase-history")).body.data;
+    const hist = (await h.call("GET", "/api/v1/purchase-history", undefined, EXEC)).body.data;
     const ours = hist.purchases.find((x: any) => x.purchaseId === "fixture_purchase_1");
     expect(ours).toMatchObject({ origin: "runway", runway: { executionId: d.body.data.execution.id, proposalId: p.proposalId } });
     expect(ours.merchant.mappedSeller).toBe(p.top.seller);

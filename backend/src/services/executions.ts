@@ -31,6 +31,8 @@ function requestIdFor(ctx: AppContext, proposalId: string): string | null {
 }
 
 function setStatus(ctx: AppContext, e: ExecRow, status: string, patch: { providerStatus?: string | null; externalId?: string | null; error?: string | null; providerAmount?: unknown } = {}) {
+  // Execution changes are proposal changes for pollers (updatedAfter / updatedAt).
+  ctx.db.prepare("UPDATE proposals SET updated_at = ? WHERE id = ?").run(nowIso(), e.proposal_id);
   ctx.db
     .prepare("UPDATE executions SET status = ?, provider_status = COALESCE(?, provider_status), external_id = COALESCE(?, external_id), last_error = ?, provider_amount = COALESCE(?, provider_amount), updated_at = ? WHERE id = ?")
     .run(status, patch.providerStatus ?? null, patch.externalId ?? null, patch.error ?? null, patch.providerAmount === undefined ? null : JSON.stringify(patch.providerAmount), nowIso(), e.id);
@@ -143,8 +145,8 @@ export function recoverInterruptedExecutions(ctx: AppContext) {
   for (const e of rows) markUncertain(ctx, e, "Server restarted while the purchase was being submitted");
 }
 
-export async function reconcileExecution(ctx: AppContext, executionId: string, body: unknown) {
-  const parsed = ReconcileBody.parse(body ?? {});
+export async function reconcileExecution(ctx: AppContext, executionId: string, body: unknown, actorId = "executive-demo") {
+  const parsed = { ...ReconcileBody.parse(body ?? {}), actor: actorId };
   const e = loadExec(ctx, executionId);
   const notes: string[] = [];
   if (parsed.action === "submit_queued") {

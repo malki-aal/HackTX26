@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy to config/access.json (gitignored) and list ONLY team-supplied Google emails. Only provider-verified emails match. Use a new company id so old demo data (org_demo) stays separate; set ACCOUNT_COMPANY_ID to the same id so its executives can see the Nessie account.",
+  "companies": [{ "id": "runway_team", "name": "Runway HackTX team" }],
+  "members": [
+    { "email": "executive@example.com", "role": "executive", "company": "runway_team" },
+    { "email": "employee@example.com", "role": "employee", "company": "runway_team" }
+  ]
+}

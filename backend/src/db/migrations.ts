@@ -300,4 +300,49 @@ ALTER TABLE executions ADD COLUMN provider_purchase_date TEXT;
 UPDATE executions SET approved_at = created_at WHERE approved_at IS NULL;
 `,
   },
+  {
+    version: 5,
+    sql: `
+-- Authenticated identities. provider_user_id is the stable provider identity (Clerk user id).
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  provider_user_id TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  primary_email TEXT,
+  primary_email_verified INTEGER NOT NULL DEFAULT 0,
+  verified_emails TEXT NOT NULL DEFAULT '[]',
+  avatar_style TEXT NOT NULL DEFAULT 'role_default',
+  profile_synced_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (provider, provider_user_id)
+);
+
+-- Server-owned company membership and role. Only the bootstrap allowlist writes it.
+CREATE TABLE memberships (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  org_id TEXT NOT NULL REFERENCES organizations(id),
+  role TEXT NOT NULL CHECK (role IN ('employee', 'executive')),
+  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+  source TEXT NOT NULL,
+  matched_email TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, org_id)
+);
+CREATE UNIQUE INDEX memberships_one_active ON memberships(user_id) WHERE status = 'active';
+
+ALTER TABLE projects ADD COLUMN org_id TEXT REFERENCES organizations(id);
+UPDATE projects SET org_id = 'org_demo' WHERE org_id IS NULL;
+
+-- Decision notes and the immutable terms an approver confirmed.
+ALTER TABLE decisions ADD COLUMN actor_display TEXT;
+ALTER TABLE decisions ADD COLUMN confirmed_version INTEGER;
+ALTER TABLE decisions ADD COLUMN confirmed_amount_cents INTEGER;
+ALTER TABLE decisions ADD COLUMN confirmed_at TEXT;
+ALTER TABLE decisions ADD COLUMN confirmation_statement TEXT;
+`,
+  },
 ];

@@ -3,7 +3,7 @@
   "info": {
     "title": "Runway API",
     "version": "1.0.0",
-    "description": "Runway purchasing backend. Demo identities only (demoIdentity=true); no authentication. All money is integer USD cents. Timestamps are ISO-8601 UTC. See docs/CONTRACT_V2.md for changes since v1."
+    "description": "Runway purchasing backend. Signed-in mode verifies Clerk (Google) session tokens and enforces server-owned roles; fixtures demo mode uses declared demo actors (meta.demoIdentity=true). All money is integer USD cents. Timestamps are ISO-8601 UTC. See docs/CONTRACT_V2.md and docs/CONTRACT_V3_EXECUTIVE_AUTH.md."
   },
   "servers": [
     {
@@ -13,8 +13,187 @@
   "paths": {
     "/api/v1/health": {
       "get": {
-        "summary": "Server and storage liveness (no external calls)",
+        "summary": "Server and storage liveness, plus auth mode and whether sign-in is configured (public)",
         "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "summary": "Current signed-in user: profile, server-owned membership/role/company (works before access is granted)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Edit display name or app avatar style only; role/company fields are rejected",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchMeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proposals/{id}/financial-preview": {
+      "get": {
+        "summary": "Executive: current available budget, exact expense, projected available, reservation state, blocking reasons",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "description": "true to re-read Nessie now (free read; no research)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -1256,13 +1435,13 @@
     },
     "/api/v1/proposals": {
       "get": {
-        "summary": "Review/history list",
+        "summary": "Executive: company queue; employee: own submissions. meta.counts per state, meta.nextCursor, meta.serverTime",
         "parameters": [
           {
             "name": "decisionState",
             "in": "query",
             "required": false,
-            "description": "filter",
+            "description": "awaiting_review|approved|changes_requested|rejected|not_submitted",
             "schema": {
               "type": "string"
             }
@@ -1271,7 +1450,25 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "1-200",
+            "description": "1-100",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "from meta.nextCursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "updatedAfter",
+            "in": "query",
+            "required": false,
+            "description": "ISO time (inclusive) from a previous meta.serverTime, for polling",
             "schema": {
               "type": "string"
             }
@@ -2399,7 +2596,20 @@
       }
     }
   },
+  "security": [
+    {
+      "clerkSession": []
+    }
+  ],
   "components": {
+    "securitySchemes": {
+      "clerkSession": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Clerk session token from the frontend (getToken()). Public routes: /health, /categories, /demo/manufacturing. In fixtures demo mode, X-Demo-Actor: employee-demo|executive-demo instead."
+      }
+    },
     "schemas": {
       "Meta": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2464,6 +2674,13 @@
                   "CATEGORY_UNRESOLVED",
                   "FORBIDDEN_ACTOR",
                   "MERCHANT_MAPPING_REQUIRED",
+                  "UNAUTHENTICATED",
+                  "AUTH_NOT_CONFIGURED",
+                  "ACCESS_PENDING",
+                  "FORBIDDEN_ROLE",
+                  "IDENTITY_FIELD_NOT_ALLOWED",
+                  "TERMS_CHANGED",
+                  "SELF_APPROVAL_NOT_ALLOWED",
                   "INTERNAL_ERROR"
                 ]
               },
@@ -6107,9 +6324,8 @@
             }
           },
           "actor": {
-            "default": "employee-demo",
             "type": "string",
-            "const": "employee-demo"
+            "maxLength": 40
           },
           "proposalId": {
             "type": "string"
@@ -6146,9 +6362,8 @@
             ]
           },
           "actor": {
-            "default": "employee-demo",
             "type": "string",
-            "const": "employee-demo"
+            "maxLength": 40
           }
         },
         "required": [
@@ -6174,21 +6389,45 @@
               "reject"
             ]
           },
-          "actor": {
-            "type": "string",
-            "const": "executive-demo"
-          },
           "note": {
             "default": "",
             "type": "string",
-            "maxLength": 2000
+            "maxLength": 5000
+          },
+          "confirmation": {
+            "type": "object",
+            "properties": {
+              "confirmed": {
+                "type": "boolean"
+              },
+              "proposalVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "exactAmountCents": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "confirmed",
+              "proposalVersion",
+              "exactAmountCents"
+            ],
+            "additionalProperties": false
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 40
           }
         },
         "required": [
           "version",
-          "decision",
-          "actor"
-        ]
+          "decision"
+        ],
+        "additionalProperties": false
       },
       "ReconcileBody": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6204,9 +6443,8 @@
             ]
           },
           "actor": {
-            "default": "executive-demo",
             "type": "string",
-            "const": "executive-demo"
+            "maxLength": 40
           },
           "note": {
             "default": "",
@@ -6214,6 +6452,26 @@
             "maxLength": 1000
           }
         }
+      },
+      "PatchMeBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "avatarStyle": {
+            "type": "string",
+            "enum": [
+              "role_default",
+              "executive_silhouette",
+              "employee_silhouette"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "RunEventType": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6455,7 +6713,8 @@
                 "maxLength": 40
               },
               "actor": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 40
               },
               "note": {
                 "default": "",
@@ -6465,8 +6724,7 @@
             },
             "required": [
               "action",
-              "seller",
-              "actor"
+              "seller"
             ]
           },
           {
@@ -6487,7 +6745,8 @@
                 "maxLength": 100
               },
               "actor": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 40
               },
               "note": {
                 "default": "",
@@ -6498,8 +6757,7 @@
             "required": [
               "action",
               "seller",
-              "nessieMerchantId",
-              "actor"
+              "nessieMerchantId"
             ]
           }
         ]
@@ -6530,6 +6788,13 @@
           "CATEGORY_UNRESOLVED",
           "FORBIDDEN_ACTOR",
           "MERCHANT_MAPPING_REQUIRED",
+          "UNAUTHENTICATED",
+          "AUTH_NOT_CONFIGURED",
+          "ACCESS_PENDING",
+          "FORBIDDEN_ROLE",
+          "IDENTITY_FIELD_NOT_ALLOWED",
+          "TERMS_CHANGED",
+          "SELF_APPROVAL_NOT_ALLOWED",
           "INTERNAL_ERROR"
         ]
       }

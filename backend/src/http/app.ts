@@ -11,7 +11,7 @@ import { clarifyRequest, confirmRequest, createRequest, getRequestView, listRequ
 import { cancelRun, getCandidates, getRunView, startResearch } from "../services/research.js";
 import { listEvents } from "../services/events.js";
 import { readFinancialContext } from "../services/budget.js";
-import { createProposal, decideProposal, getProposalView, listProposals, submitProposal } from "../services/proposals.js";
+import { createProposal, decideProposal, financialPreview, getProposalView, listProposals, submitProposal } from "../services/proposals.js";
 import { getExecutionView, reconcileExecution } from "../services/executions.js";
 import { integrationStatuses } from "../services/status.js";
 import { sessionToolHosts } from "../agent/eveRunner.js";
@@ -21,6 +21,15 @@ import { confirmProjectLines, createProject, getProjectView, listProjects, resea
 import { createMapping, getMerchantDetails, listMappings, purchaseHistory } from "../services/merchants.js";
 import { activity, confirmationRecord } from "../services/activity.js";
 import DEMO_MANUFACTURING from "../../demo/manufacturing-desk-organizers.json" with { type: "json" };
+import { currentUserView, patchMe, requireExecutive, requireMember, resolvePrincipal, type Principal } from "../auth/access.js";
+import { accountAccess, executionAccess, projectAccess, proposalAccess, requestAccess, runAccess } from "../auth/scope.js";
+
+/** The demo `actor` field was already used to resolve the principal; services never see it. */
+function stripActor(body: unknown): unknown {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const { actor: _a, ...rest } = body as Record<string, unknown>;
+  return rest;
+}
 
 export interface HttpOptions {
   internalToken: string;
@@ -36,10 +45,12 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
   void app.register(cors, {
     origin: (origin, cb) => cb(null, !origin || ctx.config.frontendOrigins.includes(origin)),
     methods: ["GET", "POST", "PATCH", "OPTIONS"],
-    allowedHeaders: ["content-type", "idempotency-key"],
+    // authorization carries the Clerk session token; x-demo-actor is honored only in fixtures demo mode.
+    allowedHeaders: ["content-type", "idempotency-key", "authorization", "x-demo-actor"],
   });
 
-  const meta = (req: FastifyRequest, extra: Record<string, unknown> = {}) => ({ mode: ctx.config.mode, demoIdentity: true as const, requestId: req.id, ...extra });
+  const demo = ctx.config.auth.mode === "demo";
+  const meta = (req: FastifyRequest, extra: Record<string, unknown> = {}) => ({ mode: ctx.config.mode, authMode: ctx.config.auth.mode, demoIdentity: demo, requestId: req.id, ...extra });
   const ok = (req: FastifyRequest, reply: FastifyReply, data: unknown, status = 200, extra: Record<string, unknown> = {}) => reply.status(status).send({ data, meta: meta(req, extra) });
 
   app.setErrorHandler((err, req, reply) => {
@@ -64,71 +75,32 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
   };
   type P = { id: string };
 
-  // ---- Health & status ----
+  /** The verified caller. Every protected route calls this first; nothing is trusted from the body. */
+  const who = (req: FastifyRequest): Promise<Principal> => {
+    const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? (req.body as Record<string, unknown>) : {};
+    const h = req.headers["x-demo-actor"];
+    return resolvePrincipal(ctx, {
+      authorization: typeof req.headers.authorization === "string" ? req.headers.authorization : undefined,
+      demoActorHeader: Array.isArray(h) ? h[0] : h,
+      bodyActor: body.actor,
+    });
+  };
+  const member = async (req: FastifyRequest) => {
+    const p = await who(req);
+    requireMember(p);
+    return p;
+  };
+  const executive = async (req: FastifyRequest) => {
+    const p = await who(req);
+    requireExecutive(p);
+    return p;
+  };
+
+  // ---- Public ----
   app.get("/api/v1/health", async (req, reply) => {
     ctx.db.prepare("SELECT 1").get();
-    return ok(req, reply, { status: "ok", storage: "ok", time: ctx.now().toISOString() });
+    return ok(req, reply, { status: "ok", storage: "ok", time: ctx.now().toISOString(), auth: { mode: ctx.config.auth.mode, configured: demo || !!ctx.identity } });
   });
-  app.get("/api/v1/integrations/status", async (req, reply) => ok(req, reply, await integrationStatuses(ctx)));
-
-  // ---- Agent configs ----
-  app.get("/api/v1/agent-configs", async (req, reply) => ok(req, reply, listConfigs(ctx.db)));
-  app.post("/api/v1/agent-configs", async (req, reply) => ok(req, reply, createConfig(ctx.db, req.body), 201));
-  app.patch<{ Params: P }>("/api/v1/agent-configs/:id", async (req, reply) => ok(req, reply, patchConfig(ctx.db, req.params.id, req.body)));
-
-  // ---- Requests ----
-  app.post("/api/v1/requests", async (req, reply) => ok(req, reply, await createRequest(ctx, req.body), 201));
-  app.get("/api/v1/requests", async (req, reply) => {
-    const q = req.query as { cursor?: string; status?: string };
-    const r = listRequests(ctx, { limit: limitOf(req.query, 20, 100), cursor: q.cursor ?? null, status: q.status });
-    return ok(req, reply, r.items, 200, { nextCursor: r.nextCursor });
-  });
-  app.get<{ Params: P }>("/api/v1/requests/:id", async (req, reply) => ok(req, reply, getRequestView(ctx, req.params.id)));
-  app.patch<{ Params: P }>("/api/v1/requests/:id", async (req, reply) => ok(req, reply, await patchRequest(ctx, req.params.id, req.body)));
-  app.post<{ Params: P }>("/api/v1/requests/:id/clarify", async (req, reply) => ok(req, reply, clarifyRequest(ctx, req.params.id, req.body)));
-  app.post<{ Params: P }>("/api/v1/requests/:id/confirm", async (req, reply) => ok(req, reply, confirmRequest(ctx, req.params.id, req.body)));
-  app.post<{ Params: P }>("/api/v1/requests/:id/research", async (req, reply) => ok(req, reply, startResearch(ctx, req.params.id, req.body), 202));
-  app.get<{ Params: P; Querystring: { runId?: string } }>("/api/v1/requests/:id/candidates", async (req, reply) => ok(req, reply, getCandidates(ctx, req.params.id, req.query.runId ?? null)));
-  app.post<{ Params: P }>("/api/v1/requests/:id/proposals", async (req, reply) => ok(req, reply, createProposal(ctx, req.params.id, req.body as never), 201));
-
-  // ---- Runs ----
-  app.get<{ Params: P }>("/api/v1/runs/:id", async (req, reply) => ok(req, reply, getRunView(ctx, req.params.id)));
-  app.get<{ Params: P; Querystring: { after?: string } }>("/api/v1/runs/:id/events", async (req, reply) => {
-    getRunView(ctx, req.params.id);
-    const r = listEvents(ctx.db, { runId: req.params.id }, req.query.after ?? null, limitOf(req.query, 100, 500));
-    return ok(req, reply, r.events, 200, { nextCursor: r.nextCursor });
-  });
-  app.get<{ Params: P; Querystring: { after?: string } }>("/api/v1/requests/:id/events", async (req, reply) => {
-    getRequestView(ctx, req.params.id);
-    const r = listEvents(ctx.db, { requestId: req.params.id }, req.query.after ?? null, limitOf(req.query, 100, 500));
-    return ok(req, reply, r.events, 200, { nextCursor: r.nextCursor });
-  });
-  app.post<{ Params: P }>("/api/v1/runs/:id/cancel", async (req, reply) => ok(req, reply, cancelRun(ctx, req.params.id)));
-
-  // ---- Budget ----
-  app.get<{ Querystring: { refresh?: string } }>("/api/v1/budget", async (req, reply) => {
-    const r = await readFinancialContext(ctx, { refresh: req.query.refresh === "true" });
-    return ok(req, reply, { ...r.context, fresh: r.fresh, error: r.error });
-  });
-
-  // ---- Proposals ----
-  app.get<{ Querystring: { decisionState?: string } }>("/api/v1/proposals", async (req, reply) => ok(req, reply, listProposals(ctx, { decisionState: req.query.decisionState, limit: limitOf(req.query) })));
-  app.get<{ Params: P }>("/api/v1/proposals/:id", async (req, reply) => {
-    const p = getProposalView(ctx, req.params.id);
-    return ok(req, reply, { ...p, execution: p.executionId ? getExecutionView(ctx, p.executionId) : null });
-  });
-  app.post<{ Params: P }>("/api/v1/proposals/:id/submit", async (req, reply) => ok(req, reply, submitProposal(ctx, req.params.id, req.body)));
-  app.post<{ Params: P }>("/api/v1/proposals/:id/decision", async (req, reply) => {
-    const key = req.headers["idempotency-key"];
-    const r = await decideProposal(ctx, req.params.id, req.body, Array.isArray(key) ? key[0] : key);
-    return ok(req, reply, r.body, r.status);
-  });
-
-  // ---- Executions ----
-  app.get<{ Params: P }>("/api/v1/executions/:id", async (req, reply) => ok(req, reply, getExecutionView(ctx, req.params.id)));
-  app.post<{ Params: P }>("/api/v1/executions/:id/reconcile", async (req, reply) => ok(req, reply, await reconcileExecution(ctx, req.params.id, req.body)));
-
-  // ---- Categories and demo input ----
   app.get("/api/v1/categories", async (req, reply) =>
     ok(
       req,
@@ -138,22 +110,199 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
   );
   app.get("/api/v1/demo/manufacturing", async (req, reply) => ok(req, reply, { input: CreateProjectBody.parse(DEMO_MANUFACTURING), note: "Validated demo input. POST it to /api/v1/projects to create the project; nothing is created by this GET." }));
 
+  // ---- Current user (signed in; works before access is granted) ----
+  app.get("/api/v1/me", async (req, reply) => ok(req, reply, currentUserView(ctx, await who(req))));
+  app.patch("/api/v1/me", async (req, reply) => ok(req, reply, patchMe(ctx, await who(req), req.body)));
+
+  // ---- Status and agent configs ----
+  app.get("/api/v1/integrations/status", async (req, reply) => {
+    await member(req);
+    return ok(req, reply, await integrationStatuses(ctx));
+  });
+  app.get("/api/v1/agent-configs", async (req, reply) => {
+    await member(req);
+    return ok(req, reply, listConfigs(ctx.db));
+  });
+  app.post("/api/v1/agent-configs", async (req, reply) => {
+    await executive(req);
+    return ok(req, reply, createConfig(ctx.db, req.body), 201);
+  });
+  app.patch<{ Params: P }>("/api/v1/agent-configs/:id", async (req, reply) => {
+    await executive(req);
+    return ok(req, reply, patchConfig(ctx.db, req.params.id, req.body));
+  });
+
+  // ---- Requests (employees: their own; executives: read their company's) ----
+  app.post("/api/v1/requests", async (req, reply) => {
+    const p = await member(req);
+    return ok(req, reply, await createRequest(ctx, stripActor(req.body), p.userId, { orgId: p.orgId }), 201);
+  });
+  app.get("/api/v1/requests", async (req, reply) => {
+    const p = await member(req);
+    const q = req.query as { cursor?: string; status?: string };
+    const r = listRequests(ctx, { limit: limitOf(req.query, 20, 100), cursor: q.cursor ?? null, status: q.status, orgId: p.orgId, ownerId: p.role === "executive" ? undefined : p.userId });
+    return ok(req, reply, r.items, 200, { nextCursor: r.nextCursor });
+  });
+  app.get<{ Params: P }>("/api/v1/requests/:id", async (req, reply) => {
+    requestAccess(ctx, await member(req), req.params.id, "read");
+    return ok(req, reply, getRequestView(ctx, req.params.id));
+  });
+  app.patch<{ Params: P }>("/api/v1/requests/:id", async (req, reply) => {
+    requestAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, await patchRequest(ctx, req.params.id, req.body));
+  });
+  app.post<{ Params: P }>("/api/v1/requests/:id/clarify", async (req, reply) => {
+    requestAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, clarifyRequest(ctx, req.params.id, req.body));
+  });
+  app.post<{ Params: P }>("/api/v1/requests/:id/confirm", async (req, reply) => {
+    requestAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, confirmRequest(ctx, req.params.id, req.body));
+  });
+  app.post<{ Params: P }>("/api/v1/requests/:id/research", async (req, reply) => {
+    requestAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, startResearch(ctx, req.params.id, req.body), 202);
+  });
+  app.get<{ Params: P; Querystring: { runId?: string } }>("/api/v1/requests/:id/candidates", async (req, reply) => {
+    requestAccess(ctx, await member(req), req.params.id, "read");
+    return ok(req, reply, getCandidates(ctx, req.params.id, req.query.runId ?? null));
+  });
+  app.post<{ Params: P }>("/api/v1/requests/:id/proposals", async (req, reply) => {
+    const p = await member(req);
+    requestAccess(ctx, p, req.params.id, "write");
+    return ok(req, reply, createProposal(ctx, req.params.id, stripActor(req.body) as never, p.userId), 201);
+  });
+  app.get<{ Params: P; Querystring: { after?: string } }>("/api/v1/requests/:id/events", async (req, reply) => {
+    requestAccess(ctx, await member(req), req.params.id, "read");
+    const r = listEvents(ctx.db, { requestId: req.params.id }, req.query.after ?? null, limitOf(req.query, 100, 500));
+    return ok(req, reply, r.events, 200, { nextCursor: r.nextCursor });
+  });
+
+  // ---- Runs ----
+  app.get<{ Params: P }>("/api/v1/runs/:id", async (req, reply) => {
+    runAccess(ctx, await member(req), req.params.id, "read");
+    return ok(req, reply, getRunView(ctx, req.params.id));
+  });
+  app.get<{ Params: P; Querystring: { after?: string } }>("/api/v1/runs/:id/events", async (req, reply) => {
+    runAccess(ctx, await member(req), req.params.id, "read");
+    const r = listEvents(ctx.db, { runId: req.params.id }, req.query.after ?? null, limitOf(req.query, 100, 500));
+    return ok(req, reply, r.events, 200, { nextCursor: r.nextCursor });
+  });
+  app.post<{ Params: P }>("/api/v1/runs/:id/cancel", async (req, reply) => {
+    runAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, cancelRun(ctx, req.params.id));
+  });
+
+  // ---- Budget: executives of the account's company; employees get status only ----
+  app.get<{ Querystring: { refresh?: string } }>("/api/v1/budget", async (req, reply) => {
+    const p = await member(req);
+    const fullAccess = p.role === "executive" && p.orgId === ctx.config.auth.accountCompanyId;
+    const r = await readFinancialContext(ctx, { refresh: fullAccess && req.query.refresh === "true" });
+    if (fullAccess) return ok(req, reply, { ...r.context, fresh: r.fresh, error: r.error, scope: "executive" });
+    return ok(req, reply, {
+      scope: "employee",
+      status: r.context.status,
+      source: r.context.source,
+      fetchedAt: r.context.fetchedAt,
+      reportedBalanceCents: null,
+      obligations: [],
+      obligationsCents: 0,
+      activeReservationsCents: 0,
+      unreflectedExpensesCents: 0,
+      availableBudgetCents: null,
+      reconciliationNotes: ["Company account figures are visible to executives."],
+      fresh: false,
+      error: null,
+    });
+  });
+
+  // ---- Proposals ----
+  app.get<{ Querystring: { decisionState?: string; cursor?: string; updatedAfter?: string } }>("/api/v1/proposals", async (req, reply) => {
+    const p = await member(req);
+    const r = listProposals(ctx, p, { decisionState: req.query.decisionState, limit: limitOf(req.query, 20, 100), cursor: req.query.cursor ?? null, updatedAfter: req.query.updatedAfter ?? null });
+    return ok(req, reply, r.items, 200, { nextCursor: r.nextCursor, counts: r.counts, serverTime: r.serverTime });
+  });
+  app.get<{ Params: P }>("/api/v1/proposals/:id", async (req, reply) => {
+    const p = await member(req);
+    proposalAccess(ctx, p, req.params.id, "read");
+    const v = getProposalView(ctx, req.params.id, p);
+    const financialAssessment = p.role === "executive" ? await financialPreview(ctx, req.params.id, { refresh: false }) : null;
+    return ok(req, reply, { ...v, financialAssessment, execution: v.executionId ? getExecutionView(ctx, v.executionId) : null });
+  });
+  app.get<{ Params: P; Querystring: { refresh?: string } }>("/api/v1/proposals/:id/financial-preview", async (req, reply) => {
+    const p = await executive(req);
+    proposalAccess(ctx, p, req.params.id, "read");
+    return ok(req, reply, await financialPreview(ctx, req.params.id, { refresh: req.query.refresh === "true" }));
+  });
+  app.post<{ Params: P }>("/api/v1/proposals/:id/submit", async (req, reply) => {
+    proposalAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, submitProposal(ctx, req.params.id, stripActor(req.body)));
+  });
+  app.post<{ Params: P }>("/api/v1/proposals/:id/decision", async (req, reply) => {
+    const p = await who(req);
+    const key = req.headers["idempotency-key"];
+    const r = await decideProposal(ctx, req.params.id, req.body, Array.isArray(key) ? key[0] : key, p);
+    return ok(req, reply, r.body, r.status);
+  });
+  app.get<{ Params: P }>("/api/v1/proposals/:id/confirmation", async (req, reply) => {
+    proposalAccess(ctx, await member(req), req.params.id, "read");
+    return ok(req, reply, confirmationRecord(ctx, req.params.id));
+  });
+
+  // ---- Executions ----
+  app.get<{ Params: P }>("/api/v1/executions/:id", async (req, reply) => {
+    executionAccess(ctx, await member(req), req.params.id, "read");
+    return ok(req, reply, getExecutionView(ctx, req.params.id));
+  });
+  app.post<{ Params: P }>("/api/v1/executions/:id/reconcile", async (req, reply) => {
+    const p = await member(req);
+    executionAccess(ctx, p, req.params.id, "reconcile");
+    return ok(req, reply, await reconcileExecution(ctx, req.params.id, stripActor(req.body), p.userId));
+  });
+
   // ---- Projects (multi-material lines) ----
-  app.post("/api/v1/projects", async (req, reply) => ok(req, reply, await createProject(ctx, req.body), 201));
-  app.get("/api/v1/projects", async (req, reply) => ok(req, reply, listProjects(ctx)));
-  app.get<{ Params: P }>("/api/v1/projects/:id", async (req, reply) => ok(req, reply, getProjectView(ctx, req.params.id)));
-  app.post<{ Params: P }>("/api/v1/projects/:id/confirm", async (req, reply) => ok(req, reply, confirmProjectLines(ctx, req.params.id)));
-  app.post<{ Params: P }>("/api/v1/projects/:id/research", async (req, reply) => ok(req, reply, researchProject(ctx, req.params.id, req.body), 202));
+  app.post("/api/v1/projects", async (req, reply) => {
+    const p = await member(req);
+    return ok(req, reply, await createProject(ctx, stripActor(req.body), p.userId, p.orgId), 201);
+  });
+  app.get("/api/v1/projects", async (req, reply) => {
+    const p = await member(req);
+    return ok(req, reply, listProjects(ctx, { orgId: p.orgId, ownerId: p.role === "executive" ? undefined : p.userId }));
+  });
+  app.get<{ Params: P }>("/api/v1/projects/:id", async (req, reply) => {
+    projectAccess(ctx, await member(req), req.params.id, "read");
+    return ok(req, reply, getProjectView(ctx, req.params.id));
+  });
+  app.post<{ Params: P }>("/api/v1/projects/:id/confirm", async (req, reply) => {
+    projectAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, confirmProjectLines(ctx, req.params.id));
+  });
+  app.post<{ Params: P }>("/api/v1/projects/:id/research", async (req, reply) => {
+    projectAccess(ctx, await member(req), req.params.id, "write");
+    return ok(req, reply, researchProject(ctx, req.params.id, req.body), 202);
+  });
 
-  // ---- Merchants, mappings and purchase history ----
-  app.get("/api/v1/merchant-mappings", async (req, reply) => ok(req, reply, listMappings(ctx)));
-  app.post("/api/v1/merchant-mappings", async (req, reply) => ok(req, reply, await createMapping(ctx, req.body), 201));
-  app.get<{ Params: P }>("/api/v1/merchants/:id", async (req, reply) => ok(req, reply, await getMerchantDetails(ctx, req.params.id)));
-  app.get("/api/v1/purchase-history", async (req, reply) => ok(req, reply, await purchaseHistory(ctx)));
+  // ---- Merchants, mappings and purchase history (executives of the account company) ----
+  app.get("/api/v1/merchant-mappings", async (req, reply) => {
+    accountAccess(ctx, await who(req));
+    return ok(req, reply, listMappings(ctx));
+  });
+  app.post("/api/v1/merchant-mappings", async (req, reply) => {
+    const p = await who(req);
+    accountAccess(ctx, p);
+    return ok(req, reply, await createMapping(ctx, req.body, p), 201);
+  });
+  app.get<{ Params: P }>("/api/v1/merchants/:id", async (req, reply) => {
+    accountAccess(ctx, await who(req));
+    return ok(req, reply, await getMerchantDetails(ctx, req.params.id));
+  });
+  app.get("/api/v1/purchase-history", async (req, reply) => {
+    accountAccess(ctx, await who(req));
+    return ok(req, reply, await purchaseHistory(ctx));
+  });
 
-  // ---- Activity and confirmation records ----
-  app.get("/api/v1/activity", async (req, reply) => ok(req, reply, activity(ctx, limitOf(req.query, 50, 200))));
-  app.get<{ Params: P }>("/api/v1/proposals/:id/confirmation", async (req, reply) => ok(req, reply, confirmationRecord(ctx, req.params.id)));
+  // ---- Activity ----
+  app.get("/api/v1/activity", async (req, reply) => ok(req, reply, activity(ctx, await member(req), limitOf(req.query, 50, 200))));
 
   // ---- Internal: agent tool callbacks from the eve process (loopback + shared token only) ----
   const tokenBuf = Buffer.from(opts.internalToken);

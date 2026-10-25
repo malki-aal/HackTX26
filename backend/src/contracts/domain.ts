@@ -367,12 +367,15 @@ export type BudgetAssessment = z.infer<typeof BudgetAssessment>;
 
 export const DemoActor = z.enum(["employee-demo", "executive-demo"]);
 
+/** Demo actor id; accepted only in fixtures demo mode. Signed-in mode rejects it (identity comes from the session). */
+export const DemoActorField = z.string().max(40).optional();
+
 export const CreateProposalBody = z.object({
   runId: Id,
   offerId: Id,
   justification: z.string().max(4000).default(""),
   alternativeOfferIds: z.array(Id).max(5).default([]),
-  actor: z.literal("employee-demo").default("employee-demo"),
+  actor: DemoActorField,
 });
 
 export const SubmitProposalBody = z.object({
@@ -380,16 +383,48 @@ export const SubmitProposalBody = z.object({
   technicalReviewConfirmed: z.literal(true),
   exactAmountCents: Cents.refine((v) => v > 0, "exactAmountCents must be positive"),
   amountSource: z.enum(["user_confirmed"]).default("user_confirmed"),
-  actor: z.literal("employee-demo").default("employee-demo"),
+  actor: DemoActorField,
 });
 
+export const NOTE_MAX_CHARS = 1000;
+
+/** Optional decision note: plain text, whitespace normalized, no control characters, at most 1000 chars. */
+export const DecisionNote = z
+  .string()
+  .max(5000)
+  .default("")
+  .refine((s) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(s), "Note contains control characters")
+  .transform((s) =>
+    s
+      .replace(/\r\n?/g, "\n")
+      .split("\n")
+      .map((l) => l.replace(/[ \t]+/g, " ").trim())
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+  )
+  .refine((s) => s.length <= NOTE_MAX_CHARS, `Note must be at most ${NOTE_MAX_CHARS} characters`);
+
+/** What an approver confirms: the exact proposal revision and the exact expense in cents. */
+export const ApprovalConfirmation = z
+  .object({
+    confirmed: z.boolean(),
+    proposalVersion: z.number().int().positive(),
+    exactAmountCents: z.number().int().positive(),
+  })
+  .strict();
+
 export const Decision = z.enum(["approve", "request_changes", "reject"]);
-export const DecisionBody = z.object({
-  version: z.number().int().positive(),
-  decision: Decision,
-  actor: z.literal("executive-demo"),
-  note: z.string().max(2000).default(""),
-});
+export const DecisionBody = z
+  .object({
+    version: z.number().int().positive(),
+    decision: Decision,
+    note: DecisionNote,
+    /** Required (with confirmed=true) for approve; ignored for request_changes and reject. */
+    confirmation: ApprovalConfirmation.optional(),
+    actor: DemoActorField,
+  })
+  .strict();
 
 export const ProposalDecisionState = z.enum(["not_submitted", "awaiting_review", "approved", "changes_requested", "rejected"]);
 export const ExecutionStatus = z.enum(["not_started", "queued", "submitting", "recorded", "failed", "uncertain"]);
@@ -397,7 +432,7 @@ export type ExecutionStatus = z.infer<typeof ExecutionStatus>;
 
 export const ReconcileBody = z.object({
   action: z.enum(["check", "submit_queued", "mark_failed"]).default("check"),
-  actor: z.literal("executive-demo").default("executive-demo"),
+  actor: DemoActorField,
   note: z.string().max(1000).default(""),
 });
 
