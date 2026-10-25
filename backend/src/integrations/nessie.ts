@@ -57,8 +57,35 @@ export interface CreatePurchaseResult {
   message: string | null;
 }
 
+/** A transfer between two Nessie accounts (company → employee). */
+export interface NessieTransfer {
+  id: string;
+  payerId: string | null;
+  payeeId: string | null;
+  amountCents: number | null;
+  rawAmount: unknown;
+  status: string | null;
+  description: string | null;
+  date: string | null;
+}
+
+export interface CreateTransferInput {
+  payeeAccountId: string;
+  amountCents: number;
+  description: string;
+  date: string; // YYYY-MM-DD
+}
+
 export interface BankAdapter {
   readonly source: "nessie_live" | "fixture";
+  /** Single POST, never retried. Ambiguous failures surface as IntegrationError(outcome="ambiguous"). */
+  createTransfer(payerAccountId: string, input: CreateTransferInput): Promise<CreatePurchaseResult>;
+  getTransfer(transferId: string): Promise<NessieTransfer | null>;
+  /** Transfers the account sent (payer side). */
+  listTransfers(payerAccountId: string): Promise<NessieTransfer[]>;
+  /** Sandbox customer + checking account for an employee (starts at $0). */
+  createCustomer(firstName: string, lastName: string): Promise<{ id: string }>;
+  createAccount(customerId: string, nickname: string): Promise<NessieAccount>;
   getAccount(accountId: string): Promise<NessieAccount>;
   listBills(accountId: string): Promise<BillSnapshot[]>;
   listPurchases(accountId: string): Promise<NessiePurchase[]>;
@@ -94,6 +121,20 @@ const PurchaseSchema = z
     transaction_date: z.string().optional().nullable(),
   })
   .passthrough();
+const TransferSchema = z
+  .object({
+    _id: Id24,
+    payer_id: z.string().optional().nullable(),
+    payee_id: z.string().optional().nullable(),
+    amount: z.unknown(),
+    status: z.string().optional().nullable(),
+    description: z.string().optional().nullable(),
+    transaction_date: z.string().optional().nullable(),
+  })
+  .passthrough();
+function toTransfer(t: z.infer<typeof TransferSchema>): NessieTransfer {
+  return { id: t._id, payerId: t.payer_id ?? null, payeeId: t.payee_id ?? null, amountCents: fromNessieAmount(t.amount), rawAmount: t.amount, status: t.status ?? null, description: t.description ?? null, date: t.transaction_date ?? null };
+}
 const BillSchema = z.object({ _id: Id24, status: z.string(), payee: z.string().default(""), payment_amount: z.number().optional() }).passthrough();
 
 /** Unit conversion: Nessie amounts are dollars (number). Cents are converted at the boundary only. */
@@ -217,6 +258,67 @@ export class NessieClient implements BankAdapter {
       httpStatus: res.status,
       message,
     };
+  }
+
+  /** Single POST, never retried here (same contract as createPurchase). */
+  async createTransfer(payerAccountId: string, input: CreateTransferInput): Promise<CreatePurchaseResult> {
+    const body = {
+      medium: "balance",
+      payee_id: input.payeeAccountId,
+      amount: toNessieAmount(input.amountCents),
+      transaction_date: input.date,
+      status: "pending",
+      description: input.description,
+    };
+    const res = await this.request("POST", `/accounts/${encodeURIComponent(payerAccountId)}/transfers`, body);
+    if (res.status !== 200 && res.status !== 201 && res.status !== 202) this.fail(res, "transfer create");
+    const obj = unwrapObject(res.body);
+    const created = obj ? TransferSchema.safeParse(obj) : null;
+    const message = res.body && typeof res.body === "object" ? ((res.body as { message?: string }).message ?? null) : typeof res.body === "string" ? res.body.slice(0, 200) : null;
+    return {
+      externalId: created?.success ? created.data._id : null,
+      providerStatus: created?.success ? (created.data.status ?? null) : null,
+      providerAmount: created?.success ? created.data.amount : null,
+      httpStatus: res.status,
+      message,
+    };
+  }
+
+  async getTransfer(transferId: string): Promise<NessieTransfer | null> {
+    const res = await this.request("GET", `/transfers/${encodeURIComponent(transferId)}`);
+    if (res.status === 404) return null;
+    if (res.status !== 200) this.fail(res, "transfer read");
+    const parsed = TransferSchema.safeParse(unwrapObject(res.body));
+    return parsed.success ? toTransfer(parsed.data) : null;
+  }
+
+  async listTransfers(payerAccountId: string): Promise<NessieTransfer[]> {
+    const res = await this.request("GET", `/accounts/${encodeURIComponent(payerAccountId)}/transfers?type=payer`);
+    if (res.status === 404) return [];
+    if (res.status !== 200) this.fail(res, "transfers read");
+    return (unwrapArray(res.body) ?? []).flatMap((t) => {
+      const parsed = TransferSchema.safeParse(t);
+      return parsed.success ? [toTransfer(parsed.data)] : [];
+    });
+  }
+
+  async createCustomer(firstName: string, lastName: string): Promise<{ id: string }> {
+    const created = await this.create("/customers", {
+      first_name: firstName.slice(0, 40) || "Runway",
+      last_name: lastName.slice(0, 40) || "Employee",
+      address: { street_number: "1", street_name: "Sandbox Way", city: "Austin", state: "TX", zip: "78701" },
+    });
+    const id = typeof created.object?._id === "string" ? created.object._id : null;
+    if (!id) throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Nessie customer creation returned no id", "definitive", false);
+    return { id };
+  }
+
+  async createAccount(customerId: string, nickname: string): Promise<NessieAccount> {
+    const created = await this.create(`/customers/${encodeURIComponent(customerId)}/accounts`, { type: "Checking", nickname: nickname.slice(0, 60), rewards: 0, balance: 0 });
+    const parsed = AccountSchema.safeParse(created.object);
+    if (!parsed.success) throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Nessie account creation returned no account", "definitive", false);
+    const a = parsed.data;
+    return { id: a._id, type: a.type, nickname: a.nickname, balanceCents: floatToCents(a.balance) ?? 0, rawBalance: a.balance, customerId: a.customer_id ?? customerId, accountNumber: a.account_number ?? null };
   }
 
   async getMerchant(merchantId: string): Promise<NessieMerchant | null> {

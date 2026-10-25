@@ -310,9 +310,11 @@ async function decide(ctx: AppContext, id: string, parsed: ReturnType<typeof Dec
     const description = `Runway ${executionId} | ${pv.data.offer.title.replace(/\[FIXTURE\]\s*/, "").slice(0, 60)} x${pv.data.quantity} | seller ${pv.data.offer.seller ?? "unknown"}`.slice(0, 200);
     ctx.db
       .prepare(
-        "INSERT INTO executions (id, proposal_id, proposal_version, decision_id, mode, account_id, merchant_id, amount_cents, description, status, created_at, updated_at, approved_at, account_masked, merchant_mapping) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
+        // Approval moves the approved amount from the company account to the requester's sandbox account;
+        // the requester pays the seller as a separate step (services/payments.ts).
+        "INSERT INTO executions (id, proposal_id, proposal_version, decision_id, mode, account_id, merchant_id, amount_cents, description, status, created_at, updated_at, approved_at, account_masked, merchant_mapping, kind, payee_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, 'transfer', ?)",
       )
-      .run(executionId, id, parsed.version, decisionId, ctx.config.mode, accountId, merchantId, amount, description, now, now, now, fin.accountMasked ?? null, JSON.stringify(mapping));
+      .run(executionId, id, parsed.version, decisionId, ctx.config.mode, accountId, merchantId, amount, description, now, now, now, fin.accountMasked ?? null, JSON.stringify(mapping), reqRow.created_by);
     ctx.db
       .prepare("INSERT INTO budget_ledger (id, account_id, kind, amount_cents, status, execution_id, note, created_at, updated_at) VALUES (?, ?, 'reservation', ?, 'active', ?, ?, ?, ?)")
       .run(`led_${randomUUID()}`, accountId, amount, executionId, "Application budget hold for approved sandbox purchase", now, now);

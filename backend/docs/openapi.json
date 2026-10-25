@@ -1861,6 +1861,177 @@
         }
       }
     },
+    "/api/v1/executions/{id}/pay": {
+      "post": {
+        "summary": "Employee pays the seller from the approved transfer (Idempotency-Key header; once per transfer)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/executions/{id}/payment/check": {
+      "post": {
+        "summary": "Look up an uncertain employee payment by reference; never pays again",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/wallet": {
+      "get": {
+        "summary": "The signed-in employee's sandbox account: approvals received (+) and payments to sellers (−)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/categories": {
       "get": {
         "summary": "Item categories (id, labels, unit, specs, features; `selectable` = offered for new requests)",
@@ -2732,6 +2903,7 @@
                   "IDENTITY_FIELD_NOT_ALLOWED",
                   "TERMS_CHANGED",
                   "UNRESOLVED_REQUIREMENTS",
+                  "PAYMENT_UNCERTAIN",
                   "SELF_APPROVAL_NOT_ALLOWED",
                   "INTERNAL_ERROR"
                 ]
@@ -7218,6 +7390,7 @@
           "IDENTITY_FIELD_NOT_ALLOWED",
           "TERMS_CHANGED",
           "UNRESOLVED_REQUIREMENTS",
+          "PAYMENT_UNCERTAIN",
           "SELF_APPROVAL_NOT_ALLOWED",
           "INTERNAL_ERROR"
         ]

@@ -4,7 +4,7 @@ import type { ProductDetails, RawShoppingItem } from "../domain/types.js";
 import { detectCategory } from "../domain/categories.js";
 import type { BillSnapshot } from "../domain/budget.js";
 import type { ShoppingQuery, ShoppingResult, ShoppingSearch } from "./serpapi.js";
-import type { BankAdapter, CreatePurchaseInput, CreatePurchaseResult, NessieAccount, NessieMerchant, NessiePurchase } from "./nessie.js";
+import type { BankAdapter, CreatePurchaseInput, CreatePurchaseResult, CreateTransferInput, NessieAccount, NessieMerchant, NessiePurchase, NessieTransfer } from "./nessie.js";
 import type { RequirementExtractor } from "./gemini.js";
 
 /** Synthetic listings (fictional sellers) that exercise the evaluation edge cases. */
@@ -185,8 +185,12 @@ export interface FixtureBankState {
   purchases: NessiePurchase[];
   /** Simulate Nessie deducting purchases from the reported balance. */
   balanceReflectsPurchases: boolean;
-  /** Next createPurchase outcome. */
+  /** Next createPurchase / createTransfer outcome. */
   nextCreate: "ok" | "definitive_error" | "timeout" | "ok_then_timeout";
+  /** Company → employee transfers. */
+  transfers: NessieTransfer[];
+  /** Employee sandbox accounts (balances move with transfers in and purchases out). */
+  employeeAccounts: NessieAccount[];
   /** Mimic live Nessie, which stores amounts as whole dollars (observed 2026-10-24). */
   wholeDollars: boolean;
 }
@@ -214,12 +218,47 @@ export class FixtureBank implements BankAdapter {
       balanceReflectsPurchases: false,
       nextCreate: "ok",
       wholeDollars: false,
+      transfers: [],
+      employeeAccounts: [],
       ...init,
     };
   }
   async getAccount(accountId: string) {
-    if (accountId !== this.state.account.id) throw new Error("unknown fixture account");
-    return structuredClone(this.state.account);
+    if (accountId === this.state.account.id) return structuredClone(this.state.account);
+    const emp = this.state.employeeAccounts.find((a) => a.id === accountId);
+    if (!emp) throw new Error("unknown fixture account");
+    return structuredClone(emp);
+  }
+  async createCustomer() {
+    return { id: `fixture_customer_${this.state.employeeAccounts.length + 2}` };
+  }
+  async createAccount(customerId: string, nickname: string) {
+    const a: NessieAccount = { id: `fixture_employee_account_${this.state.employeeAccounts.length + 1}`, type: "Checking", nickname, balanceCents: 0, rawBalance: 0, customerId, accountNumber: `00009999000${String(this.state.employeeAccounts.length + 1).padStart(5, "0")}` };
+    this.state.employeeAccounts.push(a);
+    return structuredClone(a);
+  }
+  /** Same outcome modes and call counter as purchases: both move money. */
+  async createTransfer(payerAccountId: string, input: CreateTransferInput): Promise<CreatePurchaseResult> {
+    this.createCalls++;
+    const { IntegrationError } = await import("../lib/errors.js");
+    const mode = this.state.nextCreate;
+    if (mode === "definitive_error") throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Fixture: Nessie rejected the transfer (HTTP 400)", "definitive", false, 400);
+    if (mode === "timeout") throw new IntegrationError("nessie", "UPSTREAM_TIMEOUT", "Fixture: Nessie transfer timed out", "ambiguous", false);
+    const id = `${this.idPrefix.replace("purchase", "transfer")}${this.state.transfers.length + 1}`;
+    const raw = this.state.wholeDollars ? Math.trunc(input.amountCents / 100) : input.amountCents / 100;
+    const storedCents = Math.round(raw * 100);
+    this.state.transfers.push({ id, payerId: payerAccountId, payeeId: input.payeeAccountId, amountCents: storedCents, rawAmount: raw, status: "pending", description: input.description, date: input.date });
+    if (this.state.balanceReflectsPurchases) this.state.account.balanceCents -= storedCents;
+    const payee = this.state.employeeAccounts.find((a) => a.id === input.payeeAccountId);
+    if (payee) payee.balanceCents += storedCents;
+    if (mode === "ok_then_timeout") throw new IntegrationError("nessie", "UPSTREAM_TIMEOUT", "Fixture: response lost after transfer was stored", "ambiguous", false);
+    return { externalId: id, providerStatus: "pending", providerAmount: raw, httpStatus: 201, message: "Created transfer" };
+  }
+  async getTransfer(id: string) {
+    return structuredClone(this.state.transfers.find((t) => t.id === id) ?? null);
+  }
+  async listTransfers(payerAccountId: string) {
+    return structuredClone(this.state.transfers.filter((t) => t.payerId === payerAccountId));
   }
   async listBills() {
     return structuredClone(this.state.bills);
@@ -240,7 +279,9 @@ export class FixtureBank implements BankAdapter {
     const raw = this.state.wholeDollars ? Math.trunc(input.amountCents / 100) : input.amountCents / 100;
     const storedCents = Math.round(raw * 100);
     this.state.purchases.push({ id, merchantId: input.merchantId, amountCents: storedCents, rawAmount: raw, status: "pending", medium: "balance", description: input.description, date: input.date });
-    if (this.state.balanceReflectsPurchases) this.state.account.balanceCents -= storedCents;
+    const employee = this.state.employeeAccounts.find((a) => a.id === _accountId);
+    if (employee) employee.balanceCents -= storedCents;
+    else if (this.state.balanceReflectsPurchases) this.state.account.balanceCents -= storedCents;
     if (mode === "ok_then_timeout") throw new IntegrationError("nessie", "UPSTREAM_TIMEOUT", "Fixture: response lost after purchase was stored", "ambiguous", false);
     return { externalId: id, providerStatus: "pending", providerAmount: raw, httpStatus: 201, message: "Created purchase" };
   }

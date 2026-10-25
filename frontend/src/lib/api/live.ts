@@ -6,6 +6,7 @@ import { EMPTY_COUNTS, currentRevisionDecision, mapPreview, mapQueueItem, person
 import type {
   ActivityItem,
   ActivityPage,
+  Wallet,
   FinancialPreview,
   Me,
   ProposalReview,
@@ -444,7 +445,10 @@ interface BExecution {
   proposalId: string;
   status: ExecutionState;
   providerStatus: string | null;
-  externalReference: { purchaseId?: string | null; merchantId?: string | null } | null;
+  externalReference: { purchaseId?: string | null; transferId?: string | null; merchantId?: string | null } | null;
+  kind?: "transfer" | "purchase";
+  payee?: { displayName: string | null; accountMasked: string | null } | null;
+  payment?: { status: ExecutionState; amountCents: number; purchaseId: string | null; lastError: string | null; recordedAt: string | null } | null;
   amountCents: number;
   providerAmountCents: number | null;
   amountDiscrepancyCents: number | null;
@@ -467,6 +471,11 @@ function mapExecution(e: BExecution, seller: string | null): ExecutionDetail {
     id: e.id,
     proposalId: e.proposalId,
     status: e.status,
+    kind: e.kind ?? "purchase",
+    payee: e.payee ?? null,
+    payment: e.payment
+      ? { status: e.payment.status, amountCents: e.payment.amountCents, purchaseId: e.payment.purchaseId, lastError: e.payment.lastError, recordedAt: e.payment.recordedAt }
+      : null,
     providerStatus: e.providerStatus,
     amountCents: approved,
     providerAmountCents: stored,
@@ -906,6 +915,28 @@ export const liveApi: RunwayApi = {
       body: { action: "create_sandbox_merchant", seller, ...(authMode === "clerk" ? {} : { actor: "executive-demo" }) },
     });
     return { seller: m.seller, merchantName: m.merchant?.name ?? null, nessieMerchantId: m.nessieMerchantId };
+  },
+
+  async getWallet(): Promise<Wallet> {
+    const w = await call<{
+      account: { masked: string | null } | null;
+      runwayBalanceCents: number;
+      receivedCents: number;
+      paidCents: number;
+      reportedBalance: { balanceCents: number } | null;
+      entries: Wallet["entries"];
+      disclaimer: string;
+    }>("/me/wallet");
+    return { account: w.account, runwayBalanceCents: w.runwayBalanceCents, receivedCents: w.receivedCents, paidCents: w.paidCents, reportedBalanceCents: w.reportedBalance?.balanceCents ?? null, entries: w.entries, disclaimer: w.disclaimer };
+  },
+
+  async payExecution(executionId, idempotencyKey) {
+    const ex = await call<BExecution>(`/executions/${executionId}/pay`, { method: "POST", body: {}, headers: { "Idempotency-Key": idempotencyKey } });
+    return mapExecution(ex, null);
+  },
+
+  async checkPayment(executionId) {
+    return mapExecution(await call<BExecution>(`/executions/${executionId}/payment/check`, { method: "POST", body: {} }), null);
   },
 
   async getBudget(opts): Promise<Budget> {

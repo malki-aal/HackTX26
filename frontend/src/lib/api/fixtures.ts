@@ -682,6 +682,61 @@ export const fixtureApi: RunwayApi = {
     );
   },
 
+  async getWallet() {
+    return delay(
+      mutate((db) => {
+        const transfers = db.executions.filter((e) => e.kind === "transfer");
+        const titleOf = (proposalId: string) => db.proposals.find((p) => p.id === proposalId)?.requestTitle ?? null;
+        const sellerOf = (e: ExecutionDetail) => e.merchant.researchedSeller;
+        const requestOf = (proposalId: string) => db.proposals.find((p) => p.id === proposalId)?.requestId ?? null;
+        const entries = [
+          ...transfers.map((e) => ({
+            type: "received" as const, executionId: e.id, proposalId: e.proposalId, requestId: requestOf(e.proposalId), title: titleOf(e.proposalId),
+            amountCents: e.amountCents, status: e.status, at: e.createdAt, seller: sellerOf(e),
+            canPay: e.status === "recorded" && (!e.payment || e.payment.status === "failed"),
+          })),
+          ...transfers.filter((e) => e.payment).map((e) => ({
+            type: "paid" as const, executionId: e.id, proposalId: e.proposalId, requestId: requestOf(e.proposalId), title: titleOf(e.proposalId),
+            amountCents: e.payment!.amountCents, status: e.payment!.status, at: e.payment!.recordedAt ?? e.updatedAt, seller: sellerOf(e),
+          })),
+        ].sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+        const received = transfers.filter((e) => e.status === "recorded").reduce((n, e) => n + e.amountCents, 0);
+        const paid = transfers.filter((e) => e.payment && e.payment.status !== "failed").reduce((n, e) => n + e.payment!.amountCents, 0);
+        return {
+          account: transfers.length ? { masked: "•••• 4242" } : null,
+          runwayBalanceCents: received - paid, receivedCents: received, paidCents: paid, reportedBalanceCents: received - paid,
+          entries, disclaimer: "Sample data: simulated accounts and transfers. No real money moves.",
+        };
+      }),
+    );
+  },
+
+  async payExecution(executionId) {
+    return delay(
+      mutate((db) => {
+        const e = db.executions.find((x) => x.id === executionId);
+        if (!e) throw { code: "NOT_FOUND", message: "Approval not found." };
+        if (e.kind !== "transfer") throw { code: "INVALID_STATE", message: "The company paid this merchant directly." };
+        if (e.payment && e.payment.status !== "failed") return e; // pays at most once
+        const at = now();
+        e.payment = { status: "recorded", amountCents: e.amountCents, purchaseId: uid("fixture_purchase"), lastError: null, recordedAt: at };
+        e.purchaseId = e.payment.purchaseId;
+        e.updatedAt = at;
+        return e;
+      }),
+    );
+  },
+
+  async checkPayment(executionId) {
+    return delay(
+      mutate((db) => {
+        const e = db.executions.find((x) => x.id === executionId);
+        if (!e) throw { code: "NOT_FOUND", message: "Approval not found." };
+        return e;
+      }),
+    );
+  },
+
   async getExecution(id) {
     return delay(
       mutate((db) => {
@@ -710,16 +765,20 @@ export const fixtureApi: RunwayApi = {
           const stored = Math.floor(p.expenseCents / 100) * 100; // Nessie keeps whole dollars
           const diff = p.expenseCents - stored;
           const seller = p.lines[0]?.seller ?? null;
+          // Approval sends the money to the employee's sandbox account; they pay the seller next.
           const ex: ExecutionDetail = {
             id: uid("exe"),
             proposalId: p.id,
             status: "recorded",
+            kind: "transfer",
+            payee: { displayName: "Demo Employee", accountMasked: "•••• 4242" },
+            payment: null,
             providerStatus: "pending",
             amountCents: p.expenseCents,
             providerAmountCents: stored,
             amountDiscrepancyCents: diff,
             amountNote: diff ? "Nessie stores whole dollars, so the cents were dropped." : null,
-            purchaseId: uid("fixture_purchase"),
+            purchaseId: null,
             merchant: {
               researchedSeller: seller,
               nessieMerchantId: seller ? `fixture_merchant_${slug(seller)}` : null,

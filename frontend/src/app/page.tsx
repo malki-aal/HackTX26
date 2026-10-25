@@ -7,6 +7,7 @@ import { homeFor } from "@/lib/auth/config";
 import { api } from "@/lib/api";
 import { useIdentity } from "@/lib/auth/identity";
 import { PendingActivity } from "@/components/pending";
+import { WalletCard } from "@/components/wallet";
 import { summarizeItems } from "@/lib/format";
 import { statusLabel, statusTone } from "@/lib/labels";
 import { formatCents } from "@/lib/money";
@@ -47,6 +48,8 @@ function EmployeeRequests() {
           { label: "To record", value: activity.data ? toRecord : "–" },
         ]}
       />
+      {/* Approved money arrives here (+); paying the seller takes it out (−). */}
+      <WalletCard limit={4} />
       {loading && <Loading />}
       <ErrorNote error={error} onRetry={reload} />
       {data && data.length === 0 && !projects.data?.length && (
