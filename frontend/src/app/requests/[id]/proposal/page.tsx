@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api, type ApiError, type Offer, type Proposal, type ProposalLine } from "@/lib/api";
 import { ExecutionAmounts, ExecutionStatusText, ExecutionWarnings } from "@/components/execution";
-import { DECISION_LABEL } from "@/lib/labels";
+import { DecisionBadge, DecisionRecord } from "@/components/review";
 import { formatCents, isSafeHttpUrl, parseDollarsToCents } from "@/lib/money";
 import { parseSelectionQuery, readSelection } from "@/lib/selection";
 import { proposedCost } from "@/lib/proposal-cost";
@@ -19,7 +19,6 @@ import {
   PageHeader,
   ProgressBar,
   Section,
-  SandboxNote,
   formatWhen,
   inputClass,
   normalizeError,
@@ -100,6 +99,16 @@ function ProposalInner() {
   // After "request changes" the requester may revise: choose offers again, then resubmit as a new revision.
   const revising = submitted?.decision === "changes_requested" && itemsReady && Object.keys(fromQuery).length > 0;
   const showStatus = !!submitted && !revising;
+
+  // A revision starts from what was submitted last time, so only the requested change needs editing.
+  const [prefilled, setPrefilled] = useState<number | null>(null);
+  if (revising && submitted && prefilled !== submitted.revision) {
+    setPrefilled(submitted.revision);
+    if (!justification) setJustification(submitted.justification);
+    // The amount field holds only extras (tax or shipping not in the listing), so carry over just those.
+    const priorExtras = submitted.expenseCents - (submitted.researchSubtotalCents ?? 0) - (submitted.review?.cost.shippingCents ?? 0);
+    if (!expense && submitted.researchSubtotalCents !== null && priorExtras > 0) setExpense((priorExtras / 100).toFixed(2));
+  }
   const knownSubtotal = chosen.every((c) => c.offer.listedSubtotalCents !== null)
     ? chosen.reduce((s, c) => s + (c.offer.listedSubtotalCents ?? 0), 0)
     : null;
@@ -199,15 +208,14 @@ function ProposalInner() {
             {submitted.researchSubtotalCents !== null && submitted.expenseCents > submitted.researchSubtotalCents + (submitted.review?.cost.shippingCents ?? 0) && <p className="mt-2 rounded-xl bg-orange-soft p-3 text-[14px]">Includes {formatCents(submitted.expenseCents - submitted.researchSubtotalCents - (submitted.review?.cost.shippingCents ?? 0))} beyond listed items and known shipping. This difference is requester-entered, not merchant-verified.</p>}
           </Section>
           <Section title="Status">
+            <div className="mb-2">
+              {submitted.approval ? <DecisionRecord p={submitted} /> : <DecisionBadge decision={submitted.decision} />}
+            </div>
             <dl>
-              <KeyValue label="Approval" value={DECISION_LABEL[submitted.decision]} />
               <KeyValue label="Purchase record" value={submitted.executionDetail ? <ExecutionStatusText status={submitted.executionDetail.status} /> : submitted.decision === "approved" ? "Recording not started" : "Not started"} />
               <KeyValue label="Revision" value={submitted.revision} />
               {submitted.submittedAt && <KeyValue label="Submitted" value={formatWhen(submitted.submittedAt)} />}
             </dl>
-            {submitted.decisionNote && (
-              <p className="mt-2 text-[16px]"><span className="text-muted">Executive note: </span>{submitted.decisionNote}</p>
-            )}
             {submitted.decision === "changes_requested" && (
               <div className="mt-3">
                 <p className="mb-2 text-[14px] text-muted">
@@ -226,7 +234,11 @@ function ProposalInner() {
                 </Link>
               </div>
             )}
-            <SandboxNote />
+            {!submitted.executionDetail && submitted.decision === "awaiting_review" && (
+              <p className="mt-3 text-[13px] text-muted">
+                If approved, a simulated purchase is recorded in the Nessie sandbox. Nothing is ordered and no real money moves.
+              </p>
+            )}
             {submitted.requirementResolutions.length > 0 && (
               <>
                 <h3 className="mb-1 mt-3 text-[15px] font-semibold">Your checks and exceptions</h3>
@@ -254,10 +266,13 @@ function ProposalInner() {
 
       {!showStatus && req.data && itemsReady && (
         <>
-          {revising && submitted?.decisionNote && (
-            <p className="mb-4 rounded-xl bg-accent-soft p-3 text-[14px]">
-              <span className="font-medium">Executive note:</span> {submitted.decisionNote}
-            </p>
+          {revising && submitted && (
+            <Section title="Changes requested">
+              <DecisionRecord p={submitted} />
+              <p className="mt-2 text-[14px] text-muted">
+                Your previous justification and any extra costs are filled in below. Edit what was asked, then resubmit as revision {submitted.revision + 1}.
+              </p>
+            </Section>
           )}
           <Section title="Selected items">
             <Lines lines={lines} />
@@ -315,7 +330,6 @@ function ProposalInner() {
                 This is above the budget ceiling. The executive will see it, and approval can be refused.
               </p>
             )}
-            <SandboxNote />
           </Section>
           <Section>
             <Field required label="Why this option?" htmlFor="justification" error={errors.justification}>
@@ -331,7 +345,7 @@ function ProposalInner() {
             </Field>
             <p className="mb-4 text-[12px] text-muted">Submitting confirms you reviewed the selected items, total, and any exceptions. No real purchase is made.</p>
             <ErrorNote error={apiError} />
-            <Button disabled={pending} onClick={submit}>{pending ? "Submitting…" : "Submit for executive approval"}</Button>
+            <Button disabled={pending} onClick={submit}>{pending ? "Submitting…" : revising ? "Resubmit for approval" : "Submit for executive approval"}</Button>
           </Section>
         </>
       )}

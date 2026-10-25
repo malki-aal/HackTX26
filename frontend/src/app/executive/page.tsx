@@ -6,14 +6,11 @@ import { api } from "@/lib/api";
 import { personLabel } from "@/lib/api/mappers";
 import { Avatar } from "@/components/avatars";
 import { ExecutionStatusText } from "@/components/execution";
-import { useIdentity } from "@/lib/auth/identity";
-import { DECISION_LABEL } from "@/lib/labels";
+import { DecisionBadge, MatchMark } from "@/components/review";
 import { formatCents, isSafeHttpUrl } from "@/lib/money";
 import { Empty, ErrorNote, Loading, Page, PageHeader, Segmented, formatWhen, useLoad, usePolling } from "@/components/ui";
 
 export default function ExecutivePage() {
-  const { identity } = useIdentity();
-  const demo = identity.status === "ready" && identity.kind === "demo";
   const act = useLoad(() => api.listActivity(), []);
   // New submissions appear without a reload. Read-only: this never starts research or touches a purchase.
   usePolling(act.refresh, 5000);
@@ -38,9 +35,6 @@ export default function ExecutivePage() {
           { label: "Decided", value: count(decidedTotal) },
         ]}
       />
-      {demo && (
-        <p className="mb-4 text-[14px] text-muted">Demo role: Executive. This is a view for the demo, not a sign-in.</p>
-      )}
       <div className="mb-4">
         <Segmented
           label="Queue"
@@ -68,16 +62,16 @@ export default function ExecutivePage() {
               <div className="rounded-2xl bg-paper p-4 shadow-[0_1px_2px_rgba(16,24,40,0.06),0_2px_8px_rgba(16,24,40,0.04)]">
                 <Link href={`/executive/${a.proposalId}`} className="block active:opacity-80">
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-[17px] font-semibold leading-snug">{a.title}</span>
+                    <span className="text-[13px] font-medium text-muted">{a.title}</span>
                     <span className="shrink-0 text-[16px] font-semibold tabular-nums">{formatCents(a.exactAmountCents)}</span>
                   </div>
-                  <div className="mt-2 flex gap-3">
+                  <div className="mt-1 flex gap-3">
                     {a.imageUrl && isSafeHttpUrl(a.imageUrl) && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={a.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg bg-raised object-contain" />
                     )}
                     <div className="min-w-0">
-                      <p className="line-clamp-2 text-[14px]">{a.selectedTitle}</p>
+                      <p className="line-clamp-2 text-[17px] font-semibold leading-snug">{a.selectedTitle}</p>
                       <p className="text-[13px] text-muted">{[a.quantityText, a.seller].filter(Boolean).join(" · ")}</p>
                     </div>
                   </div>
@@ -87,21 +81,18 @@ export default function ExecutivePage() {
                       {personLabel(a.requester, "Unknown requester")} · {a.submittedAt ? `Submitted ${formatWhen(a.submittedAt)}` : `Updated ${formatWhen(a.updatedAt)}`} · Revision {a.version}
                     </span>
                   </p>
-                  {tab === "pending" && (a.unresolved.length > 0 || a.offerStale) && (
-                    <p className="mt-2 text-[13px] font-medium text-orange-ink">
-                      {[a.offerStale ? "Offer evidence expired" : null, a.unresolved.length ? `${a.unresolved.length} unresolved` : null].filter(Boolean).join(" · ")}
-                    </p>
+                  {tab === "pending" && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <MatchMark value={a.eligibility} />
+                      {a.offerStale && <span className="rounded-full bg-bad-soft px-2.5 py-0.5 text-[13px] font-medium text-bad">Offer out of date</span>}
+                      {a.unresolved.length > 0 && <span className="text-[13px] font-medium text-orange-ink">{a.unresolved.length} unresolved</span>}
+                    </div>
                   )}
                   {tab === "decided" && (
-                    <p className="mt-2 text-[14px] font-medium">
-                      {DECISION_LABEL[a.decision]}
-                      {a.execution && (
-                        <>
-                          {" · "}
-                          <ExecutionStatusText status={a.execution.status} />
-                        </>
-                      )}
-                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px]">
+                      <DecisionBadge decision={a.decision} />
+                      {a.execution && <ExecutionStatusText status={a.execution.status} />}
+                    </div>
                   )}
                   {tab === "decided" && a.latestDecision?.note && (
                     <p className="mt-1 line-clamp-2 text-[13px] text-muted">Note: {a.latestDecision.note}</p>
