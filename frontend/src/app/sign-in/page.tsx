@@ -11,7 +11,7 @@ import { authMode, homeFor } from "@/lib/auth/config";
 import { useIdentity } from "@/lib/auth/identity";
 import { signInErrorMessage } from "@/lib/auth/sign-in-errors";
 
-const TAGLINE = "Purchasing for small engineering and prototyping teams: researched options, human approval.";
+const TAGLINE = "Helping employee ideas get off the ground.";
 
 // Clerk's development instance has taken over 20 s to start a sign-in, so allow that before calling it stalled.
 const REDIRECT_TIMEOUT_MS = 25000;
@@ -29,29 +29,15 @@ function Narrow({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto min-h-dvh max-w-[430px]">{children}</div>;
 }
 
-function Mark() {
-  return (
-    <span className="flex items-center gap-2.5 rounded-full bg-paper py-2 pl-3 pr-4 shadow-[0_6px_18px_rgba(20,35,26,0.12)]">
-      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden>
-        <path d="M13 0a13 13 0 0 1 0 26z" fill="var(--ink)" />
-      </svg>
-      <span className="text-[20px] font-extrabold tracking-tight">Runway</span>
-    </span>
-  );
-}
-
-/** Full-screen landing: wordmark, headline and the sign-in card over the interactive backdrop. */
+/** Full-screen landing: headline and the sign-in card over the interactive backdrop. */
 function Landing({ children }: { children: React.ReactNode }) {
   return (
     <SignInStage>
       <div className="mx-auto flex min-h-dvh w-full max-w-[1200px] flex-col px-6 sm:px-10" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-        <header className="flex h-20 items-center">
-          <Mark />
-        </header>
-        <main className="grid flex-1 items-center gap-10 py-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+        <main className="grid flex-1 items-center gap-10 py-10 sm:py-16 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
           <section className="w-fit max-w-full rounded-2xl bg-[rgba(20,83,45,0.82)] p-6 text-white shadow-[0_12px_32px_rgba(20,83,45,0.25)] sm:p-8">
             <h1 className="text-[clamp(48px,8vw,96px)] font-extrabold leading-[0.95] tracking-[-0.03em]">Runway</h1>
-            <p className="mt-4 max-w-[26ch] text-[clamp(18px,2.2vw,26px)] font-semibold leading-snug tracking-tight">{TAGLINE}</p>
+            <p className="mt-4 max-w-[24ch] text-balance text-[clamp(18px,2.2vw,26px)] font-semibold leading-snug tracking-tight">{TAGLINE}</p>
           </section>
           <section className="w-full max-w-[440px] justify-self-center rounded-2xl bg-paper p-6 border border-rule shadow-[0_12px_32px_rgba(20,35,26,0.08)] sm:p-8 lg:justify-self-end">
             {children}
