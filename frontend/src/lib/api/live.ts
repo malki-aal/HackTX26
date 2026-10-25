@@ -2,7 +2,7 @@ import type { RunwayApi } from "./client";
 import type { ScenarioSet } from "../scenarios";
 import { UNAUTHORIZED_EVENT, getAuthToken } from "../auth/token";
 import { authMode } from "../auth/config";
-import { EMPTY_COUNTS, mapPreview, mapQueueItem, personOf, type BActorInfo, type BQueueItem } from "./mappers";
+import { EMPTY_COUNTS, currentRevisionDecision, mapPreview, mapQueueItem, personOf, type BActorInfo, type BQueueItem } from "./mappers";
 import type {
   ActivityItem,
   ActivityPage,
@@ -244,6 +244,11 @@ function mapRequest(b: BRequest): PurchaseRequest {
     confirmedVersion: b.isCurrentVersionConfirmed ? b.version : undefined,
     runId: b.latestRunId ?? undefined,
     proposalId: latestProposal?.id,
+    proposalDecision: (latestProposal?.decisionState as PurchaseRequest["proposalDecision"]) ?? undefined,
+    specLines: {
+      mandatory: specs.filter((r) => r.mandatory && r.attribute !== "delivery_by").map(describeRequirement),
+      preferences: specs.filter((r) => !r.mandatory && r.attribute !== "delivery_by").map(describeRequirement),
+    },
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
@@ -530,7 +535,9 @@ interface BProposal {
 
 async function mapProposal(p: BProposal): Promise<Proposal> {
   const req = await call<BRequest>(`/requests/${p.requestId}`);
-  const last = p.decisions[p.decisions.length - 1];
+  // Only a decision made on the current revision describes it. A resubmitted revision is awaiting review
+  // even though earlier revisions were decided; those stay in review.history.
+  const last = currentRevisionDecision(p.decisions, p.version);
   const v = p.versions.find((x) => x.version === p.version);
   const labels = new Map(req.requirements.map((r) => [r.id, describeRequirement(r)]));
   const unit = req.item?.unit ?? "units";
@@ -746,6 +753,27 @@ export const liveApi: RunwayApi = {
         answers: Object.entries(answers)
           .filter(([, value]) => value !== "")
           .map(([questionId, value]) => ({ questionId, value })),
+      },
+    });
+    return mapRequest(b);
+  },
+
+  async updateRequest(id, input) {
+    if (input.items.length !== 1) throw unsupported("Edit grouped requests one item at a time.");
+    const item = input.items[0];
+    const b = await call<BRequest>(`/requests/${id}`, {
+      method: "PATCH",
+      body: {
+        expectedVersion: input.expectedVersion,
+        title: input.title,
+        purpose: input.purpose,
+        description: buildDescription(input),
+        quantity: item.quantity,
+        unit: item.unit,
+        budgetCents: input.budgetTotalCents,
+        allowedCondition: input.condition,
+        deadline: input.deadline ?? null,
+        deadlineType: input.deadline && input.deadlineKind === "hard" ? "hard" : "target",
       },
     });
     return mapRequest(b);

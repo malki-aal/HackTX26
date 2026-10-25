@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api, type ApiError, type Offer, type Proposal, type ProposalLine } from "@/lib/api";
 import { ExecutionAmounts, ExecutionStatusText, ExecutionWarnings } from "@/components/execution";
-import { DecisionBadge, DecisionRecord } from "@/components/review";
+import { DecisionRecord } from "@/components/review";
 import { formatCents, isSafeHttpUrl, parseDollarsToCents } from "@/lib/money";
 import { parseSelectionQuery, readSelection } from "@/lib/selection";
 import { proposedCost } from "@/lib/proposal-cost";
@@ -209,7 +209,7 @@ function ProposalInner() {
           </Section>
           <Section title="Status">
             <div className="mb-2">
-              {submitted.approval ? <DecisionRecord p={submitted} /> : <DecisionBadge decision={submitted.decision} />}
+              <DecisionRecord p={submitted} />
             </div>
             <dl>
               <KeyValue label="Purchase record" value={submitted.executionDetail ? <ExecutionStatusText status={submitted.executionDetail.status} /> : submitted.decision === "approved" ? "Recording not started" : "Not started"} />

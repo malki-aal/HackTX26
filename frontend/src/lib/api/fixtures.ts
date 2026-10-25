@@ -475,6 +475,36 @@ export const fixtureApi: RunwayApi = {
     );
   },
 
+  async updateRequest(id, input) {
+    return delay(
+      mutate((db) => {
+        const r = find(db, id);
+        if (r.version !== input.expectedVersion) throw { code: "VERSION_CONFLICT", message: "This request changed. Reload to edit the latest version." };
+        if (r.status === "submitted" || r.status === "approved") throw { code: "INVALID_STATE", message: `Request is ${r.status}.` };
+        const item = input.items[0]!;
+        Object.assign(r, {
+          version: r.version + 1,
+          title: input.title,
+          purpose: input.purpose,
+          items: [{ ...r.items[0]!, name: item.name, quantity: item.quantity, unit: item.unit }],
+          budgetTotalCents: input.budgetTotalCents,
+          mandatory: input.mandatory,
+          preferences: input.preferences,
+          specLines: { mandatory: input.mandatory, preferences: input.preferences },
+          condition: input.condition,
+          deadline: input.deadline,
+          deadlineKind: input.deadlineKind,
+          // A changed request needs confirming again; earlier offers no longer apply.
+          confirmedVersion: undefined,
+          runId: undefined,
+          status: "awaiting_confirmation",
+          updatedAt: now(),
+        });
+        return r;
+      }),
+    );
+  },
+
   async confirmRequirements(id, version) {
     return delay(
       mutate((db) => {

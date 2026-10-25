@@ -106,27 +106,73 @@ export function ApprovalSummary({
   );
 }
 
-/** The saved decision, worded the same for the requester and the executive. */
+/**
+ * The current revision's status, and its saved decision if it has one. Decisions on earlier revisions
+ * are listed separately, so a resubmitted revision never looks already decided.
+ */
 export function DecisionRecord({ p }: { p: Proposal }) {
-  const a = p.approval;
-  const last = p.review?.history[p.review.history.length - 1];
+  const a = p.approval; // only set when the current revision was decided
+  const previous = (p.review?.history ?? []).filter((h) => h.version < p.revision);
   return (
-    <div className="rounded-xl bg-raised p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <DecisionBadge decision={p.decision} />
-        {a && <span className="text-[13px] text-muted">Saved {formatWhen(a.at)}</span>}
+    <div className="space-y-2">
+      <div className="rounded-xl bg-raised p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[13px] font-medium text-muted">Revision {p.revision}</span>
+          <DecisionBadge decision={p.decision} />
+        </div>
+        {a ? (
+          <>
+            <p className="mt-1.5 text-[14px]">
+              Decided by {personLabel(a.actor, "an executive")} · {formatWhen(a.at)}
+            </p>
+            {p.decisionNote ? <p className="mt-1.5 text-[16px]">“{p.decisionNote}”</p> : <p className="mt-1.5 text-[14px] text-muted">No note was added.</p>}
+          </>
+        ) : (
+          p.submittedAt && <p className="mt-1.5 text-[14px] text-muted">Submitted {formatWhen(p.submittedAt)}</p>
+        )}
       </div>
-      {a && (
-        <p className="mt-1.5 text-[14px]">
-          By {personLabel(a.actor, "an executive")}
-          {last ? ` on revision ${last.version}` : ""}
-        </p>
-      )}
-      {p.decisionNote ? (
-        <p className="mt-1.5 text-[16px]">“{p.decisionNote}”</p>
-      ) : (
-        a && <p className="mt-1.5 text-[14px] text-muted">No note was added.</p>
-      )}
+      {previous.length > 0 && <PreviousDecisions items={previous} />}
+    </div>
+  );
+}
+
+function PreviousDecisions({ items }: { items: NonNullable<Proposal["review"]>["history"] }) {
+  return (
+    <details className="rounded-xl border border-rule p-3 text-[14px]" open={items.length === 1}>
+      <summary className="cursor-pointer font-medium">Earlier revisions ({items.length})</summary>
+      <ul className="mt-2 space-y-2">
+        {[...items].reverse().map((h) => (
+          <li key={`${h.version}-${h.at}`}>
+            <p className="text-muted">
+              Previous decision · revision {h.version} · {h.decision.replace("_", " ")} by {personLabel(h.actor, "an executive")} · {formatWhen(h.at)}
+            </p>
+            {h.note && <p>“{h.note}”</p>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * Must-haves the evidence never confirmed, and what the requester recorded for each (their own check, or
+ * an exception the approver accepted). The evidence itself stays unconfirmed; this is the audit trail.
+ */
+export function ExceptionsRecord({ p }: { p: Proposal }) {
+  if (!p.requirementResolutions.length) return null;
+  const title = p.decision === "approved" ? "Approved with exceptions" : "Requester checks and exceptions";
+  return (
+    <div className="rounded-xl border-l-4 border-orange-bar bg-orange-soft p-3">
+      <p className="text-[15px] font-semibold text-orange-ink">{title} · revision {p.revision}</p>
+      <ul className="mt-1.5 space-y-1.5 text-[14px] text-ink">
+        {p.requirementResolutions.map((r) => (
+          <li key={r.requirement}>
+            <span className="font-medium">{r.requirement}</span>: {r.kind === "verified" ? "requester says they verified it" : "exception"} — “{r.note}”
+            <span className="block text-[13px] text-muted">Listing evidence: {r.evidenceReason}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-[12px] text-muted">The listing evidence stays unconfirmed; these are the requester’s notes{p.decision === "approved" ? ", accepted with the approval" : ""}.</p>
     </div>
   );
 }

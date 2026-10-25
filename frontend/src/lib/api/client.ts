@@ -40,6 +40,11 @@ export interface RunwayApi {
   startProjectResearch(id: string): Promise<{ results: { key: string; result: string; code?: string }[] }>;
   answerClarifications(id: string, answers: Record<string, string>): Promise<PurchaseRequest>;
   confirmRequirements(id: string, version: number): Promise<PurchaseRequest>;
+  /**
+   * Edit a request (e.g. after changes were requested): saves a new version. Material changes need
+   * confirming again, and research for the old version no longer applies. Never researches by itself.
+   */
+  updateRequest(id: string, input: NewRequestInput & { expectedVersion: number }): Promise<PurchaseRequest>;
   startResearch(id: string): Promise<Run>;
   getRun(runId: string): Promise<Run>;
   cancelRun(runId: string): Promise<Run>;

@@ -58,6 +58,10 @@ export interface PurchaseRequest {
   runId?: string;
   agentConfigVersion?: number | null;
   proposalId?: string;
+  /** Decision state of the latest proposal for this request (e.g. "changes_requested"). */
+  proposalDecision?: DecisionState;
+  /** Spec lines an edit form can show and resubmit (no deadline or condition lines; those are fields). */
+  specLines?: { mandatory: string[]; preferences: string[] };
   createdAt: string;
   updatedAt: string;
 }
@@ -307,7 +311,10 @@ export interface Proposal {
   expenseSource: "user_confirmed";
   decision: DecisionState;
   decisionNote?: string;
-  /** Who requested it and who decided last, as the server records them (verified accounts, or demo identities). */
+  /**
+   * Who requested it, and who decided the CURRENT revision (absent while it awaits review). Decisions on
+   * earlier revisions are in `review.history`. Verified accounts, or demo identities.
+   */
   requester: PersonRef | null;
   approval?: { actor: PersonRef; at: string; decision: string };
   execution: ExecutionState;

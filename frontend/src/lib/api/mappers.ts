@@ -111,3 +111,11 @@ export function approvalGate(s: PreviewState, reviewedVersion: number, confirmed
   if (!confirmed) return { enabled: false, reason: "Tick the confirmation to approve." };
   return { enabled: true, reason: null };
 }
+
+/**
+ * The decision that describes the CURRENT revision, if any. A resubmitted revision is awaiting review even
+ * though an earlier revision was decided, so older decisions never stand in for the current one.
+ */
+export function currentRevisionDecision<T extends { version: number }>(decisions: T[], currentVersion: number): T | undefined {
+  return [...decisions].reverse().find((d) => d.version === currentVersion);
+}

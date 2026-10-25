@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { elapsedLabel, researchProgress } from "@/lib/research";
-import { api, type ApiError, type Offer, type PurchaseRequest, type RequestItem, type Run } from "@/lib/api";
+import { api, type ApiError, type Condition, type DeadlineKind, type Offer, type PurchaseRequest, type RequestItem, type Run } from "@/lib/api";
+import { parseDollarsToCents } from "@/lib/money";
 import { DecisionRecord } from "@/components/review";
 import { CONDITION_LABEL, HIGHLIGHT_LABEL, stageIndex, stages } from "@/lib/labels";
 import { itemLine } from "@/lib/format";
@@ -13,6 +14,8 @@ import { readSelection, selectionQuery, writeSelection } from "@/lib/selection";
 import {
   Button,
   EligibilityMark,
+  Field,
+  inputClass,
   Empty,
   ErrorNote,
   KeyValue,
@@ -42,6 +45,8 @@ export default function RequestDetailPage() {
 function RequestDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: req, error, loading, reload, refresh, setData } = useLoad(() => api.getRequest(id), [id]);
+  const [editing, setEditing] = useState(false);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   // While a proposal waits for a decision, check for the answer. Read-only.
   usePolling(refresh, 5000, req?.status === "submitted");
 
@@ -70,7 +75,29 @@ function RequestDetail() {
           {["clarifying", "awaiting_confirmation", "confirmed"].includes(req.status) ? <Summary req={req} /> : (
             <details className="mb-4 rounded-2xl bg-paper p-4"><summary className="cursor-pointer font-medium">Request details</summary><Summary req={req} /></details>
           )}
-          {req.status === "changes_requested" && req.proposalId && <ChangesNote proposalId={req.proposalId} requestId={req.id} />}
+          {(req.status === "changes_requested" || req.proposalDecision === "changes_requested") && req.proposalId && (
+            <ChangesNote proposalId={req.proposalId} requestId={req.id} />
+          )}
+          {savedNote && <p role="status" className="mb-4 rounded-xl bg-accent-soft p-3 text-[14px]">{savedNote}</p>}
+          {!req.projectId && EDITABLE.has(req.status) && (editing ? (
+            <EditRequest
+              req={req}
+              onCancel={() => setEditing(false)}
+              onSaved={(next) => {
+                setEditing(false);
+                setData(next);
+                setSavedNote(
+                  next.version > req.version
+                    ? `Saved as version ${next.version}. Earlier offers were for version ${req.version} and no longer apply: confirm the requirements below, then search again (uses search quota).`
+                    : "No changes to save.",
+                );
+              }}
+            />
+          ) : (
+            <button type="button" onClick={() => { setSavedNote(null); setEditing(true); }} className="touch mb-4 text-[15px] font-medium text-accent">
+              Edit request (quantity, budget, specifications)
+            </button>
+          ))}
           {(req.status === "clarifying" || req.status === "awaiting_confirmation") && <Review req={req} onChange={setData} />}
           {req.status === "confirmed" && <StartResearch req={req} onChange={setData} />}
           {req.status === "researching" && req.runId && <Research runId={req.runId} onDone={reload} />}
@@ -80,6 +107,110 @@ function RequestDetail() {
         </>
       )}
     </Page>
+  );
+}
+
+/** States where the request itself can still be edited (not while researching, submitted or decided). */
+const EDITABLE = new Set<PurchaseRequest["status"]>(["clarifying", "awaiting_confirmation", "confirmed", "results_ready", "proposal_drafted", "changes_requested"]);
+
+/**
+ * Edit the request itself, e.g. after the executive asked for 2 monitors instead of 4. Saving creates a
+ * new version: material changes must be confirmed again and research is redone for the new version, so
+ * old pricing (for 4) is never reused. Earlier versions and decisions stay in history.
+ */
+function EditRequest({ req, onSaved, onCancel }: { req: PurchaseRequest; onSaved: (r: PurchaseRequest) => void; onCancel: () => void }) {
+  const item = req.items[0]!;
+  const lines = req.specLines ?? { mandatory: req.mandatory, preferences: req.preferences };
+  const [title, setTitle] = useState(req.title);
+  const [purpose, setPurpose] = useState(req.purpose);
+  const [quantity, setQuantity] = useState(String(item.quantity));
+  const [unit, setUnit] = useState(item.unit);
+  const [budget, setBudget] = useState((req.budgetTotalCents / 100).toFixed(req.budgetTotalCents % 100 ? 2 : 0));
+  const [mandatory, setMandatory] = useState(lines.mandatory.join("\n"));
+  const [preferences, setPreferences] = useState(lines.preferences.join("\n"));
+  const [condition, setCondition] = useState<Condition>(req.condition);
+  const [deadline, setDeadline] = useState(req.deadline ?? "");
+  const [deadlineKind, setDeadlineKind] = useState<DeadlineKind>(req.deadlineKind);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { pending, error, run } = useAction();
+  const split = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  function save() {
+    const next: Record<string, string> = {};
+    const q = Number(quantity);
+    const cents = parseDollarsToCents(budget);
+    if (!title.trim()) next.title = "Add a short title.";
+    if (!Number.isInteger(q) || q < 1) next.quantity = "Enter a whole number, 1 or more.";
+    if (cents === null || cents <= 0) next.budget = "Enter the total budget in dollars.";
+    if (!split(mandatory).length) next.mandatory = "List at least one must-have.";
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    void run(
+      () => api.updateRequest(req.id, {
+        expectedVersion: req.version,
+        title: title.trim(),
+        purpose: purpose.trim(),
+        items: [{ name: item.name, quantity: q, unit: unit.trim() || item.unit }],
+        budgetTotalCents: cents as number,
+        mandatory: split(mandatory),
+        preferences: split(preferences),
+        condition,
+        deadline: deadline || undefined,
+        deadlineKind: deadline ? deadlineKind : "flexible",
+        agentConfigId: req.agentConfigId || "cfg_default",
+      }),
+      onSaved,
+    );
+  }
+
+  return (
+    <Section title={`Edit request · version ${req.version}`}>
+      <p className="mb-3 text-[14px] text-muted">
+        Saving creates version {req.version + 1}. You&apos;ll confirm it, then search again, so prices match the new request. Earlier versions and decisions stay in the history.
+      </p>
+      <Field required label="Title" htmlFor="edit-title" error={errors.title}>
+        <input id="edit-title" className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
+      </Field>
+      <Field label="What is it for?" htmlFor="edit-purpose">
+        <textarea id="edit-purpose" rows={3} className={inputClass} value={purpose} onChange={(e) => setPurpose(e.target.value)} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field required label={`Quantity (${item.name})`} htmlFor="edit-qty" error={errors.quantity}>
+          <input id="edit-qty" inputMode="numeric" className={inputClass} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        </Field>
+        <Field label="Unit" htmlFor="edit-unit">
+          <input id="edit-unit" className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value)} />
+        </Field>
+      </div>
+      <Field required label="Total budget (USD)" htmlFor="edit-budget" error={errors.budget}>
+        <input id="edit-budget" inputMode="decimal" className={inputClass} value={budget} onChange={(e) => setBudget(e.target.value)} />
+      </Field>
+      <Field required label="Must-have specifications" htmlFor="edit-mandatory" error={errors.mandatory}>
+        <textarea id="edit-mandatory" rows={4} className={inputClass} value={mandatory} onChange={(e) => setMandatory(e.target.value)} />
+      </Field>
+      <Field label="Nice-to-haves" htmlFor="edit-preferences">
+        <textarea id="edit-preferences" rows={2} className={inputClass} value={preferences} onChange={(e) => setPreferences(e.target.value)} />
+      </Field>
+      <div className="mb-5">
+        <p className="mb-1.5 text-[15px] font-medium">Condition</p>
+        <Segmented label="Condition" value={condition} onChange={setCondition}
+          options={[{ value: "new", label: "New" }, { value: "refurbished", label: "New or refurbished" }, { value: "any", label: "Any condition" }]} />
+      </div>
+      <Field label="Needed by" htmlFor="edit-deadline">
+        <input id="edit-deadline" type="date" className={inputClass} value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+      </Field>
+      {deadline && (
+        <div className="-mt-2 mb-5">
+          <Segmented label="Deadline type" value={deadlineKind} onChange={setDeadlineKind}
+            options={[{ value: "flexible", label: "Flexible target" }, { value: "hard", label: "Hard deadline" }]} />
+        </div>
+      )}
+      <ErrorNote error={error} />
+      <div className="space-y-3">
+        <Button disabled={pending} onClick={save}>{pending ? "Saving…" : `Save as version ${req.version + 1}`}</Button>
+        <Button variant="quiet" disabled={pending} onClick={onCancel}>Cancel</Button>
+      </div>
+    </Section>
   );
 }
 
@@ -102,7 +233,8 @@ function ChangesNote({ proposalId, requestId }: { proposalId: string; requestId:
     <Section title="Changes requested">
       {data ? <DecisionRecord p={data} /> : <ErrorNote error={error} onRetry={reload} />}
       <p className="mt-2 text-[14px] text-muted">
-        Select an offer below (the same one or another), then adjust the amount or your case and resubmit.
+        If the quantity, budget or specifications need to change, use Edit request below (you&apos;ll search again for the new version).
+        Otherwise select an offer below, adjust the amount or your case, and resubmit.
       </p>
       <Link href={`/requests/${requestId}/proposal`} className="touch text-[15px] font-medium text-accent">View proposal and status</Link>
     </Section>
