@@ -30,7 +30,8 @@ function moves(ctx: AppContext, e: ExecRow) {
     ? {
         noun: "transfer",
         create: () => bank.createTransfer(e.account_id, { payeeAccountId: e.payee_account_id!, amountCents: e.amount_cents, description: e.description, date: nowIso().slice(0, 10) }),
-        list: () => bank.listTransfers(e.account_id),
+        // Found on the employee's side: the deposit is the tracked record.
+        list: () => bank.listTransfersTo(e.payee_account_id!),
         get: (id: string) => bank.getTransfer(id),
       }
     : {

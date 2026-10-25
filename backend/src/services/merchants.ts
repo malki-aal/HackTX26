@@ -164,7 +164,8 @@ export async function purchaseHistory(ctx: AppContext) {
     (ctx.db.prepare("SELECT execution_id, status, external_id, amount_cents FROM employee_payments").all() as Array<{ execution_id: string; status: string; external_id: string | null; amount_cents: number }>).map((p) => [p.execution_id, p]),
   );
   const transferItems = transfers.map((t) => {
-    const e = byExternal.get(t.id);
+    // Company-side records carry the execution id in their description (the tracked id is the employee deposit).
+    const e = byExternal.get(t.id) ?? execs.find((x) => (t.description ?? "").includes(x.id));
     const pay = e ? payments.get(e.id) : undefined;
     return {
       transferId: t.id,
