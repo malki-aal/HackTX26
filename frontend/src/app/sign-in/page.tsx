@@ -3,7 +3,7 @@
 import { useAuth, useClerk, useSignIn } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { CheckingSession, ConfigError, PendingAccess, Unreachable } from "@/components/auth";
 import { GoogleButton } from "@/components/google-button";
 import { SignInStage } from "@/components/sign-in-stage";
@@ -11,6 +11,13 @@ import { authMode, homeFor } from "@/lib/auth/config";
 import { useIdentity } from "@/lib/auth/identity";
 
 const TAGLINE = "Purchasing for small engineering and prototyping teams: researched options, human approval.";
+
+const REDIRECT_TIMEOUT_MS = 15000;
+
+/** Browsers built into other apps. Google refuses OAuth sign-in inside them. */
+const IN_APP_UA = /FBAN|FBAV|FB_IAB|Instagram|Snapchat|LinkedInApp|Line\/|MicroMessenger|TikTok|musical_ly|Twitter|Discord|GroupMe/i;
+const isInAppBrowser = () => IN_APP_UA.test(navigator.userAgent);
+const noSubscribe = () => () => {};
 
 /** Status screens (checking, pending, unreachable…) keep the narrow phone layout inside the full-screen page. */
 function Narrow({ children }: { children: React.ReactNode }) {
@@ -86,11 +93,27 @@ function ClerkSignIn() {
   const params = useSearchParams();
   const [redirecting, setRedirecting] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const inAppBrowser = useSyncExternalStore(noSubscribe, isInAppBrowser, () => false);
 
   // Already signed in: go straight to the home the server chose for this person.
   useEffect(() => {
     if (identity.status === "ready") router.replace(homeFor(identity.role));
   }, [identity, router]);
+
+  // If the browser hasn't left for Google after a while, stop waiting and say why instead of spinning forever.
+  useEffect(() => {
+    if (!redirecting) return;
+    const t = setTimeout(() => {
+      if (document.visibilityState === "hidden") return; // already navigating away
+      setRedirecting(false);
+      setFailure(
+        inAppBrowser
+          ? "Google didn’t open. This page is open inside another app, and Google blocks sign-in there. Open it in Safari or Chrome and try again."
+          : "Google didn’t open. Check your connection, turn off content blockers for this site, and try again.",
+      );
+    }, REDIRECT_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [redirecting, inAppBrowser]);
 
   async function start() {
     if (redirecting) return;
@@ -162,7 +185,14 @@ function ClerkSignIn() {
           )}
         </div>
       )}
+      {inAppBrowser && !banner && (
+        <p role="status" className="mb-4 rounded-xl bg-orange-soft p-3 text-[14px] text-ink">
+          This page is open inside another app. Google blocks sign-in there, so open it in Safari or Chrome first.
+        </p>
+      )}
       <GoogleButton onClick={start} busy={redirecting} />
+      {/* Clerk's bot protection renders its challenge here when a device needs one. Without it, sign-in can stall. */}
+      <div id="clerk-captcha" className="mt-3 empty:hidden" />
       <div role="status" aria-live="polite" className="sr-only">
         {redirecting ? "Redirecting to Google" : ""}
       </div>

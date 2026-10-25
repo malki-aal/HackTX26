@@ -15,6 +15,8 @@ export default function SsoCallbackPage() {
   return (
     <>
       <CheckingSession label="Finishing sign-in" />
+      {/* A first sign-in creates the account here; Clerk's bot protection may need to show a challenge. */}
+      <div id="clerk-captcha" className="mx-auto max-w-[430px] px-4 empty:hidden" />
       <HandleSSOCallback
         navigateToApp={({ decorateUrl }) => {
           const destination = decorateUrl("/continue");
