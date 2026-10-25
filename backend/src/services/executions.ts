@@ -9,11 +9,13 @@ import { AppError, IntegrationError, invalidState, notFound } from "../lib/error
 import { scrub } from "../lib/redact.js";
 import { formatUsd } from "../domain/money.js";
 import type { NessiePurchase } from "../integrations/nessie.js";
-import { NessieClient, fromNessieAmount } from "../integrations/nessie.js";
+import { fromNessieAmount } from "../integrations/nessie.js";
 import { emitEvent } from "./events.js";
 import { readFinancialContext } from "./budget.js";
 
 type ExecRow = {
+  approved_at: string | null; provider_submitted_at: string | null; recorded_at: string | null; provider_retrieved_at: string | null;
+  account_masked: string | null; merchant_mapping: string | null; provider_purchase_date: string | null;
   id: string; proposal_id: string; proposal_version: number; decision_id: string; mode: string; account_id: string; merchant_id: string | null; amount_cents: number; provider_amount: string | null;
   description: string; status: string; provider_status: string | null; external_id: string | null; last_error: string | null; attempts: number; created_at: string; updated_at: string;
 };
@@ -26,27 +28,6 @@ function loadExec(ctx: AppContext, id: string): ExecRow {
 
 function requestIdFor(ctx: AppContext, proposalId: string): string | null {
   return (ctx.db.prepare("SELECT request_id FROM proposals WHERE id = ?").get(proposalId) as { request_id: string } | undefined)?.request_id ?? null;
-}
-
-/** Find or create the namespaced Nessie merchant that represents a seller in the sandbox. */
-export async function ensureMerchant(ctx: AppContext, seller: string): Promise<string> {
-  if (ctx.adapters.bank.source === "fixture") return "fixture_merchant";
-  const name = `Runway sandbox: ${seller}`.slice(0, 80);
-  const cached = ctx.db.prepare("SELECT external_id FROM nessie_resources WHERE kind = 'merchant' AND name = ?").get(name) as { external_id: string } | undefined;
-  if (cached) return cached.external_id;
-  const bank = ctx.adapters.bank;
-  if (!(bank instanceof NessieClient)) throw new AppError("INTERNAL_ERROR", "Live bank adapter required to create merchants", 500);
-  const created = await bank.create("/merchants", {
-    name,
-    // This deployment validates category as a string (an array is rejected with HTTP 400).
-    category: "electronics",
-    address: { street_number: "1", street_name: "Sandbox Way", city: "Austin", state: "TX", zip: "78701" },
-    geocode: { lat: 30.2672, lng: -97.7431 },
-  });
-  const merchantId = created.object && typeof created.object._id === "string" ? created.object._id : null;
-  if (!merchantId) throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Nessie merchant creation returned no id", "definitive", false);
-  ctx.db.prepare("INSERT OR IGNORE INTO nessie_resources (kind, name, external_id, payload, created_at) VALUES ('merchant', ?, ?, ?, ?)").run(name, merchantId, JSON.stringify({ seller }), nowIso());
-  return merchantId;
 }
 
 function setStatus(ctx: AppContext, e: ExecRow, status: string, patch: { providerStatus?: string | null; externalId?: string | null; error?: string | null; providerAmount?: unknown } = {}) {
@@ -78,9 +59,15 @@ function recordProviderAmount(ctx: AppContext, executionId: string, providerAmou
   ctx.db.prepare("UPDATE budget_ledger SET provider_amount_cents = ?, updated_at = ? WHERE execution_id = ? AND kind = 'expense'").run(cents, nowIso(), executionId);
 }
 
+/** The stored provider record was read back after creation. */
+function markRetrieved(ctx: AppContext, executionId: string, purchaseDate: string | null) {
+  ctx.db.prepare("UPDATE executions SET provider_retrieved_at = ?, provider_purchase_date = COALESCE(?, provider_purchase_date) WHERE id = ?").run(nowIso(), purchaseDate, executionId);
+}
+
 function markRecorded(ctx: AppContext, e: ExecRow, externalId: string, providerStatus: string | null, providerAmount: unknown, how: string) {
   tx(ctx.db, () => {
     setStatus(ctx, e, "recorded", { externalId, providerStatus, providerAmount });
+    ctx.db.prepare("UPDATE executions SET recorded_at = COALESCE(recorded_at, ?) WHERE id = ?").run(nowIso(), e.id);
     convertToExpense(ctx, e, externalId, providerAmount);
     emitEvent(ctx.db, { type: "execution_recorded", proposalId: e.proposal_id, requestId: requestIdFor(ctx, e.proposal_id), executionId: e.id, summary: `Nessie sandbox purchase recorded (${how})`, payload: { externalId, providerStatus, amountCents: e.amount_cents } });
   });
@@ -97,7 +84,7 @@ export async function submitExecution(ctx: AppContext, executionId: string): Pro
   }
   const reqId = requestIdFor(ctx, e.proposal_id);
   tx(ctx.db, () => {
-    ctx.db.prepare("UPDATE executions SET status = 'submitting', attempts = attempts + 1, updated_at = ? WHERE id = ?").run(nowIso(), e.id);
+    ctx.db.prepare("UPDATE executions SET status = 'submitting', attempts = attempts + 1, provider_submitted_at = ?, updated_at = ? WHERE id = ?").run(nowIso(), nowIso(), e.id);
     emitEvent(ctx.db, { type: "execution_submitting", proposalId: e.proposal_id, requestId: reqId, executionId: e.id, summary: `Submitting ${formatUsd(e.amount_cents)} sandbox purchase to Nessie`, payload: { attempt: e.attempts + 1 } });
   });
   try {
@@ -109,7 +96,10 @@ export async function submitExecution(ctx: AppContext, executionId: string): Pro
     }
     // Success status without an id in the body: find it by our reference instead of guessing.
     const found = (await ctx.adapters.bank.listPurchases(e.account_id)).filter((p) => matchesExecution(e, p));
-    if (found.length === 1) markRecorded(ctx, e, found[0]!.id, found[0]!.status, found[0]!.rawAmount, "found by reference after create");
+    if (found.length === 1) {
+      markRecorded(ctx, e, found[0]!.id, found[0]!.status, found[0]!.rawAmount, "found by reference after create");
+      markRetrieved(ctx, e.id, found[0]!.date);
+    }
     else markUncertain(ctx, e, `Nessie accepted the request (HTTP ${res.httpStatus}) but returned no id; ${found.length} matching purchases found`);
   } catch (err) {
     if (err instanceof IntegrationError && err.outcome === "definitive") {
@@ -140,6 +130,7 @@ async function verifyReadBack(ctx: AppContext, executionId: string) {
     if (p) {
       setStatus(ctx, e, e.status, { providerStatus: p.status, providerAmount: p.rawAmount });
       recordProviderAmount(ctx, e.id, p.rawAmount);
+      markRetrieved(ctx, e.id, p.date);
     }
   } catch {
     // Read-back is informational; the record is already confirmed by the create response.
@@ -170,11 +161,13 @@ export async function reconcileExecution(ctx: AppContext, executionId: string, b
         if (p) {
           setStatus(ctx, e, "recorded", { providerStatus: p.status, providerAmount: p.rawAmount });
           recordProviderAmount(ctx, e.id, p.rawAmount);
+          markRetrieved(ctx, e.id, p.date);
           notes.push(`External purchase ${p.id} present with status ${p.status ?? "unknown"}`);
         } else notes.push("Recorded purchase was not found in the account listing; leaving status unchanged");
         if (matches.length > 1) notes.push(`Warning: ${matches.length} purchases reference this execution`);
       } else if (matches.length === 1) {
         markRecorded(ctx, e, matches[0]!.id, matches[0]!.status, matches[0]!.rawAmount, "reconciled by reference");
+        markRetrieved(ctx, e.id, matches[0]!.date);
         notes.push(`Found purchase ${matches[0]!.id} by execution reference; marked recorded`);
       } else if (matches.length > 1) {
         notes.push(`${matches.length} purchases reference this execution; left uncertain for manual review`);
@@ -218,6 +211,20 @@ export function getExecutionView(ctx: AppContext, id: string) {
       providerCents !== null && providerCents !== e.amount_cents
         ? `Nessie stored ${formatUsd(providerCents)} (it keeps whole dollars); the approved amount ${formatUsd(e.amount_cents)} remains the budget figure`
         : null,
+    // Canonical names (the amountCents/providerAmountCents fields above are kept for compatibility).
+    approvedAmountCents: e.amount_cents,
+    providerStoredAmountCents: providerCents,
+    currency: "USD",
+    providerAmountConversion: "Nessie amounts are dollars; Runway sends cents/100 and reads back whole dollars x 100",
+    accountMasked: e.account_masked,
+    merchantMapping: e.merchant_mapping ? json(e.merchant_mapping) : null,
+    providerPurchaseDate: e.provider_purchase_date,
+    timestamps: {
+      approvedAt: e.approved_at,
+      providerSubmittedAt: e.provider_submitted_at,
+      recordedAt: e.recorded_at,
+      providerRetrievedAt: e.provider_retrieved_at,
+    },
     description: e.description,
     lastError: e.last_error,
     attempts: e.attempts,

@@ -7,9 +7,10 @@ import { evaluateCandidates, evaluateRequirement, calculatePurchaseCost, rankCan
 import { assessBudget, computeFinancialContext, reconcileReflections, type LedgerEntry } from "../src/domain/budget.js";
 import { FIXTURE_MONITOR_ITEMS } from "../src/integrations/fixtures.js";
 import { RequestFields } from "../src/contracts/domain.js";
+import { getCategory } from "../src/domain/categories.js";
 import type { Offer, RawShoppingItem } from "../src/domain/types.js";
 
-const ctx = { runId: "run_t", queryId: "q1", observedAt: new Date("2026-10-24T12:00:00Z"), offerMaxAgeMinutes: 30, fromCache: false };
+const ctx = { runId: "run_t", queryId: "q1", observedAt: new Date("2026-10-24T12:00:00Z"), offerMaxAgeMinutes: 30, fromCache: false, category: getCategory("monitors")! };
 const norm = (item: RawShoppingItem): Offer => {
   const r = normalizeOffer(item, ctx);
   if (!r.ok) throw new Error(r.reason);

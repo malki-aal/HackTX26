@@ -2,6 +2,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import * as C from "../src/contracts/index.js";
+import { MerchantMappingBody } from "../src/services/merchants.js";
 
 const schema = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
 const envelope = (data: Record<string, unknown>) => ({ type: "object", required: ["data", "meta"], properties: { data, meta: { $ref: "#/components/schemas/Meta" } } });
@@ -27,7 +28,7 @@ const op = (o: Op) => ({
 
 const doc = {
   openapi: "3.1.0",
-  info: { title: "Runway API", version: "1.0.0", description: "Runway purchasing backend. Demo identities only (demoIdentity=true); no authentication. All money is integer USD cents. Timestamps are ISO-8601 UTC." },
+  info: { title: "Runway API", version: "1.0.0", description: "Runway purchasing backend. Demo identities only (demoIdentity=true); no authentication. All money is integer USD cents. Timestamps are ISO-8601 UTC. See docs/CONTRACT_V2.md for changes since v1." },
   servers: [{ url: "http://127.0.0.1:8000" }],
   paths: {
     "/api/v1/health": { get: op({ summary: "Server and storage liveness (no external calls)" }) },
@@ -52,6 +53,17 @@ const doc = {
     "/api/v1/proposals/{id}/decision": { post: op({ summary: "Executive decision (approve executes one Nessie sandbox purchase)", body: "DecisionBody", params: ["id"], headers: ["Idempotency-Key"] }) },
     "/api/v1/executions/{id}": { get: op({ summary: "Execution status and external reference", params: ["id"] }) },
     "/api/v1/executions/{id}/reconcile": { post: op({ summary: "Check Nessie for the outcome; never blindly resends", body: "ReconcileBody", params: ["id"] }) },
+    "/api/v1/categories": { get: op({ summary: "Supported item categories (id, labels, unit, specs, features)" }) },
+    "/api/v1/demo/manufacturing": { get: op({ summary: "Validated manufacturing demo input (creates nothing); POST it to /projects" }) },
+    "/api/v1/projects": { post: op({ summary: "Create a project: single-category request lines under one hard budget", body: "CreateProjectBody", status: 201 }), get: op({ summary: "List projects" }) },
+    "/api/v1/projects/{id}": { get: op({ summary: "Project with per-line research rollup, totals and supplied inventory", params: ["id"] }) },
+    "/api/v1/projects/{id}/confirm": { post: op({ summary: "Confirm every ready line (explicit action); lines with open questions are reported", params: ["id"] }) },
+    "/api/v1/projects/{id}/research": { post: op({ summary: "Start paid research for confirmed lines (explicit action); optional body {lineKeys}", params: ["id"], status: 202 }) },
+    "/api/v1/merchant-mappings": { get: op({ summary: "Researched seller -> Nessie sandbox merchant mappings with provenance" }), post: op({ summary: "Explicitly create or link a sandbox merchant for a seller (executive-demo only)", body: "MerchantMappingBody", status: 201 }) },
+    "/api/v1/merchants/{id}": { get: op({ summary: "Nessie merchant details (GET /merchants/{id}) and sellers mapped to it", params: ["id"] }) },
+    "/api/v1/purchase-history": { get: op({ summary: "Company account purchases from Nessie, linked to Runway executions" }) },
+    "/api/v1/activity": { get: op({ summary: "Pending/recent activity grouped by where each item is waiting", query: [["limit", "1-200"]] }) },
+    "/api/v1/proposals/{id}/confirmation": { get: op({ summary: "Persisted confirmation record: ids, item/offer, requester/approver, masked account, seller and mapped merchant, approved vs stored amount, provider purchase, timestamps, evidence", params: ["id"] }) },
   },
   components: {
     schemas: {
@@ -76,6 +88,8 @@ const doc = {
       DecisionBody: schema(C.DecisionBody),
       ReconcileBody: schema(C.ReconcileBody),
       RunEventType: schema(C.RunEventType),
+      CreateProjectBody: schema(C.CreateProjectBody),
+      MerchantMappingBody: schema(MerchantMappingBody),
       ErrorCode: schema(C.ErrorCode),
     },
   },

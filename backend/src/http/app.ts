@@ -15,6 +15,12 @@ import { createProposal, decideProposal, getProposalView, listProposals, submitP
 import { getExecutionView, reconcileExecution } from "../services/executions.js";
 import { integrationStatuses } from "../services/status.js";
 import { sessionToolHosts } from "../agent/eveRunner.js";
+import { CATEGORIES } from "../domain/categories.js";
+import { CreateProjectBody } from "../contracts/domain.js";
+import { confirmProjectLines, createProject, getProjectView, listProjects, researchProject } from "../services/projects.js";
+import { createMapping, getMerchantDetails, listMappings, purchaseHistory } from "../services/merchants.js";
+import { activity, confirmationRecord } from "../services/activity.js";
+import DEMO_MANUFACTURING from "../../demo/manufacturing-desk-organizers.json" with { type: "json" };
 
 export interface HttpOptions {
   internalToken: string;
@@ -121,6 +127,33 @@ export function buildApp(ctx: AppContext, opts: HttpOptions): FastifyInstance {
   // ---- Executions ----
   app.get<{ Params: P }>("/api/v1/executions/:id", async (req, reply) => ok(req, reply, getExecutionView(ctx, req.params.id)));
   app.post<{ Params: P }>("/api/v1/executions/:id/reconcile", async (req, reply) => ok(req, reply, await reconcileExecution(ctx, req.params.id, req.body)));
+
+  // ---- Categories and demo input ----
+  app.get("/api/v1/categories", async (req, reply) =>
+    ok(
+      req,
+      reply,
+      CATEGORIES.map((c) => ({ id: c.id, label: c.label, plural: c.plural, sector: c.sector, unit: c.unit, specs: c.specs, features: Object.entries(c.features).map(([id, f]) => ({ id, label: f.label })) })),
+    ),
+  );
+  app.get("/api/v1/demo/manufacturing", async (req, reply) => ok(req, reply, { input: CreateProjectBody.parse(DEMO_MANUFACTURING), note: "Validated demo input. POST it to /api/v1/projects to create the project; nothing is created by this GET." }));
+
+  // ---- Projects (multi-material lines) ----
+  app.post("/api/v1/projects", async (req, reply) => ok(req, reply, await createProject(ctx, req.body), 201));
+  app.get("/api/v1/projects", async (req, reply) => ok(req, reply, listProjects(ctx)));
+  app.get<{ Params: P }>("/api/v1/projects/:id", async (req, reply) => ok(req, reply, getProjectView(ctx, req.params.id)));
+  app.post<{ Params: P }>("/api/v1/projects/:id/confirm", async (req, reply) => ok(req, reply, confirmProjectLines(ctx, req.params.id)));
+  app.post<{ Params: P }>("/api/v1/projects/:id/research", async (req, reply) => ok(req, reply, researchProject(ctx, req.params.id, req.body), 202));
+
+  // ---- Merchants, mappings and purchase history ----
+  app.get("/api/v1/merchant-mappings", async (req, reply) => ok(req, reply, listMappings(ctx)));
+  app.post("/api/v1/merchant-mappings", async (req, reply) => ok(req, reply, await createMapping(ctx, req.body), 201));
+  app.get<{ Params: P }>("/api/v1/merchants/:id", async (req, reply) => ok(req, reply, await getMerchantDetails(ctx, req.params.id)));
+  app.get("/api/v1/purchase-history", async (req, reply) => ok(req, reply, await purchaseHistory(ctx)));
+
+  // ---- Activity and confirmation records ----
+  app.get("/api/v1/activity", async (req, reply) => ok(req, reply, activity(ctx, limitOf(req.query, 50, 200))));
+  app.get<{ Params: P }>("/api/v1/proposals/:id/confirmation", async (req, reply) => ok(req, reply, confirmationRecord(ctx, req.params.id)));
 
   // ---- Internal: agent tool callbacks from the eve process (loopback + shared token only) ----
   const tokenBuf = Buffer.from(opts.internalToken);

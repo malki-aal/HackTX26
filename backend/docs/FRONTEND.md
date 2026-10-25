@@ -1,5 +1,7 @@
 # Frontend integration guide
 
+> **v2 changes:** read [CONTRACT_V2.md](CONTRACT_V2.md) first. It covers item categories instead of monitors only, deadline types, recommendations, projects, merchant mappings, confirmation records and activity. Everything below still applies.
+
 - **Base URL:** `http://127.0.0.1:8000/api/v1`. For testing on a phone, set `HOST=0.0.0.0` (or your LAN IP) and add the frontend origin to `FRONTEND_ORIGINS`. Use this only on a trusted network, because there is no authentication.
 - **CORS:** only origins listed in `FRONTEND_ORIGINS` are allowed (default `http://localhost:3000,http://localhost:3001`). Allowed headers are `content-type` and `idempotency-key`.
 - **Contract:** `docs/openapi.json`, plus the Zod schemas and types in `src/contracts/` (`import * as C from "<backend>/src/contracts/index.js"`).
@@ -13,7 +15,7 @@
 
 ## Happy path (employee)
 
-1. `POST /requests` with `{title, description, category:"monitors", quantity, currency:"USD", budgetCents, budgetBasis?, allowedCondition?, rankingPriority?, agentConfigId?}`. The response contains `status`, `version`, `requirements[]` (structured predicates), `questions[]` and `unansweredQuestionIds[]`.
+1. `POST /requests` with `{title, description, quantity, unit?, currency:"USD", budgetCents, budgetBasis?, allowedCondition?, deadline?, deadlineType?, agentConfigId?}`. `category` is optional; the backend resolves it and asks (`q_category`) if unclear. The response contains `status`, `version`, `requirements[]` (structured predicates), `questions[]` and `unansweredQuestionIds[]`.
 2. If there are questions, call `POST /requests/:id/clarify` with `{expectedVersion, answers:[{questionId, value}]}`. Each answer must be one of that question's `options[].value`. The response is the new version.
 3. To change requirements, call `PATCH /requests/:id` with `{expectedVersion, ...fields, requirements?}`. Material edits need confirming again.
 4. `POST /requests/:id/confirm` with `{version}`. This is required before any paid research.
@@ -27,6 +29,8 @@
 
 ## Executive screen
 
+- Before approving, the researched seller must be mapped to a Nessie sandbox merchant: `POST /merchant-mappings` (executive-demo). An approval without a mapping returns `MERCHANT_MAPPING_REQUIRED`.
+- `GET /activity` groups proposals by where they are waiting. `GET /proposals/:id/confirmation` returns the full persisted confirmation record.
 - `GET /proposals?decisionState=awaiting_review` lists proposals waiting for a decision. `GET /proposals/:id` returns the full detail: `amounts`, which separates the research subtotal, the budget ceiling and the exact amount; `budgetAssessment`; `unresolved[]`; `offerStale`; `decisions[]`; and `execution`.
 - `POST /proposals/:id/decision` takes header `Idempotency-Key: <uuid>` and body `{version, decision: "approve"|"request_changes"|"reject", actor:"executive-demo", note?}`.
   - Generate one key per button press and reuse it on retries. The same key with the same body returns the same result. The same key with a different body returns `IDEMPOTENCY_CONFLICT`.

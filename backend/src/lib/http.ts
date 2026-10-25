@@ -23,17 +23,40 @@ export interface HttpResponse {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Longest Retry-After a safe read will wait out before giving up and surfacing the limit. */
+export const RETRY_AFTER_MAX_SECONDS = 5;
+
+/** Parse Retry-After (delta-seconds or HTTP-date) into whole seconds; null when absent/invalid. */
+export function parseRetryAfter(value: string | null, now = Date.now()): number | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? null : Math.max(0, Math.ceil((t - now) / 1000));
+}
+
+/**
+ * Reads retry with bounded exponential backoff; a rate limit is retried only when the provider's
+ * Retry-After is short. Writes are never retried here.
+ */
 export async function httpJson(req: HttpRequest): Promise<HttpResponse> {
   const attempts = req.method === "GET" ? 1 + (req.retries ?? 2) : 1;
   let lastErr: IntegrationError | null = null;
+  let wait = 0;
   for (let i = 0; i < attempts; i++) {
-    if (i > 0) await sleep(250 * 2 ** (i - 1));
+    if (i > 0) await sleep(wait || 250 * 2 ** (i - 1));
+    wait = 0;
     try {
       return await once(req);
     } catch (e) {
       if (!(e instanceof IntegrationError)) throw e;
       lastErr = e;
       if (!e.retryable || req.signal?.aborted) break;
+      if (e.code === "UPSTREAM_RATE_LIMITED") {
+        const ra = e.details.retryAfterSeconds as number | null | undefined;
+        if (ra === null || ra === undefined || ra > RETRY_AFTER_MAX_SECONDS) break;
+        wait = ra * 1000;
+      }
     }
   }
   throw lastErr!;
@@ -65,7 +88,23 @@ async function once(req: HttpRequest): Promise<HttpResponse> {
   } catch {
     body = text;
   }
-  if (res.status === 429) throw new IntegrationError(req.service, "UPSTREAM_RATE_LIMITED", `${req.service} rate limited or out of quota`, "definitive", false, 429);
+  if (res.status === 429) {
+    const retryAfterSeconds = parseRetryAfter(res.headers.get("retry-after"));
+    const message = typeof body === "object" && body ? String((body as { error?: unknown }).error ?? "") : String(body ?? "");
+    // SerpApi uses 429 both for hourly throughput limits and for an exhausted monthly plan.
+    const quotaExhausted = /run out of searches|out of searches|quota/i.test(message);
+    throw new IntegrationError(
+      req.service,
+      "UPSTREAM_RATE_LIMITED",
+      quotaExhausted
+        ? `${req.service} quota exhausted: the account has no searches left`
+        : `${req.service} rate limited${retryAfterSeconds !== null ? `; retry after ${retryAfterSeconds}s` : ""}`,
+      "definitive",
+      !quotaExhausted,
+      429,
+      { kind: quotaExhausted ? "quota_exhausted" : "rate_limited", retryAfterSeconds },
+    );
+  }
   if (res.status >= 500) {
     throw new IntegrationError(req.service, "UPSTREAM_ERROR", `${req.service} returned HTTP ${res.status}`, isWrite ? "ambiguous" : "definitive", !isWrite, res.status);
   }

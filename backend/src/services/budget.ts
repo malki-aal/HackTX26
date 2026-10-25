@@ -5,6 +5,7 @@ import { json, nowIso, tx } from "../db/db.js";
 import { computeFinancialContext, reconcileReflections, type BankSnapshot, type BillSnapshot, type LedgerEntry } from "../domain/budget.js";
 import type { FinancialContext } from "../contracts/domain.js";
 import { IntegrationError } from "../lib/errors.js";
+import { maskAccountNumber } from "../integrations/nessie.js";
 
 export const DEMO_ACCOUNT_RESOURCE = "runway_demo_operating";
 
@@ -30,6 +31,8 @@ export interface FinancialRead {
   context: FinancialContext;
   fresh: boolean;
   error: string | null;
+  /** Masked account number from a fresh read, e.g. "•••• 7956". */
+  accountMasked?: string | null;
 }
 
 /**
@@ -69,7 +72,7 @@ export async function readFinancialContext(ctx: AppContext, opts: { refresh: boo
   });
   markIntegration(ctx, "nessie", source === "fixture" ? "fixture" : "ok", null, { accountId, balanceUnit: "dollars (converted to cents)" });
   const snapshot: BankSnapshot = { accountId, balanceCents: account.balanceCents, bills, fetchedAt, source };
-  return { context: computeFinancialContext(snapshot, loadLedger(ctx, accountId), notes), fresh: true, error: null };
+  return { context: computeFinancialContext(snapshot, loadLedger(ctx, accountId), notes), fresh: true, error: null, accountMasked: maskAccountNumber(account.accountNumber) };
 }
 
 export function markIntegration(ctx: AppContext, service: string, state: string, error: string | null, detail: Record<string, unknown> = {}) {

@@ -59,3 +59,14 @@ If Nessie later posts the purchase and the balance drops by exactly the stored a
 
 - Reads retry up to two times with backoff.
 - The purchase POST is sent once. A timeout or 5xx response makes the execution `uncertain`, keeps the budget hold, and is resolved through `reconcile`, which matches the purchase by the `Runway exe_…` reference in `description`. It is never resent automatically.
+
+## Merchant mapping and purchase history (v2)
+
+- Endpoints, from the OpenAPI spec and the existing integration:
+  - `GET /merchants/{id}` returns `{_id, name, category (string), address, geocode}`.
+  - `POST /merchants` requires only `name`, and `category` must be a string (confirmed live in v1).
+  - `GET /accounts/{id}/purchases` and `GET /purchase/{id}` exist live.
+  - There is **no** generic `/transactions` endpoint (`grep` of the spec finds "transaction" only in descriptions and field names), so Runway doesn't use one.
+- Runway no longer creates a merchant automatically at approval. A seller must first be mapped explicitly (`POST /api/v1/merchant-mappings`, executive-demo), either by creating a clearly named `Runway sandbox: <seller>` merchant or by linking an existing Nessie merchant after reading it. Each mapping stores its provenance.
+- The one merchant auto-created during the v1 live run was migrated as provenance `legacy_auto_created`.
+- `GET /merchants/{id}` and the v2 purchase-history join were **not** called live in this round (fixtures only).

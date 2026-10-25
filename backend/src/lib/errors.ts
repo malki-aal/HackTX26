@@ -31,7 +31,8 @@ export class IntegrationError extends AppError {
     public readonly outcome: "definitive" | "ambiguous",
     retryable: boolean,
     public readonly httpStatus: number | null = null,
+    extra: Record<string, unknown> = {},
   ) {
-    super(code, message, code === "INTEGRATION_NOT_CONFIGURED" ? 503 : code === "UPSTREAM_RATE_LIMITED" ? 429 : code === "UPSTREAM_TIMEOUT" ? 504 : 502, retryable, { service, httpStatus });
+    super(code, message, code === "INTEGRATION_NOT_CONFIGURED" ? 503 : code === "UPSTREAM_RATE_LIMITED" ? 429 : code === "UPSTREAM_TIMEOUT" ? 504 : 502, retryable, { service, httpStatus, ...extra });
   }
 }

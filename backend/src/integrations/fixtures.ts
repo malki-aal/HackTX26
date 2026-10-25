@@ -1,9 +1,10 @@
 // Synthetic, clearly labeled fixture adapters. They implement the same interfaces as the live
 // adapters but never touch the network, and the fixture bank can never write to Nessie.
 import type { ProductDetails, RawShoppingItem } from "../domain/types.js";
+import { detectCategory } from "../domain/categories.js";
 import type { BillSnapshot } from "../domain/budget.js";
 import type { ShoppingQuery, ShoppingResult, ShoppingSearch } from "./serpapi.js";
-import type { BankAdapter, CreatePurchaseInput, CreatePurchaseResult, NessieAccount, NessiePurchase } from "./nessie.js";
+import type { BankAdapter, CreatePurchaseInput, CreatePurchaseResult, NessieAccount, NessieMerchant, NessiePurchase } from "./nessie.js";
 import type { RequirementExtractor } from "./gemini.js";
 
 /** Synthetic listings (fictional sellers) that exercise the evaluation edge cases. */
@@ -31,10 +32,64 @@ export const FIXTURE_MONITOR_ITEMS: RawShoppingItem[] = [
   { position: 10, title: "[FIXTURE] Acme View 32\" QHD 2560x1440 Monitor HDMI", product_id: "fx10", source: "Fixture Electronics", price: "$279.99", extracted_price: 279.99, product_link: "https://example.invalid/p/fx10" },
 ];
 
+const DAY = 86_400_000;
+const fmtDay = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+/**
+ * Synthetic listings per category (fictional sellers, "[FIXTURE]" titles). Delivery statements are
+ * computed from `now` so deadline behavior is stable whatever day the fixtures run.
+ */
+export function fixtureCatalog(category: string, now: Date): RawShoppingItem[] {
+  const inDays = (n: number) => `Delivery ${fmtDay(new Date(now.getTime() + n * DAY))}`;
+  const link = (id: string) => `https://example.invalid/p/${id}`;
+  switch (category) {
+    case "monitors":
+      return FIXTURE_MONITOR_ITEMS;
+    case "office_chairs":
+      return [
+        { position: 1, title: "[FIXTURE] Ergonomic Mesh Office Chair with Lumbar Support and Adjustable Armrests", product_id: "ch1", source: "Fixture Office", price: "$129.00", extracted_price: 129, delivery: "Free delivery by " + fmtDay(new Date(now.getTime() + 5 * DAY)), product_link: link("ch1") },
+        { position: 2, title: "[FIXTURE] Task Chair, Armless, Fabric Seat", product_id: "ch2", source: "Fixture Mart", price: "$54.99", extracted_price: 54.99, product_link: link("ch2") },
+        { position: 3, title: "[FIXTURE] Memory Foam Seat Cushion for Office Chair", product_id: "ch3", source: "Fixture Home", price: "$24.99", extracted_price: 24.99, product_link: link("ch3") },
+        { position: 4, title: "[FIXTURE] Acme View 27\" QHD 2560x1440 IPS Monitor, HDMI", product_id: "ch4", source: "Fixture Electronics", price: "$219.99", extracted_price: 219.99, product_link: link("ch4") },
+        { position: 5, title: "[FIXTURE] Chair Mat for Carpet, 36 x 48 inch", product_id: "ch5", source: "Fixture Office", price: "$29.99", extracted_price: 29.99, product_link: link("ch5") },
+      ];
+    case "wood_glue":
+      return [
+        { position: 1, title: "[FIXTURE] Premium Wood Glue, 8 fl oz, Water Resistant", product_id: "gl1", source: "Fixture Hardware", price: "$5.97", extracted_price: 5.97, delivery: "Free delivery " + inDays(2).replace("Delivery ", "by "), product_link: link("gl1"), immersive_product_page_token: "tok_gl1" },
+        { position: 2, title: "[FIXTURE] Wood Glue 16 oz, Dries Clear", product_id: "gl2", source: "Fixture Lumber", price: "$8.49", extracted_price: 8.49, product_link: link("gl2") },
+        { position: 3, title: "[FIXTURE] Hot Glue Gun with 30 Glue Sticks", product_id: "gl3", source: "Fixture Crafts", price: "$11.99", extracted_price: 11.99, product_link: link("gl3") },
+        { position: 4, title: "[FIXTURE] Wood Glue 4 oz", product_id: "gl4", source: "Fixture Hardware", price: "$2.98", extracted_price: 2.98, delivery: "Free delivery tomorrow", product_link: link("gl4") },
+        { position: 5, title: "[FIXTURE] Carpenter's Wood Glue 8 oz", product_id: "gl5", source: "Fixture Discount", price: "$3.49", extracted_price: 3.49, delivery: inDays(20), product_link: link("gl5") },
+      ];
+    case "cork_sheets":
+      return [
+        { position: 1, title: "[FIXTURE] Self-Adhesive Cork Sheets 12\" x 12\", 1/8\" Thick, 4 Pack", product_id: "ck1", source: "Fixture Crafts", price: "$14.99", extracted_price: 14.99, delivery: "Free delivery by " + fmtDay(new Date(now.getTime() + 4 * DAY)), product_link: link("ck1") },
+        { position: 2, title: "[FIXTURE] Cork Roll 12 in x 4 ft, 1/8 inch thick, adhesive backed", product_id: "ck2", source: "Fixture Supply", price: "$16.49", extracted_price: 16.49, product_link: link("ck2") },
+        { position: 3, title: "[FIXTURE] Cork Board Tiles 12x12 inch, 6 Pack with Push Pins", product_id: "ck3", source: "Fixture Office", price: "$13.99", extracted_price: 13.99, product_link: link("ck3") },
+        { position: 4, title: "[FIXTURE] Natural Wine Corks, 100 pcs", product_id: "ck4", source: "Fixture Home", price: "$9.99", extracted_price: 9.99, product_link: link("ck4") },
+        { position: 5, title: "[FIXTURE] Cork Sheets 8\" x 8\", 1/16\" Thick, 10 Pack, Self Adhesive", product_id: "ck5", source: "Fixture Crafts", price: "$9.49", extracted_price: 9.49, product_link: link("ck5") },
+      ];
+    case "wood_screws":
+      return [
+        { position: 1, title: "[FIXTURE] #6 x 5/8 inch Flat Head Phillips Wood Screws, Zinc Plated, 100 Pcs", product_id: "sc1", source: "Fixture Hardware", price: "$6.98", extracted_price: 6.98, delivery: "Free delivery tomorrow", product_link: link("sc1") },
+        { position: 2, title: "[FIXTURE] Wood Screws Assortment Kit, 500 pcs", product_id: "sc2", source: "Fixture Mart", price: "$12.99", extracted_price: 12.99, product_link: link("sc2") },
+        { position: 3, title: "[FIXTURE] #8 x 1 inch Wood Screws, 100 Pack", product_id: "sc3", source: "Fixture Hardware", price: "$5.49", extracted_price: 5.49, product_link: link("sc3") },
+        { position: 4, title: "[FIXTURE] Stainless #6 x 5/8\" Flat Head Wood Screws, 50 pcs", product_id: "sc4", source: "Fixture Discount", price: "$4.29", extracted_price: 4.29, delivery: inDays(20), product_link: link("sc4") },
+        { position: 5, title: "[FIXTURE] Precision Screwdriver Set, 6 pc", product_id: "sc5", source: "Fixture Tools", price: "$8.99", extracted_price: 8.99, product_link: link("sc5") },
+      ];
+    default:
+      return [];
+  }
+}
+
 export class FixtureShopping implements ShoppingSearch {
   readonly source = "fixture" as const;
   calls: ShoppingQuery[] = [];
-  constructor(private readonly items: RawShoppingItem[] = FIXTURE_MONITOR_ITEMS, private readonly behavior: { failWith?: Error; delayMs?: number } = {}) {}
+  /**
+   * With explicit `items`, every query returns them (used to simulate wrong-category provider
+   * results). Without, results come from the category named in the query.
+   */
+  constructor(private readonly items: RawShoppingItem[] | null = null, private readonly behavior: { failWith?: Error; delayMs?: number } = {}) {}
   async search(query: ShoppingQuery, opts: { signal?: AbortSignal }): Promise<ShoppingResult> {
     this.calls.push(query);
     if (this.behavior.delayMs) {
@@ -47,7 +102,9 @@ export class FixtureShopping implements ShoppingSearch {
       });
     }
     if (this.behavior.failWith) throw this.behavior.failWith;
-    return { items: structuredClone(this.items), fetchedAt: new Date(), fromCache: false, outcome: this.items.length ? "results" : "empty", providerSearchId: "fixture" };
+    const now = new Date();
+    const items = this.items ?? fixtureCatalog(detectCategory(query.q, "").best ?? "", now);
+    return { items: structuredClone(items), fetchedAt: now, fromCache: false, outcome: items.length ? "results" : "empty", providerSearchId: "fixture" };
   }
   detailCalls: string[] = [];
   async details(pageToken: string): Promise<ProductDetails> {
@@ -68,6 +125,14 @@ export const FIXTURE_DETAILS: Record<string, ProductDetails> = {
       { title: "Connector Type", value: "HDMI, USB-C, DisplayPort" },
     ],
     stores: [{ name: "Fixture Mart", extractedPrice: 249.99, shipping: "Free", shippingExtracted: null, details: ["In stock online"] }],
+  },
+  tok_gl1: {
+    title: "[FIXTURE] Premium Wood Glue",
+    features: [
+      { title: "Volume", value: "8 fl oz" },
+      { title: "Material Compatibility", value: "Wood" },
+    ],
+    stores: [{ name: "Fixture Hardware", extractedPrice: 5.97, shipping: "Free", shippingExtracted: null, details: ["In stock online"] }],
   },
   tok_fx11: {
     title: "[FIXTURE] Delta 27\" 1440p Monitor",
@@ -95,9 +160,20 @@ export class FixtureBank implements BankAdapter {
   readonly source = "fixture" as const;
   state: FixtureBankState;
   createCalls = 0;
+  merchants = new Map<string, NessieMerchant>([["fixture_merchant_existing", { id: "fixture_merchant_existing", name: "[FIXTURE] Existing sandbox merchant", category: "general", city: "Austin", state: "TX" }]]);
+  async getMerchant(id: string) {
+    return structuredClone(this.merchants.get(id) ?? null);
+  }
+  async createMerchant(name: string, category: string) {
+    const m = { id: `fixture_merchant_${this.merchants.size + 1}`, name, category, city: "Austin", state: "TX" };
+    this.merchants.set(m.id, m);
+    return structuredClone(m);
+  }
+  /** Prefix for synthetic purchase ids; servers pass a per-boot prefix so ids never repeat across restarts. */
+  idPrefix = "fixture_purchase_";
   constructor(init?: Partial<FixtureBankState>) {
     this.state = {
-      account: { id: "fixture_account", type: "Checking", nickname: "[FIXTURE] Runway Demo Co Operating", balanceCents: 500_000, rawBalance: 5000, customerId: "fixture_customer" },
+      account: { id: "fixture_account", type: "Checking", nickname: "[FIXTURE] Runway Demo Co Operating", balanceCents: 500_000, rawBalance: 5000, customerId: "fixture_customer", accountNumber: "0000111122223333" },
       bills: [{ id: "fixture_bill_1", payee: "[FIXTURE] Office Lease", status: "pending", amountCents: 120_000 }],
       purchases: [],
       balanceReflectsPurchases: false,
@@ -125,7 +201,7 @@ export class FixtureBank implements BankAdapter {
     const mode = this.state.nextCreate;
     if (mode === "definitive_error") throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Fixture: Nessie rejected the purchase (HTTP 400)", "definitive", false, 400);
     if (mode === "timeout") throw new IntegrationError("nessie", "UPSTREAM_TIMEOUT", "Fixture: Nessie purchase timed out", "ambiguous", false);
-    const id = `fixture_purchase_${this.state.purchases.length + 1}`;
+    const id = `${this.idPrefix}${this.state.purchases.length + 1}`;
     const raw = this.state.wholeDollars ? Math.trunc(input.amountCents / 100) : input.amountCents / 100;
     const storedCents = Math.round(raw * 100);
     this.state.purchases.push({ id, merchantId: input.merchantId, amountCents: storedCents, rawAmount: raw, status: "pending", medium: "balance", description: input.description, date: input.date });

@@ -86,5 +86,18 @@ export async function submittedProposal(h: Harness, exactAmountCents?: number, o
   return { ...r, proposalId: p.body.data.id as string, amount, top };
 }
 
-export const approve = (h: Harness, proposalId: string, key = `key-${Math.random().toString(36).slice(2)}`, decision = "approve", version = 1) =>
-  h.call("POST", `/api/v1/proposals/${proposalId}/decision`, { version, decision, actor: "executive-demo" }, { "idempotency-key": key });
+/** Explicitly map the proposal's researched seller to a sandbox merchant (no-op if already mapped). */
+export async function mapSeller(h: Harness, proposalId: string) {
+  const p = await h.call("GET", `/api/v1/proposals/${proposalId}`);
+  const seller = p.body.data.offer.seller;
+  const existing = await h.call("GET", "/api/v1/merchant-mappings");
+  if (existing.body.data.some((m: any) => m.seller === seller)) return;
+  const r = await h.call("POST", "/api/v1/merchant-mappings", { action: "create_sandbox_merchant", seller, actor: "executive-demo" });
+  if (r.status !== 201 && !(r.status === 409 && /already mapped/.test(r.body.error?.message ?? ""))) throw new Error(JSON.stringify(r.body));
+}
+
+/** Approve (mapping the seller first unless `map` is false). */
+export const approve = async (h: Harness, proposalId: string, key = `key-${Math.random().toString(36).slice(2)}`, decision = "approve", version = 1, map = true) => {
+  if (map && decision === "approve") await mapSeller(h, proposalId);
+  return h.call("POST", `/api/v1/proposals/${proposalId}/decision`, { version, decision, actor: "executive-demo" }, { "idempotency-key": key });
+};

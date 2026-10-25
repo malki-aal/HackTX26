@@ -3,7 +3,7 @@
   "info": {
     "title": "Runway API",
     "version": "1.0.0",
-    "description": "Runway purchasing backend. Demo identities only (demoIdentity=true); no authentication. All money is integer USD cents. Timestamps are ISO-8601 UTC."
+    "description": "Runway purchasing backend. Demo identities only (demoIdentity=true); no authentication. All money is integer USD cents. Timestamps are ISO-8601 UTC. See docs/CONTRACT_V2.md for changes since v1."
   },
   "servers": [
     {
@@ -1663,6 +1663,740 @@
           }
         }
       }
+    },
+    "/api/v1/categories": {
+      "get": {
+        "summary": "Supported item categories (id, labels, unit, specs, features)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/demo/manufacturing": {
+      "get": {
+        "summary": "Validated manufacturing demo input (creates nothing); POST it to /projects",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "post": {
+        "summary": "Create a project: single-category request lines under one hard budget",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List projects",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{id}": {
+      "get": {
+        "summary": "Project with per-line research rollup, totals and supplied inventory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{id}/confirm": {
+      "post": {
+        "summary": "Confirm every ready line (explicit action); lines with open questions are reported",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{id}/research": {
+      "post": {
+        "summary": "Start paid research for confirmed lines (explicit action); optional body {lineKeys}",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/merchant-mappings": {
+      "get": {
+        "summary": "Researched seller -> Nessie sandbox merchant mappings with provenance",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Explicitly create or link a sandbox merchant for a seller (executive-demo only)",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantMappingBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/merchants/{id}": {
+      "get": {
+        "summary": "Nessie merchant details (GET /merchants/{id}) and sellers mapped to it",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/purchase-history": {
+      "get": {
+        "summary": "Company account purchases from Nessie, linked to Runway executions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/activity": {
+      "get": {
+        "summary": "Pending/recent activity grouped by where each item is waiting",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1-200",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proposals/{id}/confirmation": {
+      "get": {
+        "summary": "Persisted confirmation record: ids, item/offer, requester/approver, masked account, seller and mapped merchant, approved vs stored amount, provider purchase, timestamps, evidence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "See docs/FRONTEND.md for the full field list"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server or upstream error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1727,6 +2461,9 @@
                   "IDEMPOTENCY_KEY_REQUIRED",
                   "EXECUTION_UNCERTAIN",
                   "MODE_MISMATCH",
+                  "CATEGORY_UNRESOLVED",
+                  "FORBIDDEN_ACTOR",
+                  "MERCHANT_MAPPING_REQUIRED",
                   "INTERNAL_ERROR"
                 ]
               },
@@ -1844,15 +2581,35 @@
             "maxLength": 4000
           },
           "category": {
-            "type": "string",
-            "enum": [
-              "monitors"
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "quantity": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 500
+            "maximum": 10000
+          },
+          "unit": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 30
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "currency": {
             "type": "string",
@@ -1892,6 +2649,14 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "deadlineType": {
+            "default": "target",
+            "type": "string",
+            "enum": [
+              "hard",
+              "target"
             ]
           },
           "rankingPriority": {
@@ -1951,7 +2716,8 @@
                     },
                     "value": {
                       "type": "string",
-                      "const": "monitor"
+                      "minLength": 1,
+                      "maxLength": 40
                     }
                   },
                   "required": [
@@ -2296,6 +3062,306 @@
                     "operator",
                     "value"
                   ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "volume"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 100000
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "ml"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "dimensions"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "length": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1200
+                        },
+                        "width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1200
+                        }
+                      },
+                      "required": [
+                        "length",
+                        "width"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "thickness"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "between"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "min": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 12
+                        },
+                        "max": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 12
+                        }
+                      },
+                      "required": [
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "screw_size"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "eq"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "gauge": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 24
+                        },
+                        "lengthIn": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 12
+                        }
+                      },
+                      "required": [
+                        "gauge",
+                        "lengthIn"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "feature"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "includes"
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "label"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "delivery_by"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "lte"
+                    },
+                    "value": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "date"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
                 }
               ]
             }
@@ -2303,7 +3369,6 @@
         },
         "required": [
           "title",
-          "category",
           "quantity",
           "currency",
           "budgetCents"
@@ -2329,15 +3394,35 @@
             "maxLength": 4000
           },
           "category": {
-            "type": "string",
-            "enum": [
-              "monitors"
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "quantity": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 500
+            "maximum": 10000
+          },
+          "unit": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 30
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "currency": {
             "type": "string",
@@ -2377,6 +3462,14 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "deadlineType": {
+            "default": "target",
+            "type": "string",
+            "enum": [
+              "hard",
+              "target"
             ]
           },
           "rankingPriority": {
@@ -2436,7 +3529,8 @@
                     },
                     "value": {
                       "type": "string",
-                      "const": "monitor"
+                      "minLength": 1,
+                      "maxLength": 40
                     }
                   },
                   "required": [
@@ -2780,6 +3874,306 @@
                     "attribute",
                     "operator",
                     "value"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "volume"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 100000
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "ml"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "dimensions"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "gte"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "length": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1200
+                        },
+                        "width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1200
+                        }
+                      },
+                      "required": [
+                        "length",
+                        "width"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "thickness"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "between"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "min": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 12
+                        },
+                        "max": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 12
+                        }
+                      },
+                      "required": [
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "screw_size"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "eq"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "gauge": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 24
+                        },
+                        "lengthIn": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 12
+                        }
+                      },
+                      "required": [
+                        "gauge",
+                        "lengthIn"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "in"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "feature"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "includes"
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "label"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "mandatory": {
+                      "type": "boolean"
+                    },
+                    "sourceText": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "const": "delivery_by"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "const": "lte"
+                    },
+                    "value": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "const": "date"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mandatory",
+                    "sourceText",
+                    "attribute",
+                    "operator",
+                    "value",
+                    "unit"
                   ]
                 }
               ]
@@ -2895,7 +4289,8 @@
               },
               "value": {
                 "type": "string",
-                "const": "monitor"
+                "minLength": 1,
+                "maxLength": 40
               }
             },
             "required": [
@@ -3240,6 +4635,306 @@
               "operator",
               "value"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "volume"
+              },
+              "operator": {
+                "type": "string",
+                "const": "gte"
+              },
+              "value": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 100000
+              },
+              "unit": {
+                "type": "string",
+                "const": "ml"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "dimensions"
+              },
+              "operator": {
+                "type": "string",
+                "const": "gte"
+              },
+              "value": {
+                "type": "object",
+                "properties": {
+                  "length": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1200
+                  },
+                  "width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1200
+                  }
+                },
+                "required": [
+                  "length",
+                  "width"
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "const": "in"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "thickness"
+              },
+              "operator": {
+                "type": "string",
+                "const": "between"
+              },
+              "value": {
+                "type": "object",
+                "properties": {
+                  "min": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 12
+                  },
+                  "max": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 12
+                  }
+                },
+                "required": [
+                  "min",
+                  "max"
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "const": "in"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "screw_size"
+              },
+              "operator": {
+                "type": "string",
+                "const": "eq"
+              },
+              "value": {
+                "type": "object",
+                "properties": {
+                  "gauge": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 24
+                  },
+                  "lengthIn": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 12
+                  }
+                },
+                "required": [
+                  "gauge",
+                  "lengthIn"
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "const": "in"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "feature"
+              },
+              "operator": {
+                "type": "string",
+                "const": "includes"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "label"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "mandatory": {
+                "type": "boolean"
+              },
+              "sourceText": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "attribute": {
+                "type": "string",
+                "const": "delivery_by"
+              },
+              "operator": {
+                "type": "string",
+                "const": "lte"
+              },
+              "value": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              "unit": {
+                "type": "string",
+                "const": "date"
+              }
+            },
+            "required": [
+              "id",
+              "mandatory",
+              "sourceText",
+              "attribute",
+              "operator",
+              "value",
+              "unit"
+            ]
           }
         ]
       },
@@ -3496,11 +5191,40 @@
                   "string",
                   "null"
                 ]
+              },
+              "earliest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "latest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "listing",
+                      "product_page_store"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "status",
-              "excerpt"
+              "excerpt",
+              "earliest",
+              "latest",
+              "source"
             ]
           },
           "rating": {
@@ -4521,6 +6245,265 @@
           "reconciliation_completed"
         ]
       },
+      "CreateProjectBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "purpose": {
+            "default": "",
+            "type": "string",
+            "maxLength": 2000
+          },
+          "sector": {
+            "default": "general",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "currency": {
+            "default": "USD",
+            "type": "string",
+            "const": "USD"
+          },
+          "budgetCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          },
+          "neededBy": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deadlineType": {
+            "default": "hard",
+            "type": "string",
+            "enum": [
+              "hard",
+              "target"
+            ]
+          },
+          "suppliedInventory": {
+            "default": [],
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "quantity": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "note": {
+                  "default": "",
+                  "type": "string",
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "name",
+                "quantity"
+              ]
+            }
+          },
+          "lines": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]{1,30}$"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "description": {
+                  "default": "",
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "category": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000
+                },
+                "unit": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "budgetCents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100000000
+                },
+                "allowedCondition": {
+                  "default": "new",
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "refurbished",
+                    "used",
+                    "any"
+                  ]
+                },
+                "deadline": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "deadlineType": {
+                  "type": "string",
+                  "enum": [
+                    "hard",
+                    "target"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "quantity",
+                "budgetCents"
+              ]
+            }
+          },
+          "agentConfigId": {
+            "default": "cfg_default",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "title",
+          "budgetCents",
+          "lines"
+        ]
+      },
+      "MerchantMappingBody": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "create_sandbox_merchant"
+              },
+              "seller": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "category": {
+                "default": "general",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "actor": {
+                "type": "string"
+              },
+              "note": {
+                "default": "",
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "action",
+              "seller",
+              "actor"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "const": "link_existing_merchant"
+              },
+              "seller": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "nessieMerchantId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "actor": {
+                "type": "string"
+              },
+              "note": {
+                "default": "",
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "action",
+              "seller",
+              "nessieMerchantId",
+              "actor"
+            ]
+          }
+        ]
+      },
       "ErrorCode": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "string",
@@ -4544,6 +6527,9 @@
           "IDEMPOTENCY_KEY_REQUIRED",
           "EXECUTION_UNCERTAIN",
           "MODE_MISMATCH",
+          "CATEGORY_UNRESOLVED",
+          "FORBIDDEN_ACTOR",
+          "MERCHANT_MAPPING_REQUIRED",
           "INTERNAL_ERROR"
         ]
       }

@@ -257,4 +257,47 @@ CREATE TABLE detail_calls (
 ALTER TABLE budget_ledger ADD COLUMN provider_amount_cents INTEGER;
 `,
   },
+  {
+    version: 4,
+    sql: `
+-- Projects group single-category request lines under one hard budget (multi-material demo).
+CREATE TABLE projects (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  budget_cents INTEGER NOT NULL CHECK (budget_cents > 0),
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+ALTER TABLE requests ADD COLUMN project_id TEXT REFERENCES projects(id);
+ALTER TABLE requests ADD COLUMN line_key TEXT;
+CREATE UNIQUE INDEX requests_project_line ON requests(project_id, line_key) WHERE project_id IS NOT NULL;
+
+-- Explicit researched-seller -> Nessie sandbox merchant mapping, with provenance.
+CREATE TABLE merchant_mappings (
+  seller_key TEXT PRIMARY KEY,
+  seller_name TEXT NOT NULL,
+  nessie_merchant_id TEXT NOT NULL,
+  provenance TEXT NOT NULL CHECK (provenance IN ('created_sandbox_merchant', 'linked_existing_merchant', 'legacy_auto_created')),
+  merchant_snapshot TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  note TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+INSERT INTO merchant_mappings (seller_key, seller_name, nessie_merchant_id, provenance, merchant_snapshot, created_by, note, created_at)
+  SELECT lower(trim(json_extract(payload, '$.seller'))), json_extract(payload, '$.seller'), external_id, 'legacy_auto_created', '{}', 'system',
+         'Created automatically at approval before explicit mapping existed', created_at
+  FROM nessie_resources WHERE kind = 'merchant' AND json_extract(payload, '$.seller') IS NOT NULL;
+
+-- Persisted confirmation details for executions.
+ALTER TABLE executions ADD COLUMN approved_at TEXT;
+ALTER TABLE executions ADD COLUMN provider_submitted_at TEXT;
+ALTER TABLE executions ADD COLUMN recorded_at TEXT;
+ALTER TABLE executions ADD COLUMN provider_retrieved_at TEXT;
+ALTER TABLE executions ADD COLUMN account_masked TEXT;
+ALTER TABLE executions ADD COLUMN merchant_mapping TEXT;
+ALTER TABLE executions ADD COLUMN provider_purchase_date TEXT;
+UPDATE executions SET approved_at = created_at WHERE approved_at IS NULL;
+`,
+  },
 ];
