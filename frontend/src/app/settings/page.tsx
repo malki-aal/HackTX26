@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useIdentity } from "@/lib/auth/identity";
+import { CheckingSession, GateScreen } from "@/components/auth";
 import { api, type AgentConfigDetail, type AgentConfigInput, type ApiError, type ToolName } from "@/lib/api";
 import {
   Button,
@@ -45,18 +47,29 @@ const blank: AgentConfigInput = {
 };
 
 export default function SettingsPage() {
+  const { identity } = useIdentity();
+  if (identity.status !== "ready") return <CheckingSession />;
+  if (identity.role !== "executive") {
+    return <GateScreen title="Research settings are managed by your team" body="You can submit requests without changing research settings." />;
+  }
+  return <ResearchSettings />;
+}
+
+function ResearchSettings() {
   const configs = useLoad(() => api.listAgentConfigDetails(), []);
   const integrations = useLoad(() => api.getIntegrations(), []);
   const [editing, setEditing] = useState<AgentConfigDetail | "new" | null>(null);
 
   return (
     <Page>
-      <PageHeader title="Agent settings" back={{ href: "/account", label: "Account" }} />
+      <PageHeader title="Advanced research settings" back={{ href: "/account", label: "Account" }} />
 
-      <Section title="Saved configurations">
+      <details>
+        <summary className="mb-4 cursor-pointer text-[16px] font-medium">Manage research behavior</summary>
+      <Section title="Research presets">
         <p className="mb-3 text-[14px] text-muted">
-          Each research run records the configuration and version it used. Saving a change creates a new version and leaves
-          older runs as they were.
+          New requests automatically use Exact-spec researcher. These technical settings are for team maintenance,
+          not purchase approval. Changes create a new revision; past research stays unchanged.
         </p>
         {configs.loading && <Loading />}
         <ErrorNote error={configs.error} onRetry={configs.reload} />
@@ -65,7 +78,7 @@ export default function SettingsPage() {
             <li key={c.id} className="border-t border-rule py-3 first:border-t-0 first:pt-0">
               <div className="flex items-baseline justify-between gap-3">
                 <p className="text-[17px] font-semibold">{c.name}</p>
-                <span className="shrink-0 text-[14px] text-muted">v{c.version}</span>
+                <span className="shrink-0 text-[14px] text-muted">Revision {c.version}</span>
               </div>
               <p className="text-[14px] text-muted">{c.summary}</p>
               <p className="text-[13px] text-muted">Saved {formatWhen(c.createdAt)}</p>
@@ -93,6 +106,7 @@ export default function SettingsPage() {
           }}
         />
       )}
+      </details>
 
       <Section title="Integrations">
         {integrations.loading && <Loading />}

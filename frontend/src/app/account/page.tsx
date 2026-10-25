@@ -84,9 +84,11 @@ export default function AccountPage() {
             Open approvals
           </Link>
         )}
-        <Link href="/settings" className="mt-3 block text-[15px] font-medium text-accent">
-          Agent settings and integration status
-        </Link>
+        {isExecutive && (
+          <Link href="/settings" className="mt-3 block text-[15px] font-medium text-accent">
+            Advanced research settings
+          </Link>
+        )}
       </Section>
 
       <Section title="Past purchases">

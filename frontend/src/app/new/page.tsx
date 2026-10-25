@@ -15,7 +15,6 @@ import {
   Segmented,
   inputClass,
   normalizeError,
-  useLoad,
 } from "@/components/ui";
 
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -37,7 +36,6 @@ function isoDateIn(days: number): string {
 
 export default function NewRequestPage() {
   const router = useRouter();
-  const configs = useLoad(() => api.listAgentConfigs(), []);
   const [title, setTitle] = useState("");
   const [purpose, setPurpose] = useState("");
   const [items, setItems] = useState<ItemRow[]>([blankItem(1)]);
@@ -47,7 +45,6 @@ export default function NewRequestPage() {
   const [condition, setCondition] = useState<Condition>("new");
   const [deadline, setDeadline] = useState("");
   const [deadlineKind, setDeadlineKind] = useState<DeadlineKind>("flexible");
-  const [agentId, setAgentId] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [apiError, setApiError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
@@ -107,7 +104,9 @@ export default function NewRequestPage() {
         condition,
         deadline: deadline || undefined,
         deadlineKind: deadline ? deadlineKind : "flexible",
-        agentConfigId: agentId || configs.data?.[0]?.id || "cfg_default",
+        // New requests use the intended preset, independently of API sort order.
+        // Existing requests and runs keep their saved configuration/version.
+        agentConfigId: "cfg_default",
       });
       router.push(`/requests/${r.id}`);
     } catch (err) {
@@ -215,13 +214,6 @@ export default function NewRequestPage() {
             </p>
           </div>
         )}
-        <Field label="Agent configuration" htmlFor="agent">
-          <select id="agent" className={inputClass} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-            {(configs.data ?? []).map((c) => (
-              <option key={c.id} value={c.id}>{c.name} (v{c.version})</option>
-            ))}
-          </select>
-        </Field>
         </Section>
         <ErrorNote error={apiError} />
         <Button type="submit" disabled={pending}>{pending ? "Creating…" : "Continue"}</Button>
