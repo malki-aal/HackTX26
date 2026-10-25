@@ -22,7 +22,7 @@ export interface RunwayApi {
   mode: "fixture" | "live";
   /** Mode the backend reports (fixtures means the backend itself serves sample data). */
   getBackendMode(): Promise<BackendMode>;
-  /** PROPOSED endpoint. Rejects when the backend has no sign-in support or the person has no access. */
+  /** Contract v3 `GET /me`. Works while access is pending; rejects on 401 (UNAUTHENTICATED) and network errors. */
   getMe(): Promise<Me>;
   listRequests(): Promise<PurchaseRequest[]>;
   getRequest(id: string): Promise<PurchaseRequest>;

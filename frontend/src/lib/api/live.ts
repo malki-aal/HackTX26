@@ -624,7 +624,19 @@ export const liveApi: RunwayApi = {
   },
 
   async getMe(): Promise<Me> {
-    return call<Me>("/me");
+    const m = await call<{
+      user: { id: string; displayName: string; email: string | null; emailVerified: boolean };
+      membership: { status: "active" | "pending"; role?: "employee" | "executive" | null; company?: { id: string; name: string } | null };
+    }>("/me");
+    return {
+      userId: m.user.id,
+      displayName: m.user.displayName,
+      email: m.user.email,
+      emailVerified: m.user.emailVerified,
+      status: m.membership.status,
+      role: m.membership.status === "active" ? (m.membership.role ?? null) : null,
+      company: m.membership.company ?? null,
+    };
   },
 
   async listRequests() {

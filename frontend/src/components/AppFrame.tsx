@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense } from "react";
+import { PUBLIC_PATHS } from "@/lib/auth/config";
+import { useIdentity } from "@/lib/auth/identity";
 
 const icon = "h-6 w-6";
 
@@ -51,6 +53,8 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 
 function TabBar() {
   const pathname = usePathname();
+  const { identity } = useIdentity();
+  if (identity.status !== "ready" || PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return null;
   const requests = pathname === "/" || pathname.startsWith("/requests") || pathname.startsWith("/purchases");
   const account = pathname === "/account" || pathname.startsWith("/executive") || pathname.startsWith("/settings");
   const create = pathname === "/new";

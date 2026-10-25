@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
@@ -32,7 +33,10 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <IdentityProvider>
       <AppFrame>
-        <AuthGate>{children}</AuthGate>
+        {/* The gate reads the pathname, which needs a Suspense boundary in a statically built app. */}
+        <Suspense fallback={<div className="min-h-full bg-hero" />}>
+          <AuthGate>{children}</AuthGate>
+        </Suspense>
       </AppFrame>
     </IdentityProvider>
   );

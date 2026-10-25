@@ -10,14 +10,20 @@ import { UNAUTHORIZED_EVENT, setTokenProvider } from "./token";
 export type Role = "employee" | "executive";
 
 export type Identity =
+  /** Clerk is loading, or the backend is checking who this is. */
   | { status: "loading" }
   | { status: "signed_out" }
+  /** The backend rejected the session (401 UNAUTHENTICATED). */
   | { status: "expired" }
+  /** No sign-in provider is configured where one is required. Never a fake login. */
+  | { status: "misconfigured"; message: string }
+  | { status: "unreachable"; message: string }
   | { status: "unavailable"; message: string }
   | { status: "pending_access"; name: string | null; email: string | null }
   | {
       status: "ready";
       kind: "demo" | "signed_in";
+      /** From the server only (`GET /me`), or a label in sample-data demo mode. */
       role: Role;
       name: string;
       email: string | null;
@@ -27,20 +33,21 @@ export type Identity =
 
 interface IdentityApi {
   identity: Identity;
-  signIn: (() => void) | null;
   signOut: (() => void) | null;
+  /** Ask the server again who this is (after a failure). */
+  retry: (() => void) | null;
   /** Demo mode only: switch the label between Employee and Executive. */
   switchRole: ((r: Role) => void) | null;
 }
 
-const Ctx = createContext<IdentityApi>({ identity: { status: "loading" }, signIn: null, signOut: null, switchRole: null });
+const Ctx = createContext<IdentityApi>({ identity: { status: "loading" }, signOut: null, retry: null, switchRole: null });
 export const useIdentity = () => useContext(Ctx);
 
 /** A person's data must not outlive their session in a shared browser. */
 function clearPersonalBrowserState() {
   try {
     for (const store of [window.sessionStorage, window.localStorage]) {
-      for (const k of Object.keys(store)) if (k.startsWith("runway.selection.")) store.removeItem(k);
+      for (const k of Object.keys(store)) if (k.startsWith("runway.")) store.removeItem(k);
     }
   } catch {}
 }
@@ -50,7 +57,7 @@ function Keyed({ id, children }: { id: string; children: React.ReactNode }) {
   return <Fragment key={id}>{children}</Fragment>;
 }
 
-// ---------------- demo (no sign-in provider) ----------------
+// ---------------- demo (sample-data mode only) ----------------
 
 const DEMO_ROLE_KEY = "runway.demoRole";
 const roleListeners = new Set<() => void>();
@@ -94,8 +101,8 @@ function DemoProvider({ children }: { children: React.ReactNode }) {
         company: "Demo company",
         userId: null,
       },
-      signIn: null,
       signOut: null,
+      retry: null,
       switchRole: writeDemoRole,
     }),
     [role],
@@ -111,11 +118,12 @@ function MisconfiguredProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<IdentityApi>(
     () => ({
       identity: {
-        status: "unavailable",
-        message: "Sign-in is required here, but no sign-in provider is configured. Set the publishable key described in the handoff.",
+        status: "misconfigured",
+        message:
+          "Sign-in isn’t configured. This build needs NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (and CLERK_SECRET_KEY on the server) before anyone can sign in.",
       },
-      signIn: null,
       signOut: null,
+      retry: null,
       switchRole: null,
     }),
     [],
@@ -136,6 +144,7 @@ function ClerkProviderBridge({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Identity | null>(null);
   const [expired, setExpired] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const lastUser = useRef<string | null>(null);
 
   // If the provider script never loads (blocked network, wrong key), say so instead of spinning forever.
@@ -165,7 +174,7 @@ function ClerkProviderBridge({ children }: { children: React.ReactNode }) {
     lastUser.current = current;
   }, [isLoaded, isSignedIn, userId]);
 
-  // Role and company come from the backend, never from the client or the avatar.
+  // Role, membership and company come from the backend, never from the client, a picker or the avatar.
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     let alive = true;
@@ -174,22 +183,28 @@ function ClerkProviderBridge({ children }: { children: React.ReactNode }) {
       .then((m) => {
         if (!alive) return;
         setExpired(false);
-        setMe({ status: "ready", kind: "signed_in", role: m.role, name: m.displayName, email: m.email, company: m.company.name, userId: m.userId });
+        if (m.status === "pending" || !m.role) {
+          setMe({ status: "pending_access", name: m.displayName, email: m.email });
+        } else {
+          setMe({ status: "ready", kind: "signed_in", role: m.role, name: m.displayName, email: m.email, company: m.company?.name ?? "", userId: m.userId });
+        }
       })
       .catch((e) => {
         if (!alive) return;
         const code = errorCode(e);
-        if (code === "HTTP_401") setExpired(true);
-        else if (code === "HTTP_403" || code === "NO_MEMBERSHIP" || code === "FORBIDDEN")
+        const message = (e as ApiError)?.message ?? "Couldn’t check your access.";
+        if (code === "UNAUTHENTICATED" || code === "HTTP_401") setExpired(true);
+        else if (code === "ACCESS_PENDING")
           setMe({ status: "pending_access", name: user?.fullName ?? null, email: user?.primaryEmailAddress?.emailAddress ?? null });
-        else if (code === "HTTP_404" || code === "NOT_FOUND")
-          setMe({ status: "unavailable", message: "You are signed in, but the backend does not support verified sign-in yet (it has no /me endpoint), so access can’t be checked." });
-        else setMe({ status: "unavailable", message: (e as ApiError)?.message ?? "Couldn’t check your access." });
+        else if (code === "BACKEND_UNREACHABLE") setMe({ status: "unreachable", message });
+        else if (code === "AUTH_NOT_CONFIGURED")
+          setMe({ status: "unavailable", message: "The server isn’t set up for sign-in yet. Ask whoever runs the backend to add its Clerk keys." });
+        else setMe({ status: "unavailable", message });
       });
     return () => {
       alive = false;
     };
-  }, [isLoaded, isSignedIn, user]);
+  }, [isLoaded, isSignedIn, user, attempt]);
 
   const identity = useMemo<Identity>(
     () =>
@@ -198,20 +213,24 @@ function ClerkProviderBridge({ children }: { children: React.ReactNode }) {
           ? { status: "unavailable", message: "The sign-in service didn’t load. Check the network and the Clerk keys in the setup notes, then reload." }
           : { status: "loading" }
         : !isSignedIn
-          ? { status: "signed_out" }
+          ? { status: expired ? "expired" : "signed_out" }
           : expired
             ? { status: "expired" }
             : (me ?? { status: "loading" }),
     [isLoaded, isSignedIn, expired, me, slow],
   );
 
-  const signIn = useCallback(() => clerk.openSignIn({}), [clerk]);
+  // Sign out clears what was cached for this person, drops the session, and lands back on the sign-in page.
   const signOut = useCallback(() => {
     clearPersonalBrowserState();
-    void clerk.signOut();
+    void clerk.signOut({ redirectUrl: "/sign-in" });
   }, [clerk]);
+  const retry = useCallback(() => {
+    setMe(null);
+    setAttempt((n) => n + 1);
+  }, []);
 
-  const value = useMemo<IdentityApi>(() => ({ identity, signIn, signOut, switchRole: null }), [identity, signIn, signOut]);
+  const value = useMemo<IdentityApi>(() => ({ identity, signOut, retry, switchRole: null }), [identity, signOut, retry]);
   const key = identity.status === "ready" && identity.userId ? identity.userId : identity.status;
   return (
     <Ctx.Provider value={value}>

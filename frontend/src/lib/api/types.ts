@@ -313,11 +313,14 @@ export interface ApiError {
 
 export type BackendMode = "live" | "fixtures" | "offline";
 
-/** PROPOSED (not in the backend yet): the verified current user, role and company. */
+/** `GET /me` (contract v3): who the server says this is. Role and company come from its allowlist only. */
 export interface Me {
   userId: string;
   displayName: string;
   email: string | null;
-  role: "employee" | "executive";
-  company: { id: string; name: string };
+  emailVerified: boolean;
+  /** "pending" means signed in with a Google account that is not on the allowlist. */
+  status: "active" | "pending";
+  role: "employee" | "executive" | null;
+  company: { id: string; name: string } | null;
 }
