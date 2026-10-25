@@ -44,6 +44,8 @@ export interface RunwayApi {
     version: number;
     decision: "approve" | "request_changes" | "reject";
     note?: string;
+    /** Required for approve: the exact amount (cents) shown and confirmed in the review. */
+    exactAmountCents?: number;
     idempotencyKey: string;
   }): Promise<Proposal>;
   /** `check` looks up the outcome; it never resends the purchase. */

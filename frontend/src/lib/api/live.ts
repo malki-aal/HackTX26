@@ -1,5 +1,6 @@
 import type { RunwayApi } from "./client";
 import { UNAUTHORIZED_EVENT, getAuthToken } from "../auth/token";
+import { authMode } from "../auth/config";
 import type {
   ActivityItem,
   Me,
@@ -788,7 +789,17 @@ export const liveApi: RunwayApi = {
       await call<BProposal>(`/proposals/${args.proposalId}/decision`, {
         method: "POST",
         headers: { "Idempotency-Key": args.idempotencyKey },
-        body: { version: args.version, decision: args.decision, actor: "executive-demo", note: args.note ?? "" },
+        body: {
+          version: args.version,
+          decision: args.decision,
+          note: args.note ?? "",
+          // Signed-in mode takes identity from the session; the demo actor is sent only in demo mode.
+          ...(authMode === "clerk" ? {} : { actor: "executive-demo" }),
+          // Approval must confirm the exact revision and amount the executive reviewed.
+          ...(args.decision === "approve" && args.exactAmountCents !== undefined
+            ? { confirmation: { confirmed: true, proposalVersion: args.version, exactAmountCents: args.exactAmountCents } }
+            : {}),
+        },
       }),
     );
   },
@@ -796,7 +807,7 @@ export const liveApi: RunwayApi = {
   async reconcile(id, action) {
     const ex = await call<BExecution>(`/executions/${id}/reconcile`, {
       method: "POST",
-      body: { action, actor: "executive-demo", note: "" },
+      body: { action, note: "", ...(authMode === "clerk" ? {} : { actor: "executive-demo" }) },
     });
     const proposal = await call<BProposal>(`/proposals/${ex.proposalId}`);
     return mapExecution(ex, proposal.offer.seller);
@@ -805,7 +816,7 @@ export const liveApi: RunwayApi = {
   async createMerchantMapping(seller) {
     const m = await call<{ seller: string; nessieMerchantId: string; merchant?: { name?: string } | null }>("/merchant-mappings", {
       method: "POST",
-      body: { action: "create_sandbox_merchant", seller, actor: "executive-demo" },
+      body: { action: "create_sandbox_merchant", seller, ...(authMode === "clerk" ? {} : { actor: "executive-demo" }) },
     });
     return { seller: m.seller, merchantName: m.merchant?.name ?? null, nessieMerchantId: m.nessieMerchantId };
   },

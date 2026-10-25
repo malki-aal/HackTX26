@@ -318,12 +318,13 @@ function DecisionStep({
         version: p.revision,
         decision: choice,
         note: note.trim(),
+        exactAmountCents: p.expenseCents,
         idempotencyKey: keyRef.current.key,
       });
       onDecided(next);
     } catch (e) {
       const err = normalizeError(e);
-      if (err.code === "VERSION_CONFLICT") onConflict();
+      if (err.code === "VERSION_CONFLICT" || err.code === "TERMS_CHANGED") onConflict();
       else if (err.code === "MERCHANT_MAPPING_REQUIRED") setMapping({ seller: p.lines[0]?.seller ?? "this seller" });
       else setError(err);
     } finally {
