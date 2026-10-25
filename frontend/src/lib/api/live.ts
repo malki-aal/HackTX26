@@ -74,6 +74,15 @@ interface BRequirement {
   operator: string;
   value: unknown;
   mandatory: boolean;
+  /** Backend-provided label; preferred over local formatting so new categories need no UI code. */
+  display?: string;
+}
+interface BItem {
+  resolved: boolean;
+  category: string | null;
+  label: string;
+  plural: string;
+  unit: string;
 }
 interface BQuestion {
   id: string;
@@ -89,11 +98,13 @@ interface BRequest {
   isCurrentVersionConfirmed: boolean;
   title: string;
   purpose: string;
+  category: string | null;
+  item: BItem;
   quantity: number;
   totalBudgetCents: number;
   allowedCondition: PurchaseRequest["condition"];
   deadline: string | null;
-  rankingPriority: PurchaseRequest["ranking"];
+  rankingPriority?: PurchaseRequest["ranking"];
   agentConfigId: string;
   agentConfigVersion: number | null;
   requirements: BRequirement[];
@@ -107,6 +118,8 @@ interface BRequestSummary {
   id: string;
   version: number;
   title: string;
+  category?: string | null;
+  item?: BItem;
   status: string;
   quantity: number;
   totalBudgetCents: number;
@@ -127,9 +140,10 @@ const PORT_LABEL: Record<string, string> = {
 };
 
 export function describeRequirement(r: BRequirement): string {
+  if (r.display) return r.display;
   switch (r.attribute) {
     case "product_type":
-      return "Monitor";
+      return `Category: ${String(r.value)}`;
     case "screen_size":
       return `${Math.floor((r.value as { min: number }).min)} inch screen`;
     case "resolution":
@@ -172,7 +186,9 @@ function mapRequest(b: BRequest): PurchaseRequest {
     version: b.version,
     title: b.title,
     purpose: b.purpose,
-    category: "monitors",
+    category: b.category,
+    itemLabel: b.item.resolved ? b.item.plural : b.item.label,
+    unit: b.item.unit,
     quantity: b.quantity,
     budgetTotalCents: b.totalBudgetCents,
     mandatory: specs.filter((r) => r.mandatory).map(describeRequirement),
@@ -205,14 +221,15 @@ function mapSummary(b: BRequestSummary): PurchaseRequest {
     version: b.version,
     title: b.title,
     purpose: "",
-    category: "monitors",
+    category: b.category ?? null,
+    itemLabel: b.item ? (b.item.resolved ? b.item.plural : b.item.label) : undefined,
+    unit: b.item?.unit,
     quantity: b.quantity,
     budgetTotalCents: b.totalBudgetCents,
     mandatory: [],
     preferences: [],
     condition: "any",
     agentConfigId: "",
-    ranking: "lowest_known_total",
     status: REQUEST_STATUS[b.status] ?? "clarifying",
     clarifications: [],
     runId: b.latestRunId ?? undefined,
@@ -230,7 +247,8 @@ function mapSummary(b: BRequestSummary): PurchaseRequest {
 const SECTION_GAP = " ".repeat(80);
 function buildDescription(input: NewRequestInput): string {
   const clean = (l: string) => l.replace(/[.\s]+$/, "");
-  const must = input.mandatory.map(clean).filter(Boolean).map((l) => `${l}.`).join(" ");
+  // "(required)" tells the backend these are must-haves, so it does not ask again.
+  const must = input.mandatory.map(clean).filter(Boolean).map((l) => `${l} (required).`).join(" ");
   const nice = input.preferences.map(clean).filter(Boolean).map((l) => `Nice to have: ${l}.`).join(" ");
   return nice ? `${must}${SECTION_GAP}${nice}` : must;
 }
@@ -290,6 +308,7 @@ interface BCandidate {
   evidence: { id: string; excerpt: string; source: string }[];
   unknowns: string[];
   recommendationReason: string;
+  recommendationKinds?: string[];
   observedAt: string;
   expiresAt: string;
   stale: boolean;
@@ -328,6 +347,7 @@ function mapCandidate(c: BCandidate, labels: Map<string, string>, quantity: numb
       };
     }),
     rankNote: c.recommendationReason,
+    recommendationKinds: c.recommendationKinds ?? [],
     unresolved: c.unknowns.map(sentence),
     affordability: c.affordability,
     costNotes: c.costNotes,
@@ -440,14 +460,14 @@ export const liveApi: RunwayApi = {
         title: input.title,
         purpose: input.purpose,
         description: buildDescription(input),
-        category: "monitors",
+        // No category hint: the backend resolves the item type from the text and asks when unsure.
         quantity: input.quantity,
         currency: "USD",
         budgetCents: input.budgetTotalCents,
         budgetBasis: "total",
         allowedCondition: input.condition,
         deadline: input.deadline ?? null,
-        rankingPriority: input.ranking,
+        ...(input.ranking ? { rankingPriority: input.ranking } : {}),
         agentConfigId: input.agentConfigId,
       },
     });

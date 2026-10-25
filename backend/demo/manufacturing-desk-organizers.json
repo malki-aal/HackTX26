@@ -1,0 +1,48 @@
+{
+  "title": "Desk organizer prototypes (5) from leftover wood",
+  "purpose": "Fictional small furniture manufacturer testing five desk-organizer prototypes built from existing leftover hardwood. Only the joining and finishing materials are purchased.",
+  "sector": "furniture_manufacturing",
+  "currency": "USD",
+  "budgetCents": 10000,
+  "neededBy": "2026-11-06",
+  "deadlineType": "hard",
+  "suppliedInventory": [
+    {
+      "name": "Leftover walnut and maple offcuts, 3/4 in thick",
+      "quantity": "enough for 5 organizers (about 10 x 5 in bases plus dividers)",
+      "note": "Existing shop inventory. Supplied, not purchased."
+    }
+  ],
+  "lines": [
+    {
+      "key": "glue",
+      "title": "Wood glue",
+      "description": "One bottle of new wood glue, at least 8 fl oz, to join the walnut and maple pieces of five organizers. Water resistant preferred.",
+      "category": "wood_glue",
+      "quantity": 1,
+      "unit": "bottle",
+      "budgetCents": 2000,
+      "allowedCondition": "new"
+    },
+    {
+      "key": "cork",
+      "title": "Cork backing sheets",
+      "description": "Self-adhesive backing required. Cork sheets at least 12 x 12 inch, 1/8 inch thick, one sheet per organizer base (bases are about 10 x 5 in).",
+      "category": "cork_sheets",
+      "quantity": 5,
+      "unit": "sheet",
+      "budgetCents": 5500,
+      "allowedCondition": "new"
+    },
+    {
+      "key": "screws",
+      "title": "Wood screws",
+      "description": "#6 x 5/8 inch flat head wood screws, 8 per organizer for five organizers (40 total). Flat head required for countersinking into 3/4 in stock.",
+      "category": "wood_screws",
+      "quantity": 40,
+      "unit": "screw",
+      "budgetCents": 2500,
+      "allowedCondition": "new"
+    }
+  ]
+}

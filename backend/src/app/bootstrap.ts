@@ -14,9 +14,14 @@ import { failInterruptedRuns } from "../services/research.js";
 import { recoverInterruptedExecutions } from "../services/executions.js";
 
 export function buildAdapters(config: AppConfig): Adapters {
-  if (config.mode === "fixtures") return { shopping: new FixtureShopping(), bank: new FixtureBank(), extractor: new FixtureExtractor() };
+  if (config.mode === "fixtures") {
+    const bank = new FixtureBank();
+    // The fixture bank is in-memory; a per-boot prefix keeps its ids unique in a persisted database.
+    bank.idPrefix = `fixture_purchase_${Date.now().toString(36)}_`;
+    return { shopping: new FixtureShopping(), bank, extractor: new FixtureExtractor() };
+  }
   return {
-    shopping: new SerpApiShopping(config.serpapi.apiKey),
+    shopping: new SerpApiShopping(config.serpapi.apiKey, config.serpapi.timeoutMs, config.serpapi.maxConcurrency),
     bank: new NessieClient({ apiKey: config.nessie.apiKey, baseUrl: config.nessie.baseUrl }),
     extractor: new GeminiExtractor(config.gemini.apiKey, config.gemini.model),
   };

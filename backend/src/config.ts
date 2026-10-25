@@ -23,6 +23,8 @@ const Env = z.object({
   MAX_AGENT_STEPS: z.coerce.number().int().min(2).max(24).default(14),
   MAX_RESEARCH_DURATION_MS: z.coerce.number().int().min(10_000).max(300_000).default(300_000),
   OFFER_MAX_AGE_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
+  SERPAPI_TIMEOUT_MS: z.coerce.number().int().min(2_000).max(60_000).default(20_000),
+  SERPAPI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(2),
   AGENT_RUNTIME_PORT: z.coerce.number().int().min(1).max(65535).default(8100),
 });
 
@@ -35,7 +37,7 @@ export interface AppConfig {
   mode: "live" | "fixtures";
   databasePath: string;
   gemini: { apiKey: string | null; model: string | null };
-  serpapi: { apiKey: string | null };
+  serpapi: { apiKey: string | null; timeoutMs: number; maxConcurrency: number };
   nessie: { apiKey: string | null; baseUrl: string; customerId: string | null; accountId: string | null };
   limits: { maxSearchCallsPerRun: number; maxAgentSteps: number; maxResearchDurationMs: number; offerMaxAgeMinutes: number };
   agentRuntimePort: number;
@@ -64,7 +66,7 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
     mode: e.INTEGRATION_MODE,
     databasePath: e.DATABASE_PATH,
     gemini: { apiKey: gemini ?? googleAlias, model: blank(e.GEMINI_MODEL) },
-    serpapi: { apiKey: blank(e.SERPAPI_API_KEY) },
+    serpapi: { apiKey: blank(e.SERPAPI_API_KEY), timeoutMs: e.SERPAPI_TIMEOUT_MS, maxConcurrency: e.SERPAPI_MAX_CONCURRENCY },
     nessie: {
       apiKey: blank(e.NESSIE_API_KEY),
       baseUrl: e.NESSIE_BASE_URL.replace(/\/+$/, ""),

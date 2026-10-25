@@ -68,3 +68,53 @@ Live-mode process check, without keys: `npm start` ran `eve build` and started t
 - The Lite model skipped the optional `getProductDetails` step in the completed run. The detail tool itself was verified live in an earlier run with `gemini-3.6-flash` (3 parallel calls; eligible candidates rose from 1 to 2), before that run hit the quota.
 - Nessie posting the purchase (pending → completed) and any resulting balance change were not observed; the reconciliation code for that case is covered by tests only.
 - An ambiguous Nessie write (timeout) was not induced live; it is covered by tests only.
+
+---
+
+# v2 (mentor feedback), 2026-10-25
+
+No live API calls were made this round; everything below ran against fixtures.
+
+## Automated: 90/90 passing (`npm test`), backend typecheck clean, frontend `lint` and `build` clean
+
+New tests:
+- **Category bug regression (`test/category.test.ts`):**
+  - A "Chairs" request sent with the frontend's old `category: "monitors"` hint becomes a category conflict, not monitors.
+  - After choosing office chairs, monitor listings, even when the provider returns only monitors, are rejected ("Listing is a monitor, not an office chair"), queries name office chairs, the label is accurate, and the outcome is `no_confirmed_match`.
+  - With category-appropriate results, only a real chair qualifies; the monitor, seat cushion and chair mat are rejected.
+  - Unrecognized items ask instead of defaulting.
+  - Results and caches are bound to the request version: after an edit, old results are not current and never shown as eligible.
+- **Materials:** volume, dimensions (in/ft/mm), thickness, screw size (#gauge × fractional inch) and piece counts; packs needed for 40 screws and 5 sheets; wrong-size, glue-gun, wine-cork and screwdriver listings rejected.
+- **Deadlines and recommendations:**
+  - Hard vs target deadlines are handled.
+  - A cheaper late offer is noncompliant under a hard deadline, never recommended.
+  - Identical winners are merged.
+  - Unknown shipping, tax, stock and delivery stay unknown.
+- **Manufacturing demo (`test/manufacturing.test.ts`):** the demo input validates; three confirmed lines with the right units; lowest compliant total $42.93; the project hard cap blocks an over-cap approval with details.
+- **Merchant mapping:** approval blocked without a mapping, with nothing reserved or written; employee role forbidden; link requires an existing Nessie merchant; provenance recorded; duplicates refused.
+- **Confirmation and activity:** persisted ids, requester and approver, masked account, seller and mapped merchant, approved vs stored amount with discrepancy, provider id and status, all timestamps; no fulfillment claims. Activity separates awaiting approval, uncertain execution and provider-pending items.
+- **Purchase history:** joins Runway executions with account purchases; external purchases are labeled.
+- **Rate limiting:** `Retry-After` parsing; a short wait is retried; a long wait is surfaced with the seconds; an exhausted quota is non-retryable; a rate-limited run fails with a clear code; the concurrency cap holds.
+- **UI regressions found end to end:** "36 x 48 inch" is no longer read as a 36-pack; "Armless" contradicts the armrests requirement.
+
+## End-to-end with the frontend (fixtures backend + `next start`, driven in a browser)
+
+1. **UI:** a new request "Chairs", quantity 12, $2,000, must-have "Armrests".
+   - The backend resolved office chairs with no category hint and asked no questions.
+   - Confirm and research.
+   - Offers: the ergonomic office chair is eligible at $1,548; the armless chair, seat cushion, chair mat and monitor are rejected.
+2. **UI:** opened the offer and submitted a proposal with a user-confirmed $1,659.12.
+3. **API (no executive screen exists):**
+   - The approval without a mapping returned `MERCHANT_MAPPING_REQUIRED`.
+   - Mapping as employee-demo returned `FORBIDDEN_ACTOR`.
+   - The executive linked an existing sandbox merchant (provenance recorded) and approved; the fixture purchase was recorded.
+4. **UI:** the proposal page showed Approved, "Recorded in Nessie sandbox", approved and stored amounts, Nessie status `pending`, the reference, and the no-real-money disclaimer.
+5. **API:** the manufacturing demo project ran end to end.
+   - Totals: lowest compliant total $42.93; three approvals each needed a mapping first; replaying an approval returned the same execution; committed $45.54 of $100.
+   - Confirmation record, activity and purchase history were checked.
+
+The end-to-end run found a fixture-only defect: in-memory fixture purchase ids repeated after a restart. The safety path held: the execution was marked `uncertain` instead of recorded or retried. Fixture ids are now unique per boot.
+
+## Not verified live this round
+
+Category-aware SerpApi queries for chairs and materials, real Google Shopping evidence quality for glue, cork and screws, `GET /merchants/{id}` live, merchant creation through the new mapping endpoint, and the purchase-history join against the live account. A live run costs SerpApi and Gemini quota and needs an explicit go-ahead.

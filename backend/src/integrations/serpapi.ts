@@ -141,11 +141,47 @@ export function cacheKey(q: ShoppingQuery): string {
   return createHash("sha256").update(JSON.stringify({ engine: "google_shopping", q: q.q, gl: q.gl, hl: q.hl, location: q.location ?? null })).digest("hex");
 }
 
+/** Small FIFO semaphore bounding concurrent provider calls. */
+export class Semaphore {
+  private active = 0;
+  private readonly queue: Array<() => void> = [];
+  constructor(readonly max: number) {}
+  get inFlight() {
+    return this.active;
+  }
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.active >= this.max) await new Promise<void>((r) => this.queue.push(r));
+    this.active++;
+    try {
+      return await fn();
+    } finally {
+      this.active--;
+      this.queue.shift()?.();
+    }
+  }
+}
+
+/**
+ * SerpApi adapter limited to two engines: google_shopping (discover candidates) and
+ * google_immersive_product (enrich a shortlisted candidate by the token Shopping returned; this is
+ * SerpApi's product-page lookup for the current Google Shopping layout). No other engines.
+ */
 export class SerpApiShopping implements ShoppingSearch {
   readonly source = "serpapi_live" as const;
-  constructor(private readonly apiKey: string | null, private readonly timeoutMs = 20_000) {}
+  private readonly limiter: Semaphore;
+  constructor(private readonly apiKey: string | null, private readonly timeoutMs = 20_000, maxConcurrency = 2) {
+    this.limiter = new Semaphore(maxConcurrency);
+  }
 
   async search(query: ShoppingQuery, opts: { signal?: AbortSignal }): Promise<ShoppingResult> {
+    return this.limiter.run(() => this.searchNow(query, opts));
+  }
+
+  async details(pageToken: string, opts: { signal?: AbortSignal }): Promise<ProductDetails> {
+    return this.limiter.run(() => this.detailsNow(pageToken, opts));
+  }
+
+  private async searchNow(query: ShoppingQuery, opts: { signal?: AbortSignal }): Promise<ShoppingResult> {
     if (!this.apiKey) throw new IntegrationError("serpapi", "INTEGRATION_NOT_CONFIGURED", "SERPAPI_API_KEY is not set", "definitive", false);
     const url = new URL("https://serpapi.com/search.json");
     url.searchParams.set("engine", "google_shopping");
@@ -164,7 +200,7 @@ export class SerpApiShopping implements ShoppingSearch {
     return { items: parsed.items, outcome: parsed.outcome, providerSearchId: parsed.providerSearchId, fetchedAt: new Date(), fromCache: false };
   }
 
-  async details(pageToken: string, opts: { signal?: AbortSignal }): Promise<ProductDetails> {
+  private async detailsNow(pageToken: string, opts: { signal?: AbortSignal }): Promise<ProductDetails> {
     if (!this.apiKey) throw new IntegrationError("serpapi", "INTEGRATION_NOT_CONFIGURED", "SERPAPI_API_KEY is not set", "definitive", false);
     const url = new URL("https://serpapi.com/search.json");
     url.searchParams.set("engine", "google_immersive_product");

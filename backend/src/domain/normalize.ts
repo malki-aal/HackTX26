@@ -5,16 +5,21 @@ import { parsePriceText, floatToCents } from "./money.js";
 import {
   extractBrand,
   extractCondition,
+  extractDeliveryDate,
+  extractDimensions,
   extractInstallmentHint,
   extractModel,
   extractPackageQuantity,
   extractPanelType,
   extractPorts,
-  extractProductType,
   extractRefreshRate,
   extractResolution,
   extractScreenSize,
+  extractScrewSize,
+  extractThickness,
+  extractVolume,
 } from "./extract.js";
+import { checkListingCategory, type CategoryProfile } from "./categories.js";
 
 export interface NormalizeContext {
   runId: string;
@@ -22,6 +27,8 @@ export interface NormalizeContext {
   observedAt: Date;
   offerMaxAgeMinutes: number;
   fromCache: boolean;
+  /** The confirmed requested category; listings are checked against it. */
+  category: CategoryProfile;
 }
 
 const INSTRUCTION_LIKE = /\b(?:ignore (?:all |any )?(?:previous|prior|above) instructions|system prompt|api[\s_-]?key|approve this (?:purchase|request)|you are (?:now )?an? (?:ai|assistant))\b/i;
@@ -65,28 +72,64 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
     return null;
   };
 
-  const productType = firstFrom(extractProductType);
-  if (productType) {
-    addEvidence({ attribute: "product_type", value: productType.value, source: "serpapi_google_shopping", sourceField: productType.field, excerpt: productType.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
+  // Category consistency: the title decides; the snippet is consulted only when the title is silent.
+  const profile = ctx.category;
+  let cat = checkListingCategory(item.title, profile);
+  let catField = "title";
+  if (cat.state === "unknown" && item.snippet) {
+    cat = checkListingCategory(item.snippet, profile);
+    catField = "snippet";
   }
-  const size = firstFrom(extractScreenSize);
-  if (size) addEvidence({ attribute: "screen_size", value: size.value, source: "serpapi_google_shopping", sourceField: size.field, excerpt: size.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
-  const res = firstFrom(extractResolution);
-  if (res) addEvidence({ attribute: "resolution", value: res.value, source: "serpapi_google_shopping", sourceField: res.field, excerpt: res.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
-  const seenPorts = new Set<string>();
-  for (const [field, text] of textFields) {
-    for (const p of extractPorts(text)) {
-      if (seenPorts.has(p.value)) continue;
-      seenPorts.add(p.value);
-      addEvidence({ attribute: "port", value: p.value, source: "serpapi_google_shopping", sourceField: field, excerpt: p.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
+  if (cat.state !== "unknown") {
+    addEvidence({ attribute: "product_type", value: cat.detected, source: "serpapi_google_shopping", sourceField: catField, excerpt: cat.excerpt ?? item.title.slice(0, 120), method: "listing_text_pattern", confidence: "listing_evidence" });
+  }
+  const spec = <T>(attribute: string, fn: (t: string) => { value: T; excerpt: string } | null) => {
+    const m = firstFrom(fn);
+    if (m) addEvidence({ attribute, value: m.value, source: "serpapi_google_shopping", sourceField: m.field, excerpt: m.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
+  };
+  for (const kind of profile.specs) {
+    if (kind === "screen_size") spec("screen_size", extractScreenSize);
+    else if (kind === "resolution") spec("resolution", extractResolution);
+    else if (kind === "refresh_rate") spec("refresh_rate", extractRefreshRate);
+    else if (kind === "panel_type") spec("panel_type", extractPanelType);
+    else if (kind === "volume") spec("volume", extractVolume);
+    else if (kind === "dimensions") spec("dimensions", extractDimensions);
+    else if (kind === "thickness") spec("thickness", extractThickness);
+    else if (kind === "screw_size") spec("screw_size", extractScrewSize);
+    else if (kind === "port") {
+      const seenPorts = new Set<string>();
+      for (const [field, text] of textFields) {
+        for (const p of extractPorts(text)) {
+          if (seenPorts.has(p.value)) continue;
+          seenPorts.add(p.value);
+          addEvidence({ attribute: "port", value: p.value, source: "serpapi_google_shopping", sourceField: field, excerpt: p.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
+        }
+      }
     }
   }
-  const hz = firstFrom(extractRefreshRate);
-  if (hz) addEvidence({ attribute: "refresh_rate", value: hz.value, source: "serpapi_google_shopping", sourceField: hz.field, excerpt: hz.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
-  const panel = firstFrom(extractPanelType);
-  if (panel) addEvidence({ attribute: "panel_type", value: panel.value, source: "serpapi_google_shopping", sourceField: panel.field, excerpt: panel.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
+  for (const [fid, f] of Object.entries(profile.features)) {
+    for (const [field, text] of textFields) {
+      // An explicit absence ("armless") is stronger listing evidence than silence.
+      const neg = f.absent?.exec(text);
+      if (neg) {
+        addEvidence({ attribute: "feature", value: `!${fid}`, source: "serpapi_google_shopping", sourceField: field, excerpt: text.slice(Math.max(0, neg.index - 30), neg.index + neg[0].length + 30).trim(), method: "listing_text_pattern", confidence: "listing_evidence" });
+        break;
+      }
+      const m = f.pattern.exec(text);
+      if (!m) continue;
+      addEvidence({ attribute: "feature", value: fid, source: "serpapi_google_shopping", sourceField: field, excerpt: text.slice(Math.max(0, m.index - 30), m.index + m[0].length + 30).trim(), method: "listing_text_pattern", confidence: "listing_evidence" });
+      break;
+    }
+  }
   const brand = extractBrand(item.title);
   if (brand) addEvidence({ attribute: "brand", value: brand, source: "serpapi_google_shopping", sourceField: "title", excerpt: brand, method: "listing_text_pattern", confidence: "listing_evidence" });
+
+  // Delivery date, only when the listing states one; otherwise it stays unknown.
+  const deliveryStmt = [item.delivery, ...(item.extensions ?? [])].filter(Boolean).join(" · ");
+  const deliveryDate = deliveryStmt ? extractDeliveryDate(deliveryStmt, ctx.observedAt) : null;
+  if (deliveryDate) {
+    addEvidence({ attribute: "delivery_by", value: deliveryDate.value, source: "serpapi_google_shopping", sourceField: "delivery", excerpt: deliveryDate.excerpt, method: "listing_text_pattern", confidence: "listing_evidence" });
+  }
 
   // Condition: provider field first, then listing text; absence of any second-hand marker is a weak inference of new.
   let condition: Offer["condition"] = null;
@@ -191,7 +234,13 @@ export function normalizeOffer(item: RawShoppingItem, ctx: NormalizeContext): No
     tax: { status: "unknown", cents: null, source: null },
     condition,
     availability: /\bin stock\b/i.test(deliveryText) ? { status: "in_stock", excerpt: "in stock" } : { status: "unknown", excerpt: null },
-    delivery: item.delivery ? { status: "stated", excerpt: item.delivery.slice(0, 120) } : { status: "unknown", excerpt: null },
+    delivery: {
+      status: item.delivery ? "stated" : "unknown",
+      excerpt: item.delivery ? item.delivery.slice(0, 120) : null,
+      earliest: deliveryDate?.value.earliest ?? null,
+      latest: deliveryDate?.value.latest ?? null,
+      source: deliveryDate ? "listing" : null,
+    },
     rating: typeof item.rating === "number" && Number.isFinite(item.rating) ? item.rating : null,
     reviews: typeof item.reviews === "number" && Number.isInteger(item.reviews) ? item.reviews : null,
     evidence,
@@ -208,7 +257,7 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
  * to an offer. Pure; returns a new offer. Product specs describe the product, not a particular
  * seller's listing, which the evidence excerpt states.
  */
-export function applyProductDetails(offer: Offer, details: ProductDetails, fetchedAt: Date, fromCache: boolean): Offer {
+export function applyProductDetails(offer: Offer, details: ProductDetails, fetchedAt: Date, fromCache: boolean, profile: CategoryProfile): Offer {
   const evidence = offer.evidence.filter((e) => e.source !== "serpapi_immersive_product");
   let seq = offer.evidence.length;
   const add = (attribute: string, value: unknown, title: string, raw: string) => {
@@ -239,6 +288,21 @@ export function applyProductDetails(offer: Offer, details: ProductDetails, fetch
     } else if (/panel type/.test(t)) {
       const p = extractPanelType(v);
       if (p) add("panel_type", p.value, f.title, v);
+    } else if (profile.specs.includes("volume") && /volume|capacity|net content|size/.test(t)) {
+      const m = extractVolume(v);
+      if (m) add("volume", m.value, f.title, v);
+    } else if (profile.specs.includes("dimensions") && /dimension|size|length|width/.test(t)) {
+      const m = extractDimensions(v);
+      if (m) add("dimensions", m.value, f.title, v);
+    } else if (profile.specs.includes("thickness") && /thickness/.test(t)) {
+      const m = extractThickness(`${v} thick`);
+      if (m) add("thickness", m.value, f.title, v);
+    } else if (profile.specs.includes("screw_size") && /size|length|gauge|diameter/.test(t)) {
+      const m = extractScrewSize(v);
+      if (m) add("screw_size", m.value, f.title, v);
+    }
+    for (const [fid, def] of Object.entries(profile.features)) {
+      if (def.pattern.test(`${f.title} ${v}`) && !evidence.some((e) => e.attribute === "feature" && e.value === fid && e.source === "serpapi_immersive_product")) add("feature", fid, f.title, v);
     }
   }
   const store = offer.seller ? details.stores.find((s) => norm(s.name) === norm(offer.seller!)) ?? details.stores.find((s) => norm(offer.seller!).startsWith(norm(s.name)) || norm(s.name).startsWith(norm(offer.seller!))) : undefined;
@@ -252,7 +316,17 @@ export function applyProductDetails(offer: Offer, details: ProductDetails, fetch
     const stock = store.details.find((d) => /in stock/i.test(d));
     if (stock) availability = { status: "in_stock", excerpt: `${store.name}: ${stock}` };
   }
-  return { ...offer, evidence, shipping, availability, details: { status: "fetched", fetchedAt: fetchedAt.toISOString(), fromCache, matchedStore: store?.name ?? null } };
+  let delivery = offer.delivery;
+  if (store) {
+    for (const d of store.details) {
+      const dd = extractDeliveryDate(d, fetchedAt);
+      if (!dd) continue;
+      delivery = { status: "stated", excerpt: `${store.name}: ${d}`.slice(0, 120), earliest: dd.value.earliest, latest: dd.value.latest, source: "product_page_store" };
+      evidence.push({ id: `${offer.id}_ev${++seq}`, attribute: "delivery_by", value: dd.value, source: "serpapi_immersive_product", sourceField: `stores[${store.name}].details_and_offers`, excerpt: `${store.name}: ${d}`.slice(0, 300), method: "provider_field", confidence: "listing_evidence" });
+      break;
+    }
+  }
+  return { ...offer, evidence, shipping, availability, delivery, details: { status: "fetched", fetchedAt: fetchedAt.toISOString(), fromCache, matchedStore: store?.name ?? null } };
 }
 
 /**

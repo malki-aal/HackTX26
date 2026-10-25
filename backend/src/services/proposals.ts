@@ -11,7 +11,9 @@ import { emitEvent } from "./events.js";
 import { loadRequest, loadVersion, setRequestStatus } from "./requests.js";
 import { loadRun } from "./research.js";
 import { loadLedger, readFinancialContext, resolveAccountId } from "./budget.js";
-import { ensureMerchant, getExecutionView, submitExecution } from "./executions.js";
+import { getExecutionView, submitExecution } from "./executions.js";
+import { getMapping } from "./merchants.js";
+import { projectCommittedCents } from "./projects.js";
 
 type ProposalRow = { id: string; request_id: string; current_version: number; decision_state: string; created_at: string; updated_at: string };
 type VersionRow = { proposal_id: string; version: number; payload: string; status: string; exact_amount_cents: number | null; amount_source: string | null; technical_review_confirmed: number; mode: string; created_at: string; submitted_at: string | null };
@@ -201,14 +203,31 @@ async function decide(ctx: AppContext, id: string, parsed: ReturnType<typeof Dec
     throw new AppError("OFFER_STALE", `Offer evidence observed at ${pv.data.offer.observedAt} has expired; rerun research and resubmit`, 409, false, { observedAt: pv.data.offer.observedAt, expiresAt: pv.data.offer.expiresAt });
   }
   if (amount > pv.data.requestBudgetCents) throw new AppError("BUDGET_EXCEEDED", `Exact amount ${formatUsd(amount)} exceeds the request budget ${formatUsd(pv.data.requestBudgetCents)}`, 409);
+  // The researched seller must already be explicitly mapped to a Nessie sandbox merchant.
+  const mapping = getMapping(ctx, pv.data.offer.seller);
+  if (!mapping) {
+    throw new AppError("MERCHANT_MAPPING_REQUIRED", `Seller "${pv.data.offer.seller ?? "unknown"}" has no Nessie sandbox merchant mapping; create one before approving`, 409, false, {
+      seller: pv.data.offer.seller,
+      endpoint: "POST /api/v1/merchant-mappings",
+    });
+  }
   const fin = await readFinancialContext(ctx, { refresh: true });
   if (!fin.fresh || fin.context.availableBudgetCents === null || !fin.context.accountId) {
     throw new AppError("BANK_CHECK_UNAVAILABLE", `Bank context could not be refreshed: ${fin.error ?? "unavailable"}`, 503, true);
   }
   const accountId = fin.context.accountId;
-  const merchantId = await ensureMerchant(ctx, pv.data.offer.seller ?? "Unknown seller");
+  const merchantId = mapping.nessieMerchantId;
   const executionId = `exe_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const projectId = (ctx.db.prepare("SELECT project_id FROM requests WHERE id = ?").get(pv.data.requestId) as { project_id: string | null }).project_id;
   tx(ctx.db, () => {
+    // A project's budget is a hard cap across its lines, checked under the same write lock.
+    if (projectId) {
+      const cap = (ctx.db.prepare("SELECT budget_cents FROM projects WHERE id = ?").get(projectId) as { budget_cents: number }).budget_cents;
+      const committed = projectCommittedCents(ctx, projectId);
+      if (committed + amount > cap) {
+        throw new AppError("BUDGET_EXCEEDED", `Approving ${formatUsd(amount)} would exceed the project budget ${formatUsd(cap)} (${formatUsd(committed)} already committed)`, 409, false, { projectId, projectBudgetCents: cap, committedCents: committed });
+      }
+    }
     // Recompute availability inside the write lock so concurrent approvals serialize.
     const snapCtx = computeFinancialContext(
       { accountId, balanceCents: fin.context.reportedBalanceCents!, bills: [], fetchedAt: fin.context.fetchedAt!, source: "nessie_live" },
@@ -221,8 +240,10 @@ async function decide(ctx: AppContext, id: string, parsed: ReturnType<typeof Dec
     ctx.db.prepare("INSERT INTO decisions (id, proposal_id, proposal_version, actor, decision, note, created_at) VALUES (?, ?, ?, ?, 'approve', ?, ?)").run(decisionId, id, parsed.version, parsed.actor, parsed.note, now);
     const description = `Runway ${executionId} | ${pv.data.offer.title.replace(/\[FIXTURE\]\s*/, "").slice(0, 60)} x${pv.data.quantity} | seller ${pv.data.offer.seller ?? "unknown"}`.slice(0, 200);
     ctx.db
-      .prepare("INSERT INTO executions (id, proposal_id, proposal_version, decision_id, mode, account_id, merchant_id, amount_cents, description, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)")
-      .run(executionId, id, parsed.version, decisionId, ctx.config.mode, accountId, merchantId, amount, description, now, now);
+      .prepare(
+        "INSERT INTO executions (id, proposal_id, proposal_version, decision_id, mode, account_id, merchant_id, amount_cents, description, status, created_at, updated_at, approved_at, account_masked, merchant_mapping) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
+      )
+      .run(executionId, id, parsed.version, decisionId, ctx.config.mode, accountId, merchantId, amount, description, now, now, now, fin.accountMasked ?? null, JSON.stringify(mapping));
     ctx.db
       .prepare("INSERT INTO budget_ledger (id, account_id, kind, amount_cents, status, execution_id, note, created_at, updated_at) VALUES (?, ?, 'reservation', ?, 'active', ?, ?, ?, ?)")
       .run(`led_${randomUUID()}`, accountId, amount, executionId, "Application budget hold for approved sandbox purchase", now, now);

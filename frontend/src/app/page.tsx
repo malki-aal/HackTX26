@@ -27,7 +27,7 @@ export default function RequestsPage() {
                   <span className="shrink-0 text-[15px] tabular-nums">{formatCents(r.budgetTotalCents)}</span>
                 </div>
                 <p className="mt-1 text-[13px] text-muted">
-                  {r.quantity} monitors · Updated {formatWhen(r.updatedAt)}
+                  {r.quantity} {r.itemLabel ?? "items"} · Updated {formatWhen(r.updatedAt)}
                 </p>
                 <p className="mt-1 text-[14px] font-medium text-ink">{statusLabel[r.status]}</p>
               </Link>

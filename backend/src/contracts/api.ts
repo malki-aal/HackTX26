@@ -21,6 +21,9 @@ export const ErrorCode = z.enum([
   "IDEMPOTENCY_KEY_REQUIRED",
   "EXECUTION_UNCERTAIN",
   "MODE_MISMATCH",
+  "CATEGORY_UNRESOLVED",
+  "FORBIDDEN_ACTOR",
+  "MERCHANT_MAPPING_REQUIRED",
   "INTERNAL_ERROR",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

@@ -14,6 +14,21 @@ export interface NessieAccount {
   balanceCents: number;
   rawBalance: number;
   customerId: string | null;
+  /** 16-digit sandbox account number; only ever exposed masked. */
+  accountNumber: string | null;
+}
+
+/** Normalized Nessie merchant (GET /merchants/{id}). */
+export interface NessieMerchant {
+  id: string;
+  name: string;
+  category: string | null;
+  city: string | null;
+  state: string | null;
+}
+
+export function maskAccountNumber(n: string | null): string | null {
+  return n && n.length >= 4 ? `•••• ${n.slice(-4)}` : null;
 }
 
 export interface NessiePurchase {
@@ -49,10 +64,24 @@ export interface BankAdapter {
   listPurchases(accountId: string): Promise<NessiePurchase[]>;
   getPurchase(purchaseId: string): Promise<NessiePurchase | null>;
   createPurchase(accountId: string, input: CreatePurchaseInput): Promise<CreatePurchaseResult>;
+  getMerchant(merchantId: string): Promise<NessieMerchant | null>;
+  /** Creates a clearly labeled sandbox merchant; only called on an explicit mapping request. */
+  createMerchant(name: string, category: string): Promise<NessieMerchant>;
 }
 
 const Id24 = z.string().min(1);
-const AccountSchema = z.object({ _id: Id24, type: z.string(), nickname: z.string().default(""), balance: z.number(), customer_id: z.string().optional() }).passthrough();
+const AccountSchema = z.object({ _id: Id24, type: z.string(), nickname: z.string().default(""), balance: z.number(), customer_id: z.string().optional(), account_number: z.string().optional() }).passthrough();
+const MerchantSchema = z
+  .object({
+    _id: Id24,
+    name: z.string(),
+    category: z.union([z.string(), z.array(z.string())]).optional().nullable(),
+    address: z.object({ city: z.string().optional(), state: z.string().optional() }).passthrough().optional().nullable(),
+  })
+  .passthrough();
+function toMerchant(m: z.infer<typeof MerchantSchema>): NessieMerchant {
+  return { id: m._id, name: m.name, category: Array.isArray(m.category) ? (m.category[0] ?? null) : (m.category ?? null), city: m.address?.city ?? null, state: m.address?.state ?? null };
+}
 const PurchaseSchema = z
   .object({
     _id: Id24,
@@ -132,7 +161,7 @@ export class NessieClient implements BankAdapter {
     if (!parsed.success) throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Nessie account response did not match expected shape", "definitive", false, res.status);
     const cents = floatToCents(parsed.data.balance);
     if (cents === null) throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Nessie account balance is not a non-negative number", "definitive", false);
-    return { id: parsed.data._id, type: parsed.data.type, nickname: parsed.data.nickname, balanceCents: cents, rawBalance: parsed.data.balance, customerId: parsed.data.customer_id ?? null };
+    return { id: parsed.data._id, type: parsed.data.type, nickname: parsed.data.nickname, balanceCents: cents, rawBalance: parsed.data.balance, customerId: parsed.data.customer_id ?? null, accountNumber: parsed.data.account_number ?? null };
   }
 
   async listBills(accountId: string): Promise<BillSnapshot[]> {
@@ -188,6 +217,27 @@ export class NessieClient implements BankAdapter {
       httpStatus: res.status,
       message,
     };
+  }
+
+  async getMerchant(merchantId: string): Promise<NessieMerchant | null> {
+    const res = await this.request("GET", `/merchants/${encodeURIComponent(merchantId)}`);
+    if (res.status === 404) return null;
+    if (res.status !== 200) this.fail(res, "merchant read");
+    const parsed = MerchantSchema.safeParse(unwrapObject(res.body));
+    return parsed.success ? toMerchant(parsed.data) : null;
+  }
+
+  async createMerchant(name: string, category: string): Promise<NessieMerchant> {
+    // Nessie validates category as a string (an array is rejected with HTTP 400; observed live).
+    const created = await this.create("/merchants", {
+      name,
+      category,
+      address: { street_number: "1", street_name: "Sandbox Way", city: "Austin", state: "TX", zip: "78701" },
+      geocode: { lat: 30.2672, lng: -97.7431 },
+    });
+    const parsed = MerchantSchema.safeParse(created.object);
+    if (!parsed.success) throw new IntegrationError("nessie", "UPSTREAM_ERROR", "Nessie merchant creation returned no merchant", "definitive", false);
+    return toMerchant(parsed.data);
   }
 
   // ---- Seed helpers (owned resources only) ----

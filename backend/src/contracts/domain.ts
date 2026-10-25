@@ -2,14 +2,16 @@
 // and are exported for the frontend (see src/contracts/index.ts and docs/openapi.json).
 import { z } from "zod";
 
-export const MAX_QUANTITY = 500;
+export const MAX_QUANTITY = 10_000;
 export const MAX_BUDGET_CENTS = 100_000_000; // $1,000,000.00
 
 export const Id = z.string().min(1).max(100);
 export const Cents = z.number().int().min(0).max(MAX_BUDGET_CENTS);
 export const IsoTimestamp = z.string();
 
-export const Category = z.enum(["monitors"]);
+/** Registered category id (see src/domain/categories.ts); aliases such as "chairs" are accepted on input. */
+export const CategoryId = z.string().trim().min(1).max(40);
+export const DeadlineType = z.enum(["hard", "target"]);
 export const Condition = z.enum(["new", "refurbished", "used"]);
 export const AllowedCondition = z.enum(["new", "refurbished", "used", "any"]);
 export const RankingPriority = z.enum(["lowest_known_total", "evidence_completeness"]);
@@ -41,7 +43,8 @@ const base = {
 };
 
 export const Requirement = z.discriminatedUnion("attribute", [
-  z.object({ ...base, attribute: z.literal("product_type"), operator: z.literal("eq"), value: z.literal("monitor") }),
+  // Category consistency: the listing must be the requested item (value = category id).
+  z.object({ ...base, attribute: z.literal("product_type"), operator: z.literal("eq"), value: CategoryId }),
   z.object({
     ...base,
     attribute: z.literal("screen_size"),
@@ -67,6 +70,32 @@ export const Requirement = z.discriminatedUnion("attribute", [
   }),
   z.object({ ...base, attribute: z.literal("panel_type"), operator: z.literal("in"), value: z.array(PanelType).min(1) }),
   z.object({ ...base, attribute: z.literal("brand"), operator: z.literal("in"), value: z.array(z.string().min(1).max(40)).min(1) }),
+  z.object({ ...base, attribute: z.literal("volume"), operator: z.literal("gte"), value: z.number().positive().max(100_000), unit: z.literal("ml") }),
+  z.object({
+    ...base,
+    attribute: z.literal("dimensions"),
+    operator: z.literal("gte"),
+    value: z.object({ length: z.number().positive().max(1200), width: z.number().positive().max(1200) }),
+    unit: z.literal("in"),
+  }),
+  z.object({
+    ...base,
+    attribute: z.literal("thickness"),
+    operator: z.literal("between"),
+    value: z.object({ min: z.number().positive().max(12), max: z.number().positive().max(12) }),
+    unit: z.literal("in"),
+  }),
+  z.object({
+    ...base,
+    attribute: z.literal("screw_size"),
+    operator: z.literal("eq"),
+    value: z.object({ gauge: z.number().int().min(0).max(24), lengthIn: z.number().positive().max(12) }),
+    unit: z.literal("in"),
+  }),
+  // Category-specific feature keyword (e.g. self_adhesive, armrests), defined in the category profile.
+  z.object({ ...base, attribute: z.literal("feature"), operator: z.literal("includes"), value: z.string().min(1).max(40), label: z.string().max(80) }),
+  // Delivery by a date. mandatory=true is a hard deadline; false is a flexible target date.
+  z.object({ ...base, attribute: z.literal("delivery_by"), operator: z.literal("lte"), value: z.string().date(), unit: z.literal("date") }),
 ]);
 export type Requirement = z.infer<typeof Requirement>;
 export type RequirementAttribute = Requirement["attribute"];
@@ -76,13 +105,19 @@ export const RequestFields = z.object({
   title: z.string().trim().min(1).max(200),
   purpose: z.string().max(2000).default(""),
   description: z.string().max(4000).default(""),
-  category: Category,
+  /** Optional hint. The server resolves the category from the request text and asks when unclear. */
+  category: CategoryId.nullable().default(null),
   quantity: z.number().int().min(1).max(MAX_QUANTITY),
+  /** Unit of `quantity`, e.g. "chair", "bottle", "sheet", "screw". Defaults to the category unit. */
+  unit: z.string().trim().min(1).max(30).nullable().default(null),
   currency: z.literal("USD"),
   budgetCents: Cents.refine((v) => v > 0, "budgetCents must be positive"),
   budgetBasis: z.enum(["total", "per_item"]).default("total"),
   allowedCondition: AllowedCondition.default("new"),
   deadline: z.string().date().nullable().default(null),
+  /** "hard": late offers are noncompliant. "target": late offers stay eligible but are flagged. */
+  deadlineType: DeadlineType.default("target"),
+  /** Deprecated: recommendations are multivariable. Accepted for compatibility; only breaks cost ties. */
   rankingPriority: RankingPriority.default("lowest_known_total"),
   agentConfigId: Id.default("cfg_default"),
   agentConfigVersion: z.number().int().positive().nullable().default(null),
@@ -162,7 +197,14 @@ export const Offer = z.object({
   tax: KnownAmount,
   condition: Condition.nullable(),
   availability: z.object({ status: z.enum(["in_stock", "unknown"]), excerpt: z.string().nullable() }),
-  delivery: z.object({ status: z.enum(["stated", "unknown"]), excerpt: z.string().nullable() }),
+  delivery: z.object({
+    status: z.enum(["stated", "unknown"]),
+    excerpt: z.string().nullable(),
+    /** Date range the seller states (YYYY-MM-DD); null when no date is stated. */
+    earliest: z.string().nullable(),
+    latest: z.string().nullable(),
+    source: z.enum(["listing", "product_page_store"]).nullable(),
+  }),
   rating: z.number().nullable(),
   reviews: z.number().int().nullable(),
   evidence: z.array(SpecEvidence),
@@ -358,3 +400,52 @@ export const ReconcileBody = z.object({
   actor: z.literal("executive-demo").default("executive-demo"),
   note: z.string().max(1000).default(""),
 });
+
+// ---------- Projects (multi-material request lines) ----------
+
+export const SuppliedInventoryItem = z.object({
+  name: z.string().trim().min(1).max(120),
+  quantity: z.string().trim().min(1).max(80),
+  note: z.string().max(300).default(""),
+});
+
+export const ProjectLine = z.object({
+  /** Stable key within the project, e.g. "glue". */
+  key: z.string().regex(/^[a-z0-9_]{1,30}$/),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(4000).default(""),
+  category: CategoryId.nullable().default(null),
+  quantity: z.number().int().min(1).max(MAX_QUANTITY),
+  unit: z.string().trim().min(1).max(30).nullable().default(null),
+  /** Budget allocated to this line; the project budget is the hard cap across lines. */
+  budgetCents: Cents.refine((v) => v > 0, "budgetCents must be positive"),
+  allowedCondition: AllowedCondition.default("new"),
+  /** Overrides the project's needed-by date for this line. */
+  deadline: z.string().date().nullable().optional(),
+  deadlineType: DeadlineType.optional(),
+});
+
+export const CreateProjectBody = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    purpose: z.string().max(2000).default(""),
+    sector: z.string().trim().min(1).max(60).default("general"),
+    currency: z.literal("USD").default("USD"),
+    budgetCents: Cents.refine((v) => v > 0, "budgetCents must be positive"),
+    neededBy: z.string().date().nullable().default(null),
+    deadlineType: DeadlineType.default("hard"),
+    /** Materials the company already has. Recorded for context; never purchased. */
+    suppliedInventory: z.array(SuppliedInventoryItem).max(20).default([]),
+    lines: z.array(ProjectLine).min(1).max(10),
+    agentConfigId: Id.default("cfg_default"),
+  })
+  .superRefine((p, ctx) => {
+    const keys = new Set<string>();
+    for (const l of p.lines) {
+      if (keys.has(l.key)) ctx.addIssue({ code: "custom", message: `Duplicate line key ${l.key}`, path: ["lines"] });
+      keys.add(l.key);
+    }
+    const sum = p.lines.reduce((s, l) => s + l.budgetCents, 0);
+    if (sum > p.budgetCents) ctx.addIssue({ code: "custom", message: `Line budgets (${sum} cents) exceed the project budget (${p.budgetCents} cents)`, path: ["lines"] });
+  });
+export type CreateProjectBody = z.infer<typeof CreateProjectBody>;

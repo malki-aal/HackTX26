@@ -28,7 +28,12 @@ export interface PurchaseRequest {
   version: number;
   title: string;
   purpose: string;
-  category: "monitors";
+  /** Resolved category id from the backend (e.g. "office_chairs"); null until the item type is confirmed. */
+  category: string | null;
+  /** Display label for the item, e.g. "office chairs" or "Item type to be confirmed". */
+  itemLabel?: string;
+  /** Unit of quantity, e.g. "chair", "bottle", "screw". */
+  unit?: string;
   quantity: number;
   budgetTotalCents: number;
   mandatory: string[];
@@ -36,7 +41,8 @@ export interface PurchaseRequest {
   condition: Condition;
   deadline?: string;
   agentConfigId: string;
-  ranking: RankingPriority;
+  /** Deprecated: the backend recommends on several criteria; kept for display compatibility. */
+  ranking?: RankingPriority;
   status: RequestStatus;
   clarifications: Clarification[];
   confirmedVersion?: number;
@@ -58,7 +64,8 @@ export interface NewRequestInput {
   condition: Condition;
   deadline?: string;
   agentConfigId: string;
-  ranking: RankingPriority;
+  /** Optional; the backend no longer requires a ranking mode. */
+  ranking?: RankingPriority;
 }
 
 export interface AgentConfig {
@@ -112,6 +119,8 @@ export interface Offer {
   eligibility: Eligibility;
   findings: Finding[];
   rankNote: string;
+  /** Recommendation roles this offer won: lowest_cost, deadline_fit, best_overall. */
+  recommendationKinds?: string[];
   unresolved: string[];
   affordability: "within_budget_provisional" | "over_budget" | "unknown";
   costNotes: string[];

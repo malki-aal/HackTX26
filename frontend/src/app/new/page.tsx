@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { api, type ApiError, type Condition, type RankingPriority } from "@/lib/api";
+import { api, type ApiError, type Condition } from "@/lib/api";
 import { parseDollarsToCents } from "@/lib/money";
 import {
   Button,
@@ -31,7 +31,6 @@ export default function NewRequestPage() {
   const [condition, setCondition] = useState<Condition>("new");
   const [deadline, setDeadline] = useState("");
   const [agentId, setAgentId] = useState("");
-  const [ranking, setRanking] = useState<RankingPriority>("lowest_known_total");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [apiError, setApiError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
@@ -62,7 +61,6 @@ export default function NewRequestPage() {
         condition,
         deadline: deadline || undefined,
         agentConfigId: agentId || configs.data?.[0]?.id || "cfg_default",
-        ranking,
       });
       router.push(`/requests/${r.id}`);
     } catch (err) {
@@ -73,11 +71,11 @@ export default function NewRequestPage() {
 
   return (
     <Page>
-      <PageHeader title="New request" subtitle="Runway researches monitors for now." />
+      <PageHeader title="New request" subtitle="Describe the item; Runway confirms the item type before researching." />
       <form onSubmit={submit} noValidate>
         <Field required label="Title" htmlFor="title" error={errors.title}>
           <input id="title" className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)}
-            placeholder="Monitors for the design team" aria-invalid={!!errors.title}
+            placeholder="Wood screws for desk organizer prototypes" aria-invalid={!!errors.title}
             aria-describedby={errors.title ? "title-error" : undefined} />
         </Field>
         <Field label="What is it for?" htmlFor="purpose">
@@ -97,7 +95,7 @@ export default function NewRequestPage() {
         </div>
         <Field required label="Must-have specifications" htmlFor="mandatory" error={errors.mandatory}>
           <textarea id="mandatory" rows={4} className={inputClass} value={mandatory}
-            onChange={(e) => setMandatory(e.target.value)} placeholder={"27 inch screen\nAt least 1440p\nHDMI input"}
+            onChange={(e) => setMandatory(e.target.value)} placeholder={"#6 x 5/8 inch\nFlat head"}
             aria-invalid={!!errors.mandatory} aria-describedby={errors.mandatory ? "mandatory-error" : undefined} />
         </Field>
         <Field label="Nice-to-haves" htmlFor="preferences">
@@ -112,12 +110,6 @@ export default function NewRequestPage() {
         <Field label="Needed by" htmlFor="deadline">
           <input id="deadline" type="date" className={inputClass} value={deadline} onChange={(e) => setDeadline(e.target.value)} />
         </Field>
-        <div className="mb-5">
-          <p className="mb-1.5 text-[15px] font-medium">Rank offers by<RequiredMark /></p>
-          <Segmented label="Ranking priority" value={ranking} onChange={setRanking}
-            options={[{ value: "lowest_known_total", label: "Lowest cost" },
-              { value: "evidence_completeness", label: "Most evidence" }]} />
-        </div>
         <Field label="Agent configuration" htmlFor="agent">
           <select id="agent" className={inputClass} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
             {(configs.data ?? []).map((c) => (

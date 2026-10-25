@@ -41,6 +41,18 @@ npm start              # live mode: API on :8000 + internal eve agent on 127.0.0
 | `npm run seed:nessie` | Explicit sandbox seed; server startup never seeds |
 | `npm run smoke [-- --approve]` | Acceptance client against a running server (`RUNWAY_URL` overrides the base URL) |
 
+## Categories, projects and the manufacturing demo
+
+- **Categories, not monitors.** A request's item category is resolved from its text (`src/domain/categories.ts`): monitors, office chairs, wood glue, cork sheets, wood screws.
+  - When the category is ambiguous or contradicts the hint, the request asks rather than defaulting.
+  - Category consistency is a mandatory eligibility check.
+  - Search queries and cached results are bound to the confirmed category and requirement version.
+  - To add a category or sector, add a profile.
+- **Projects** group single-category request lines under one hard budget, with supplied inventory recorded but never purchased. See `docs/CONTRACT_V2.md`.
+- **Demo:** `GET /api/v1/demo/manufacturing` returns the validated input (also in `demo/manufacturing-desk-organizers.json`): a small furniture manufacturer, five desk-organizer prototypes from leftover walnut and maple, buying glue, cork backing and screws for $100. POST it to `/api/v1/projects`, then call `/confirm` and `/research`.
+- **Recommendations:** lowest known comparable cost, best deadline fit and best overall, chosen from compliant offers only. Cheaper offers that miss a hard deadline are listed separately as noncompliant alternatives.
+- **Merchants:** approval requires an explicit seller → Nessie sandbox merchant mapping (`POST /api/v1/merchant-mappings`). Purchase history comes from `GET /accounts/{id}/purchases`; Nessie has no generic transactions endpoint.
+
 ## Layout
 
 ```
@@ -58,6 +70,12 @@ docs/             openapi.json, FRONTEND.md, NESSIE.md, ACCEPTANCE.md
 ## How the pieces fit
 
 - **One agent engine, versioned configs.** Two saved configurations ship by default: `cfg_default` (exact specs, 2 searches, 3 product-detail lookups, budget tool on) and `cfg_broad_scan` (broad queries, 3 searches, 2 lookups, no budget tool, evidence-first ranking). Each run stores a snapshot of its configuration. Configurations can only tighten the environment caps, and they can only enable the six known tools.
+- **SerpApi scope.** Only two engines are used: `google_shopping` to discover candidates, and `google_immersive_product`, SerpApi's product-page lookup for the current Shopping layout, to enrich shortlisted candidates by the token Shopping returns.
+  - Calls are capped per run by the configuration, and a concurrency limit applies (`SERPAPI_MAX_CONCURRENCY`).
+  - Each call has a timeout (`SERPAPI_TIMEOUT_MS`).
+  - Safe reads retry with bounded backoff. A `Retry-After` of 5 s or less is waited out once; a longer one fails fast with `retryAfterSeconds`.
+  - An exhausted plan is reported as `quota_exhausted`.
+  - Paid research runs only when `POST .../research` is called.
 - **Product-detail evidence.** Google Shopping titles rarely list ports. `getProductDetails` fetches the SerpApi product-spec page for one offer, using a token held server-side and never a URL, and adds cited spec evidence plus the matching seller's shipping and stock. When sources disagree, the requirement becomes `unknown` (conflicting).
 - **Tools never take scope ids.** The eve tools call back to `POST /internal/agent-tools/:tool`, which accepts only loopback requests carrying the per-process token. The server resolves the run from the eve session id and enforces enablement, search caps, step caps and time caps. No tool can approve, submit, execute, fetch arbitrary URLs, run shell commands or read the environment.
 - **Deterministic ranking.** `evaluateCandidates` in `src/domain/evaluate.ts` classifies each offer as `eligible`, `needs_review` or `rejected`, and ranks by eligibility, then known affordability, then lowest known cost, then evidence completeness, then offer id. The model's explanation is stored separately and never reorders anything.

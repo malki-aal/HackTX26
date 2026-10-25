@@ -8,6 +8,7 @@ import { normalizeOffer } from "../src/domain/normalize.js";
 import { evaluateCandidates } from "../src/domain/evaluate.js";
 import { deriveMonitorRequirements } from "../src/domain/requirements.js";
 import { formatUsd } from "../src/domain/money.js";
+import { getCategory } from "../src/domain/categories.js";
 
 loadEnvFile();
 const config = parseConfig(process.env);
@@ -21,7 +22,7 @@ writeFileSync(file, JSON.stringify(scrubValue({ q, fetchedAt: res.fetchedAt, ite
 console.log(`Sanitized sample saved to ${file}`);
 
 const offers = res.items.flatMap((it) => {
-  const n = normalizeOffer(it, { runId: "check", queryId: "q", observedAt: res.fetchedAt, offerMaxAgeMinutes: 30, fromCache: false });
+  const n = normalizeOffer(it, { runId: "check", queryId: "q", observedAt: res.fetchedAt, offerMaxAgeMinutes: 30, fromCache: false, category: getCategory("monitors")! });
   return n.ok ? [n.offer] : [];
 });
 const reqs = deriveMonitorRequirements({ title: "Four monitors", description: "Four new 27-inch monitors, at least 1440p, with HDMI.", allowedCondition: "new" });
